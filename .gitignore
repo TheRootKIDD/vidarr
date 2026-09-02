@@ -25,7 +25,7 @@ venv/
 checkpoints/
 runs/
 wandb/
-data/
+/data/
 *.log
 
 # Local secrets / machine-specific overrides

@@ -95,10 +95,10 @@ Noise floor: at `small`, seed-to-seed spread in eval loss is typically 0.005–0
 - Resumable checkpoints every ≤ 30 min; every run records `nvidia-smi -q` power/thermal summaries; a throttled card invalidates throughput numbers, not loss numbers.
 - NCCL: expect host-bounced transfers; if collectives hang or crawl, set `NCCL_P2P_DISABLE=1` and re-measure. Keep the four cards on x16 slots.
 - The CPU is shared: FAISS builds, tokenisation and simulator sweeps (parallelised across the 12 cores with multiprocessing) should not overlap with a `medium` run's data loading.
-- Tokenised corpus as `uint16` memmap on NVMe (10 B tokens ≈ 20 GB); never re-tokenise inside a run.
+- Tokenised corpus as `uint16` memmap on the NVMe, `/mnt/nvme/corpus/fineweb-edu/tok-mistral32k/` (11.01 B tokens, 22.0 GB, 111 train shards + `val.bin`; ADR-014, `scripts/data/tokenize_fineweb.py`); never re-tokenise inside a run.
 
 ## 8. Data and eval candidates (ADR-014 confirms; record licences)
-- **Pretraining corpus**: FineWeb-Edu, 10 B-token sample (open, deduplicated); tokenizer: a 32 k BPE trained on the sample, or an existing open 32 k vocabulary — decide once, log the choice.
+- **Pretraining corpus**: FineWeb-Edu `sample/10BT` (ODC-By); tokenizer: Mistral-7B-v0.1 32 k (Apache 2.0) — ADR-014.
 - **Knowledge source (L8 / L8b)**: plain sentence embeddings of a Wikipedia slice (≈ 1–2 M sentences; embedding them on one card takes well under an hour) for the product-key table — the author's suggested simplification; the same slice for chunk retrieval; entailment-style atomic facts (Wikidata triples rendered to sentences) only as the L8d upgrade. Coverage measured separately from model quality (`docs/03 §6`).
 - **Long-context evals (L9)**: synthetic needle / copy tasks at 8 k–32 k; a RULER-style subset; long-document perplexity (e.g. PG-19) — all at inference with the three real tiers.
 - **General evals**: fixed held-out loss on the corpus; a small knowledge-heavy QA set; a small code set. Same suite for every ladder step.

@@ -31,7 +31,7 @@ Each step = previous step + one feature, same data, same token budget, ≥ 2 see
 
 | Step | Adds | Bears on | Notes |
 |---|---|---|---|
-| L0 | Dense baseline | — | pre-norm, GQA, RoPE, SwiGLU, parallel form off |
+| L0 | Dense baseline | — | pre-norm, GQA, RoPE, SwiGLU, parallel form off; **the author's requested comparator** — a plain transformer on the same corpus at matched FLOPs/token (`04 §Author's answers`, Baseline) |
 | L1 | Standard MoE baseline (fine-grained, per-layer experts, top-k, aux-free balance) | H4 | DeepSeek-style |
 | L2 | Parallel attention + FF | H2 | on L1 |
 | L3 | MTP heads ($m$ = 4) | H13 | heads read the single stream ($p$ only if L4 is on) |
@@ -100,6 +100,6 @@ Simulator validation comes first: S0 on the local rig plus the published-deploym
 ## 7. Compute and data assumptions
 - **Hardware**: one workstation — Threadripper PRO 3945WX, 128 GB DDR4, 4 × RTX 3060 12 GB, no NVLink/P2P (`docs/06 §1`). Planning throughput 32 TFLOPS dense / 20 TFLOPS variants aggregate until measured.
 - **Token budgets**: `screen` 1.0 B, `small` 2.5 B, `medium` 7 B tokens at context 2048. Wall-clock ≈ 8 h / 21 h / 8 d per variant run (`06 §4`). Whole programme ≈ 2 months of GPU time, 3–4 calendar months.
-- **Pretraining corpus**: FineWeb-Edu 10 B-token sample, tokenised once to a `uint16` memmap; 32 k tokenizer chosen in ADR-014; licence recorded there.
+- **Pretraining corpus**: FineWeb-Edu `sample/10BT` (ODC-By), tokenised once to a `uint16` memmap on `/mnt/nvme/corpus`; tokenizer = Mistral-7B-v0.1 32 k (Apache 2.0); held-out = first 10 000 documents of shard 000 — ADR-014.
 - **Knowledge source**: a Wikipedia sentence slice (e.g. article lead sentences) embedded with a pretrained sentence encoder into a 2²⁰–2²¹-entry product-key table for L8 (author's addendum: no entailment extraction); the same slice with offline-precomputed chunk neighbours for L8b; entailment-style atomic facts only for L8d.
 - **Long-context evals**: synthetic needle/copy at 8 k–32 k, a RULER-style subset, long-document perplexity (PG-19 candidate), all at inference over the real VRAM/host/NVMe tiers. Note: with one $\mathcal{G}$ entry per token, 32 k of context is ≈ 33 MB per sequence at `small` — S6's tier limits must be set artificially small to exercise the warm/cold paths at our context lengths.
