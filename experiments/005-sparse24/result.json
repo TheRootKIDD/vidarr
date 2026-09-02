@@ -1,0 +1,523 @@
+{
+  "result_id": "005-sparse24",
+  "provenance": {
+    "date_utc": "2026-09-02T12:28:28+00:00",
+    "git_hash": "1829e0267b1e9d2a0e594938d12c1252f9a3ca07",
+    "git_dirty": true,
+    "driver_version": "595.80",
+    "torch_version": "2.13.0+cu130",
+    "torch_cuda_version": "13.0",
+    "python_version": "3.12.13",
+    "platform": "Linux-7.1.10-200.fc44.x86_64-x86_64-with-glibc2.43",
+    "gpus": [
+      {
+        "index": 0,
+        "name": "NVIDIA GeForce RTX 3060",
+        "sm": "8.6",
+        "multi_processor_count": 28,
+        "total_memory_bytes": 12490440704
+      },
+      {
+        "index": 1,
+        "name": "NVIDIA GeForce RTX 3060",
+        "sm": "8.6",
+        "multi_processor_count": 28,
+        "total_memory_bytes": 12490440704
+      },
+      {
+        "index": 2,
+        "name": "NVIDIA GeForce RTX 3060",
+        "sm": "8.6",
+        "multi_processor_count": 28,
+        "total_memory_bytes": 12490440704
+      },
+      {
+        "index": 3,
+        "name": "NVIDIA GeForce RTX 3060",
+        "sm": "8.6",
+        "multi_processor_count": 28,
+        "total_memory_bytes": 12490440704
+      }
+    ]
+  },
+  "bench": "sparse24",
+  "dtype": "bfloat16",
+  "note": "ADR-019: weights only, magnitude 2:4, fixed mask. Inference-time speed only; H3 quality comes from L10a training runs.",
+  "results": [
+    {
+      "device": 0,
+      "d": 768,
+      "d_ff": 832,
+      "b": 256,
+      "dense_s": 3.251775979995727e-05,
+      "sparse_s": 0.00036624385833740233,
+      "dense_tflops": 10.060831804300056,
+      "sparse_effective_tflops": 0.893272896056615,
+      "speedup": 0.08878718116277672
+    },
+    {
+      "device": 0,
+      "d": 768,
+      "d_ff": 832,
+      "b": 512,
+      "dense_s": 3.375103950500488e-05,
+      "sparse_s": 0.0003682918548583984,
+      "dense_tflops": 19.38640805131271,
+      "sparse_effective_tflops": 1.7766111722768645,
+      "speedup": 0.09164210139260763
+    },
+    {
+      "device": 0,
+      "d": 768,
+      "d_ff": 832,
+      "b": 1024,
+      "dense_s": 6.737728118896484e-05,
+      "sparse_s": 0.0003702783966064453,
+      "dense_tflops": 19.422316022664454,
+      "sparse_effective_tflops": 3.5341593244255214,
+      "speedup": 0.18196384613974
+    },
+    {
+      "device": 0,
+      "d": 768,
+      "d_ff": 832,
+      "b": 2048,
+      "dense_s": 0.00011892736434936523,
+      "sparse_s": 0.0003760902404785156,
+      "dense_tflops": 22.007094080648137,
+      "sparse_effective_tflops": 6.959089639417303,
+      "speedup": 0.31622028850854755
+    },
+    {
+      "device": 0,
+      "d": 768,
+      "d_ff": 832,
+      "b": 4096,
+      "dense_s": 0.00024518721103668217,
+      "sparse_s": 0.0003818495988845825,
+      "dense_tflops": 21.348957679594772,
+      "sparse_effective_tflops": 13.708254263695514,
+      "speedup": 0.6421041471639524
+    },
+    {
+      "device": 0,
+      "d": 768,
+      "d_ff": 832,
+      "b": 8192,
+      "dense_s": 0.000499510383605957,
+      "sparse_s": 0.0003919359922409058,
+      "dense_tflops": 20.958488807428967,
+      "sparse_effective_tflops": 26.710950234866864,
+      "speedup": 1.274469284512482
+    },
+    {
+      "device": 0,
+      "d": 768,
+      "d_ff": 1664,
+      "b": 256,
+      "dense_s": 3.42630410194397e-05,
+      "sparse_s": 0.00037222591400146485,
+      "dense_tflops": 19.09671192433753,
+      "sparse_effective_tflops": 1.7578341522923226,
+      "speedup": 0.09204904798569413
+    },
+    {
+      "device": 0,
+      "d": 768,
+      "d_ff": 1664,
+      "b": 512,
+      "dense_s": 7.497663974761963e-05,
+      "sparse_s": 0.0003749683380126953,
+      "dense_tflops": 17.453740957249906,
+      "sparse_effective_tflops": 3.4899555918123784,
+      "speedup": 0.19995458855270376
+    },
+    {
+      "device": 0,
+      "d": 768,
+      "d_ff": 1664,
+      "b": 1024,
+      "dense_s": 0.00011905023574829101,
+      "sparse_s": 0.00037957248687744136,
+      "dense_tflops": 21.98438062343418,
+      "sparse_effective_tflops": 6.895246063619654,
+      "speedup": 0.3136429532278789
+    },
+    {
+      "device": 0,
+      "d": 768,
+      "d_ff": 1664,
+      "b": 2048,
+      "dense_s": 0.00023199743270874024,
+      "sparse_s": 0.0003777740859985351,
+      "dense_tflops": 22.562712573512012,
+      "sparse_effective_tflops": 13.856142033046432,
+      "speedup": 0.6141168526568545
+    },
+    {
+      "device": 0,
+      "d": 768,
+      "d_ff": 1664,
+      "b": 4096,
+      "dense_s": 0.00042997760772705076,
+      "sparse_s": 0.00039234559535980225,
+      "dense_tflops": 24.34773950053161,
+      "sparse_effective_tflops": 26.683064389698,
+      "speedup": 1.0959154704737744
+    },
+    {
+      "device": 0,
+      "d": 768,
+      "d_ff": 1664,
+      "b": 8192,
+      "dense_s": 0.0008529919624328614,
+      "sparse_s": 0.0006291967868804931,
+      "dense_tflops": 24.546498079866748,
+      "sparse_effective_tflops": 33.27729258092487,
+      "speedup": 1.3556839135525893
+    },
+    {
+      "device": 0,
+      "d": 768,
+      "d_ff": 2048,
+      "b": 256,
+      "dense_s": 4.640768051147461e-05,
+      "sparse_s": 0.00037324798583984373,
+      "dense_tflops": 17.352868299480786,
+      "sparse_effective_tflops": 2.157563867861158,
+      "speedup": 0.1243347111627485
+    },
+    {
+      "device": 0,
+      "d": 768,
+      "d_ff": 2048,
+      "b": 512,
+      "dense_s": 8.198143959045411e-05,
+      "sparse_s": 0.000373493766784668,
+      "dense_tflops": 19.64606554905556,
+      "sparse_effective_tflops": 4.312288126962434,
+      "speedup": 0.21949881599421506
+    },
+    {
+      "device": 0,
+      "d": 768,
+      "d_ff": 2048,
+      "b": 1024,
+      "dense_s": 0.00013979647636413575,
+      "sparse_s": 0.00037963775634765627,
+      "dense_tflops": 23.042250819037047,
+      "sparse_effective_tflops": 8.484997654053506,
+      "speedup": 0.3682364939384902
+    },
+    {
+      "device": 0,
+      "d": 768,
+      "d_ff": 2048,
+      "b": 2048,
+      "dense_s": 0.00026339136123657226,
+      "sparse_s": 0.00037482177734375,
+      "dense_tflops": 24.459613685710575,
+      "sparse_effective_tflops": 17.18803797809115,
+      "speedup": 0.7027109339888098
+    },
+    {
+      "device": 0,
+      "d": 768,
+      "d_ff": 2048,
+      "b": 4096,
+      "dense_s": 0.0004961264133453369,
+      "sparse_s": 0.00039173119068145753,
+      "dense_tflops": 25.97100565784885,
+      "sparse_effective_tflops": 32.892203108936414,
+      "speedup": 1.266497090727631
+    },
+    {
+      "device": 0,
+      "d": 768,
+      "d_ff": 2048,
+      "b": 8192,
+      "dense_s": 0.0009609215736389161,
+      "sparse_s": 0.0007096320152282715,
+      "dense_tflops": 26.81780124720509,
+      "sparse_effective_tflops": 36.31431956703712,
+      "speedup": 1.3541124879065818
+    },
+    {
+      "device": 0,
+      "d": 768,
+      "d_ff": 2816,
+      "b": 256,
+      "dense_s": 6.006783962249755e-05,
+      "sparse_s": 0.0003696230316162109,
+      "dense_tflops": 18.43409489934907,
+      "sparse_effective_tflops": 2.9957447488005404,
+      "speedup": 0.16251108422504237
+    },
+    {
+      "device": 0,
+      "d": 768,
+      "d_ff": 2816,
+      "b": 512,
+      "dense_s": 0.00010895232200622558,
+      "sparse_s": 0.0003721011352539062,
+      "dense_tflops": 20.326253458585832,
+      "sparse_effective_tflops": 5.951587625468691,
+      "speedup": 0.292802981995422
+    },
+    {
+      "device": 0,
+      "d": 768,
+      "d_ff": 2816,
+      "b": 1024,
+      "dense_s": 0.00018134656906127928,
+      "sparse_s": 0.0003750707244873047,
+      "dense_tflops": 24.423869979604206,
+      "sparse_effective_tflops": 11.808932915397182,
+      "speedup": 0.4834996634545852
+    },
+    {
+      "device": 0,
+      "d": 768,
+      "d_ff": 2816,
+      "b": 2048,
+      "dense_s": 0.0003898777770996094,
+      "sparse_s": 0.00038377471923828127,
+      "dense_tflops": 22.720889900161676,
+      "sparse_effective_tflops": 23.082213611105374,
+      "speedup": 1.0159027094683086
+    },
+    {
+      "device": 0,
+      "d": 768,
+      "d_ff": 2816,
+      "b": 4096,
+      "dense_s": 0.0006765567779541016,
+      "sparse_s": 0.0005471231937408447,
+      "dense_tflops": 26.1866271587363,
+      "sparse_effective_tflops": 32.38162866915832,
+      "speedup": 1.2365711885257153
+    },
+    {
+      "device": 0,
+      "d": 768,
+      "d_ff": 2816,
+      "b": 8192,
+      "dense_s": 0.0013338111877441406,
+      "sparse_s": 0.0010719743728637697,
+      "dense_tflops": 26.56558928098979,
+      "sparse_effective_tflops": 33.054409777856705,
+      "speedup": 1.244256599326042
+    },
+    {
+      "device": 0,
+      "d": 1024,
+      "d_ff": 1664,
+      "b": 256,
+      "dense_s": 4.0447998046875e-05,
+      "sparse_s": 0.00037101119995117186,
+      "dense_tflops": 21.56881116808209,
+      "sparse_effective_tflops": 2.351452549450844,
+      "speedup": 0.10902096231110621
+    },
+    {
+      "device": 0,
+      "d": 1024,
+      "d_ff": 1664,
+      "b": 512,
+      "dense_s": 8.589311599731445e-05,
+      "sparse_s": 0.00038029312133789066,
+      "dense_tflops": 20.313973288086952,
+      "sparse_effective_tflops": 4.588119968779864,
+      "speedup": 0.2258602934892382
+    },
+    {
+      "device": 0,
+      "d": 1024,
+      "d_ff": 1664,
+      "b": 1024,
+      "dense_s": 0.0001419878387451172,
+      "sparse_s": 0.0003801107025146484,
+      "dense_tflops": 24.577181812481143,
+      "sparse_effective_tflops": 9.180643704357465,
+      "speedup": 0.3735433856657729
+    },
+    {
+      "device": 0,
+      "d": 1024,
+      "d_ff": 1664,
+      "b": 2048,
+      "dense_s": 0.0002783052825927734,
+      "sparse_s": 0.00038572032928466793,
+      "dense_tflops": 25.07793524786377,
+      "sparse_effective_tflops": 18.094254635070442,
+      "speedup": 0.7215209089676462
+    },
+    {
+      "device": 0,
+      "d": 1024,
+      "d_ff": 1664,
+      "b": 4096,
+      "dense_s": 0.0005175295829772949,
+      "sparse_s": 0.00039920639991760255,
+      "dense_tflops": 26.971682723328293,
+      "sparse_effective_tflops": 34.96598179508422,
+      "speedup": 1.2963960073889462
+    },
+    {
+      "device": 0,
+      "d": 1024,
+      "d_ff": 1664,
+      "b": 8192,
+      "dense_s": 0.001033011245727539,
+      "sparse_s": 0.0007173632144927978,
+      "dense_tflops": 27.025153442872877,
+      "sparse_effective_tflops": 38.91653051061246,
+      "speedup": 1.4400114542504328
+    },
+    {
+      "device": 0,
+      "d": 1024,
+      "d_ff": 2816,
+      "b": 256,
+      "dense_s": 7.82912015914917e-05,
+      "sparse_s": 0.00038100990295410154,
+      "dense_tflops": 18.85773851963012,
+      "sparse_effective_tflops": 3.8749517966672227,
+      "speedup": 0.20548337716283208
+    },
+    {
+      "device": 0,
+      "d": 1024,
+      "d_ff": 2816,
+      "b": 512,
+      "dense_s": 0.00014180352210998534,
+      "sparse_s": 0.0003819071960449219,
+      "dense_tflops": 20.82310772020009,
+      "sparse_effective_tflops": 7.73169515154325,
+      "speedup": 0.37130361401544704
+    },
+    {
+      "device": 0,
+      "d": 1024,
+      "d_ff": 2816,
+      "b": 1024,
+      "dense_s": 0.00023639936447143555,
+      "sparse_s": 0.00038561790466308597,
+      "dense_tflops": 24.981370170788168,
+      "sparse_effective_tflops": 15.314589806611028,
+      "speedup": 0.6130404258017466
+    },
+    {
+      "device": 0,
+      "d": 1024,
+      "d_ff": 2816,
+      "b": 2048,
+      "dense_s": 0.000506879997253418,
+      "sparse_s": 0.00038744064331054683,
+      "dense_tflops": 23.301689015151517,
+      "sparse_effective_tflops": 30.485082729260682,
+      "speedup": 1.3082778123696652
+    },
+    {
+      "device": 0,
+      "d": 1024,
+      "d_ff": 2816,
+      "b": 4096,
+      "dense_s": 0.0008920576095581055,
+      "sparse_s": 0.0007369215965270996,
+      "dense_tflops": 26.480711419189262,
+      "sparse_effective_tflops": 32.05540486169116,
+      "speedup": 1.210519020967926
+    },
+    {
+      "device": 0,
+      "d": 1024,
+      "d_ff": 2816,
+      "b": 8192,
+      "dense_s": 0.0017622528076171877,
+      "sparse_s": 0.0014575103759765624,
+      "dense_tflops": 26.809229669993467,
+      "sparse_effective_tflops": 32.4146167565669,
+      "speedup": 1.2090842279160048
+    },
+    {
+      "device": 0,
+      "d": 1024,
+      "d_ff": 4096,
+      "b": 256,
+      "dense_s": 9.789440155029297e-05,
+      "sparse_s": 0.0003788595199584961,
+      "dense_tflops": 21.93673605427514,
+      "sparse_effective_tflops": 5.668284772770804,
+      "speedup": 0.2583923496524972
+    },
+    {
+      "device": 0,
+      "d": 1024,
+      "d_ff": 4096,
+      "b": 512,
+      "dense_s": 0.00017739776611328125,
+      "sparse_s": 0.00038715393066406247,
+      "dense_tflops": 24.210943520322314,
+      "sparse_effective_tflops": 11.093694150626584,
+      "speedup": 0.4582099058351319
+    },
+    {
+      "device": 0,
+      "d": 1024,
+      "d_ff": 4096,
+      "b": 1024,
+      "dense_s": 0.0003478361511230469,
+      "sparse_s": 0.00039208961486816407,
+      "dense_tflops": 24.695347404995044,
+      "sparse_effective_tflops": 21.908090054586815,
+      "speedup": 0.8871343130064872
+    },
+    {
+      "device": 0,
+      "d": 1024,
+      "d_ff": 4096,
+      "b": 2048,
+      "dense_s": 0.0007223091125488282,
+      "sparse_s": 0.0005715763092041016,
+      "dense_tflops": 23.78464965418616,
+      "sparse_effective_tflops": 30.057000101915207,
+      "speedup": 1.263714224885591
+    },
+    {
+      "device": 0,
+      "d": 1024,
+      "d_ff": 4096,
+      "b": 4096,
+      "dense_s": 0.001293056011199951,
+      "sparse_s": 0.0011430399894714355,
+      "dense_tflops": 26.57250580824747,
+      "sparse_effective_tflops": 30.059961755046405,
+      "speedup": 1.1312430213381124
+    },
+    {
+      "device": 0,
+      "d": 1024,
+      "d_ff": 4096,
+      "b": 8192,
+      "dense_s": 0.0025665536880493164,
+      "sparse_s": 0.002265395164489746,
+      "dense_tflops": 26.77500067735951,
+      "sparse_effective_tflops": 30.334432514549075,
+      "speedup": 1.132938627344251
+    }
+  ],
+  "n_failed": 0,
+  "best": {
+    "device": 0,
+    "d": 1024,
+    "d_ff": 1664,
+    "b": 8192,
+    "dense_s": 0.001033011245727539,
+    "sparse_s": 0.0007173632144927978,
+    "dense_tflops": 27.025153442872877,
+    "sparse_effective_tflops": 38.91653051061246,
+    "speedup": 1.4400114542504328
+  },
+  "median_speedup": 0.6141168526568545
+}
