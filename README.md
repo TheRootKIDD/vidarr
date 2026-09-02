@@ -1,7 +1,7 @@
 # bigmoe — spec for a big-DC MoE LLM architecture (research project)
 
 **Status:** DRAFT v0.3 — 2026-09-02 (author's answers to Q1–Q10 and v2 of the note incorporated; see `docs/04 §Author's answers` and `§v2 diff`). Working title `bigmoe`; rename freely.
-**Source:** "The big-DC MoE LLM design" (19-point design note), v1 and v2 in `docs/source/` (with extracted text `v1.txt`, `v2.txt`); v2 is current.
+**Source:** "The big-DC MoE LLM design" (19-point design note), v1 and v2 in `docs/source/` (with extracted text `v1.txt`, `v2.txt`); v2 is current. The author's linked in-depth document, "Designing AI Chip Hardware and Software" (2026, 154 pp., a public Google Doc), is beside it as `Designing_AI_chip_software_and_hardware.{pdf,txt}`; its summary against P1–P19 is in `docs/05`.
 **Tooling:** Claude Code. `CLAUDE.md` holds the session rules.
 
 ## Goal
@@ -21,6 +21,7 @@ The note is a hardware/model co-design. Most of its individual ideas have preced
 | `docs/03-research-plan.md` | Hypotheses H1–H19, ablation ladder, simulator experiments, metrics, milestones, risks | Planning any experiment |
 | `docs/04-decision-log.md` | ADRs (decisions made) + open questions, including questions for the note's author | Before deciding anything |
 | `docs/05-reading-list.md` | Prior work per design point; what to re-check in the Phase-0 literature refresh | Phase 0 |
+| `docs/07-author-hardware-doc.md` | The author's 154-page hardware/software document read against P1–P19: unit model, fabric ratios, numbers for `note64.yaml`, disagreements with `docs/02` | Before any `note64` scenario or S-experiment |
 | `docs/06-compute-envelope.md` | The local rig (4 × RTX 3060 12 GB, TR PRO 3945WX, 128 GB): what it can measure vs only simulate, anchor sizes `screen`/`small`/`medium`, time budgets, microbenchmarks, operational rules | Before sizing or launching any run |
 
 ## Point → spec map
