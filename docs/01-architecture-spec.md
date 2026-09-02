@@ -42,7 +42,7 @@ Positions $t$ are causal. `screen`/`small`/`medium` sizes are anchored in `docs/
 
 Embedding → $E$ early blocks → middle block $M$ applied $r_t$ times → $F$ final blocks (last $F_p$ prediction-only) → output heads.
 
-- Early and final blocks are standard pre-norm blocks (parallel form, §4.1) with their own parameters; dense by default (ADR-006 pending). They give the shared block a stable input distribution and specialise the output.
+- Early and final blocks are standard pre-norm blocks (parallel form, §4.1) with their own parameters; dense, SwiGLU width 4$d$ (ADR-006). They give the shared block a stable input distribution and specialise the output.
 - $M$ holds "almost all" experts. One weight set, $r_t$ applications, conditioned on $j$ through $e_j$ (§4.2).
 - $r_t$ is per token (§4.7). Prefill may use a fixed schedule for throughput (ADR-007 pending).
 - The final middle-layer vector $c_t^{(r_t)}$ is the token's *global representation*: it is the only thing far tokens ever attend to (§4.3, v2 P7).
@@ -92,7 +92,7 @@ Per-iteration adapters on attention are what lets the shared block simulate per-
 Grouped-query attention with rotary positions. Two key ranges, combined either in one softmax or as two gated branches (ADR-008 pending):
 - **Local, per-iteration**: at iteration $j$, token $t$ attends to $\{c_s^{(j)} : t - W < s \le t\}$ — the per-iteration KV of tokens still in flight (the current segment). This is the only place per-iteration KV is used; these caches are transient and are discarded once a token leaves the local range (Q11 asks whether iterations $j' < j$ should also be visible locally; default: same iteration only).
 - **Global, final-vector**: at every iteration, token $t$ attends to $\mathcal{G}_{<t-W} = \{K/V(c_s^{(r_s)})\}$ — one entry per *completed* token, computed once from its final middle-layer vector. Dense over $\mathcal{G}$ at Tier-A context lengths; indexed (§6) beyond that.
-- **Visibility rule**: a token becomes globally visible only when its iterations are complete. Hence batches (segments) of one document are processed in order, each attending globally to the previous ones' final vectors, while parallelism comes from many documents in flight — Transformer-XL-style segment recurrence with a single global cache. Whether local attention should also reach into the previous segment's per-iteration caches is ADR-022; whether gradients flow into earlier segments' final vectors is ADR-023 (default: stop-gradient).
+- **Visibility rule**: a token becomes globally visible only when its iterations are complete. Hence batches (segments) of one document are processed in order, each attending globally to the previous ones' final vectors, while parallelism comes from many documents in flight — Transformer-XL-style segment recurrence with a single global cache. Whether local attention should also reach into the previous segment's per-iteration caches is ADR-022; gradients do not flow into earlier segments' final vectors (ADR-023: stop-gradient; `through` is an ablation knob).
 - **Consequence**: the persistent KV cache is one entry per token; only the last $W$ tokens of each in-flight sequence carry $r_{max}$ caches (ADR-017 as amended). Sharing K/V across iterations (L6b) now concerns the transient local caches only.
 - **Baseline semantics** (ladder L5, before L5d): global attention over per-iteration caches of the same iteration, i.e. the standard layered semantics; L5d switches the global range to $\mathcal{G}$ and measures the cost (H15a).
 
@@ -160,7 +160,7 @@ One low-dimensional indexer per iteration, shared across heads: $q_{idx} = W_{id
 Blocks of $\mathcal{G}$ enter the cold index when older than the warm horizon; the ANN key is $\kappa_{blk}$; insertion is incremental per block, once, when the block's tokens complete. A halted token's global entry is simply its last computed vector (ADR-010/011). Cold-tier hits per token are a *measured* quantity (`02 §7`); the "KV on SSD" claim rests entirely on them being rare.
 
 ## 7. Multi-token prediction (note P13)
-$m$ heads on $p_t^{out}$: head 1 predicts $x_{t+1}$ (main loss); heads $2..m$ predict $x_{t+2..t+m}$ via small sequential MTP modules or independent heads (ADR-012). Loss weights $\lambda_2 \ge \lambda_3 \ge \lambda_4$. Decode: draft $m$ tokens from the heads, verify with one pass computing $c$ for all drafts and $p$ for the last accepted token. Acceptance rate per head is a first-class metric.
+$m$ heads on $p_t^{out}$ ($c_t^{out}$ single-stream): head 1 predicts $x_{t+1}$ (main loss); heads $2..m$ predict $x_{t+2..t+m}$ as **independent heads** — RMSNorm → linear $d \to d$ adapter → tied output embedding — with each position contributing to exactly one auxiliary head per step (`mtp.subsample`, ADR-012; sequential modules are the optional L3b). Loss weights $\lambda_2 \ge \lambda_3 \ge \lambda_4$. Decode: draft $m$ tokens from the heads, verify with one pass computing $c$ for all drafts and $p$ for the last accepted token. Acceptance rate per head is a first-class metric.
 
 ## 8. Numerics and sparsity (note P3)
 - Precision ladder: BF16 → FP8 weights+activations (block scaling) → FP4 weights (NVFP4-style) — separate ladder steps.
@@ -223,10 +223,10 @@ model:
     index: { enabled: false, block: 16, topk: 32, indexer_dim: 32 }
   memory: { enabled: false, n_entries: 1048576, key_dim: 128, topk: 1, values: parametric, encoder_finetune: false }   # GPU product-key memory (L8); L8b = chunk retrieval; L8c = encoder fine-tune
   halting: { mode: fixed, ponder_cost: 0.0, output: last, halted_kv: once }
-  mtp: { heads: 1 }
+  mtp: { m: 4, style: independent, subsample: auto }   # ADR-012; m: 1 disables
   numerics: { dtype: bf16, sparsity_2_4: false }   # mask, when on, is fixed after 1% of tokens (ADR-019)
   tenants: { lora_rank: 0 }
 ```
 
 ## 12. Dependencies
-Accepted: ADR-001 ($U$ abstract), ADR-002 (stream visibility), ADR-003 (depth conditioning), ADR-004 (router shape), ADR-009 (parametric memory values), ADR-010 (last state), ADR-011 (halted-token KV once), ADR-016 (lockstep training), ADR-017 (per-iteration KV), ADR-018 (local expert count), ADR-019 (weight-only fixed 2:4 mask), ADR-020 (two streams optional), ADR-021 (v2 attention: local per-iteration, global final-vector). Pending: ADR-006, 007, 008, 012, 022, 023. Open: Q9 (indexer is ours; the index lives over $\mathcal{G}$), Q11, Q12.
+Accepted: ADR-001 ($U$ abstract), ADR-002 (stream visibility), ADR-003 (depth conditioning), ADR-004 (router shape), ADR-009 (parametric memory values), ADR-010 (last state), ADR-011 (halted-token KV once), ADR-016 (lockstep training), ADR-017 (per-iteration KV), ADR-018 (local expert count), ADR-019 (weight-only fixed 2:4 mask), ADR-020 (two streams optional), ADR-021 (v2 attention: local per-iteration, global final-vector). ADR-022 (sliding local window), ADR-006 (dense skeleton), ADR-012 (independent MTP heads), ADR-023 (stop-gradient memory), ADR-025/026/027 (widths, L4 budget, key convention), ADR-013/014/015 (thresholds, corpus, envelope). Pending: ADR-007, 008, 024. Open: Q9 (indexer is ours; the index lives over $\mathcal{G}$), Q11, Q12.
