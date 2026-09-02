@@ -1,0 +1,108 @@
+{
+  "result_id": "007-faiss-1m",
+  "provenance": {
+    "date_utc": "2026-09-02T12:31:55+00:00",
+    "git_hash": "25f61688af7b8702bf1e0f04ca9f07015e412d80",
+    "git_dirty": true,
+    "driver_version": "595.80",
+    "torch_version": "2.13.0+cu130",
+    "torch_cuda_version": "13.0",
+    "python_version": "3.12.13",
+    "platform": "Linux-7.1.10-200.fc44.x86_64-x86_64-with-glibc2.43",
+    "gpus": [
+      {
+        "index": 0,
+        "name": "NVIDIA GeForce RTX 3060",
+        "sm": "8.6",
+        "multi_processor_count": 28,
+        "total_memory_bytes": 12490440704
+      },
+      {
+        "index": 1,
+        "name": "NVIDIA GeForce RTX 3060",
+        "sm": "8.6",
+        "multi_processor_count": 28,
+        "total_memory_bytes": 12490440704
+      },
+      {
+        "index": 2,
+        "name": "NVIDIA GeForce RTX 3060",
+        "sm": "8.6",
+        "multi_processor_count": 28,
+        "total_memory_bytes": 12490440704
+      },
+      {
+        "index": 3,
+        "name": "NVIDIA GeForce RTX 3060",
+        "sm": "8.6",
+        "multi_processor_count": 28,
+        "total_memory_bytes": 12490440704
+      }
+    ]
+  },
+  "bench": "faiss",
+  "n_vectors": 1000000,
+  "dim": 768,
+  "index": "IVF4000,PQ96x8",
+  "threads": 24,
+  "faiss_version": "1.15.0",
+  "generate_s": 6.743879714999821,
+  "train_s": 36.446404280000024,
+  "add_s": 16.783056332000342,
+  "build_s": 53.229460612000366,
+  "exact_search_qps": 209.22229883060743,
+  "single_query_latency_s": {
+    "8": 0.0013501359999281703,
+    "32": 0.003941996000321524
+  },
+  "results": [
+    {
+      "nprobe": 1,
+      "k": 10,
+      "n_queries": 1000,
+      "seconds": 0.036376805000145396,
+      "qps": 27490.04482378271,
+      "recall_at_10": 0.0042
+    },
+    {
+      "nprobe": 4,
+      "k": 10,
+      "n_queries": 1000,
+      "seconds": 0.08134244699976989,
+      "qps": 12293.704417360703,
+      "recall_at_10": 0.0107
+    },
+    {
+      "nprobe": 8,
+      "k": 10,
+      "n_queries": 1000,
+      "seconds": 0.13842557400039368,
+      "qps": 7224.098633661119,
+      "recall_at_10": 0.0181
+    },
+    {
+      "nprobe": 16,
+      "k": 10,
+      "n_queries": 1000,
+      "seconds": 0.1725179549994209,
+      "qps": 5796.498109448125,
+      "recall_at_10": 0.0261
+    },
+    {
+      "nprobe": 32,
+      "k": 10,
+      "n_queries": 1000,
+      "seconds": 0.3608052459994724,
+      "qps": 2771.57832677816,
+      "recall_at_10": 0.0328
+    },
+    {
+      "nprobe": 64,
+      "k": 10,
+      "n_queries": 1000,
+      "seconds": 0.6435639580004135,
+      "qps": 1553.8471158438574,
+      "recall_at_10": 0.0434
+    }
+  ]
+}
