@@ -36,6 +36,7 @@ Compiled from memory on 2026-09-02. **Verify every entry**, add work published a
 - Graves 2016 — Adaptive Computation Time.
 - Raposo et al. 2024 — Mixture-of-Depths.
 - Schuster et al. 2022 — CALM (early exit with state propagation).
+- Dai et al. 2019 — Transformer-XL (segment recurrence, stop-gradient memory); Rae et al. 2020 — Compressive Transformer; Hutchins et al. 2022 — Block-Recurrent Transformers — precedents for v2 P7's segment-sequential processing with a memory of earlier segments.
 
 ## P10 / P11 / P14 — Serving systems
 - Yu et al. 2022 — Orca (continuous batching).
@@ -55,7 +56,7 @@ Compiled from memory on 2026-09-02. **Verify every entry**, add work published a
 - Mohtashami & Jaggi 2023 — Landmark Attention.
 - Tang et al. 2024 — Quest; Chen et al. 2024 — MagicPIG; Liu et al. 2024 — RetrievalAttention.
 - Yuan et al. 2025 — Native Sparse Attention (NSA); DeepSeek-AI 2025 — DeepSeek-V3.2-Exp / DeepSeek Sparse Attention (lightning indexer).
-- Brandon et al. 2024 — Cross-Layer Attention (KV sharing); Sun et al. 2024 — You Only Cache Once.
+- Brandon et al. 2024 — Cross-Layer Attention (KV sharing); Sun et al. 2024 — You Only Cache Once — the closest precedent for v2 P7's single global cache built from one representation per token.
 - Sheng et al. 2023 — FlexGen; Lee et al. 2024 — InfiniGen (KV offload).
 - Malkov & Yashunin 2018 — HNSW; Johnson et al. 2019 — FAISS / IVF-PQ.
 

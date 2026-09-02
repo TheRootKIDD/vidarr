@@ -18,6 +18,7 @@ Research project: an LLM architecture derived from the 19-point note "The big-DC
 - **Simulation is the source of truth for systems claims.** No hand-wavy network arguments; run `sim/`.
 - **Unknown → question, not guess.** Add to `docs/04 §Open questions`.
 - **Don't "fix" the note silently.** Disagreements go in `docs/00` or `docs/04`.
+- **The author's answers** (`docs/04 §Author's answers`) settle *intent* — what the design means — not performance. A confirmed intent is still a hypothesis to measure.
 - **Hardware numbers are scenario inputs**, never constants in code. Each number in `sim/scenarios/*.yaml` carries a source line.
 
 ## Compute envelope (`docs/06`)

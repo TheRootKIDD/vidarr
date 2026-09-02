@@ -1,7 +1,7 @@
 # bigmoe — spec for a big-DC MoE LLM architecture (research project)
 
-**Status:** DRAFT v0.1 — 2026-09-02. Working title `bigmoe`; rename freely.
-**Source:** "The big-DC MoE LLM design" (19-point design note). Keep a copy at `docs/source/The_big-DC_MoE_LLM_design.pdf`.
+**Status:** DRAFT v0.3 — 2026-09-02 (author's answers to Q1–Q10 and v2 of the note incorporated; see `docs/04 §Author's answers` and `§v2 diff`). Working title `bigmoe`; rename freely.
+**Source:** "The big-DC MoE LLM design" (19-point design note), v1 and v2 in `docs/source/` (with extracted text `v1.txt`, `v2.txt`); v2 is current.
 **Tooling:** Claude Code. `CLAUDE.md` holds the session rules.
 
 ## Goal
@@ -35,15 +35,15 @@ Tier A = testable in small-scale training experiments on the local rig (`docs/06
 | 4 | Expert size = smallest FF that fills a U-chip unit | 01 §4.5, 02 §2 | A + S |
 | 5 | N × U fabric (rail-optimized clos + fat local unit) | 02 §3 | S |
 | 6 | Few early/final layers + one repeated middle layer holding all experts | 01 §2, §4 | A |
-| 7 | Variable iteration count per token; RL for compute allocation | 01 §4.7 | A |
+| 7 | Variable iteration count per token; RL for compute allocation; **v2:** local per-iteration + global final-vector attention | 01 §4.3, §4.7 | A |
 | 8 | Experts with 2+ internal layers | 01 §4.5 | A + S |
 | 9 | Multicast + co-activation placement | 02 §3–4 | S |
 | 10 | One combined installation per DC | 02 §5.6 | S / O |
 | 11 | Continuous (non-lockstep) execution | 02 §5 | S |
-| 12 | Two latent streams per token (context / prediction) | 01 §3 | A |
+| 12 | Two latent streams per token (context / prediction) | 01 §3 | A (optional — author suggests leaving it out) |
 | 13 | Multi-token prediction trained from the start | 01 §7 | A |
 | 14 | Managed prefill/decode aggregation, no disaggregation | 02 §6 | S |
-| 15 | Indexed (~O(log n)) attention, cold KV on SSD/storage | 01 §6, 02 §7 | A + S |
+| 15 | Indexed (~O(log n)) attention over the final-vector cache, cold KV on SSD/storage | 01 §6, 02 §7 | A + S |
 | 16 | ~4 GB HBM per chip, or no HBM | 02 §8 | S / O |
 | 17 | Per-iteration knowledge retrieval from a vector DB | 01 §4.6, 02 §9 | A |
 | 18 | Per-vector tiny QLoRAs; bespoke experts; shared spine | 01 §9, 02 §10 | A + S |

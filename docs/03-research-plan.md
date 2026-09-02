@@ -7,7 +7,7 @@ Numbered after the note's points. Tier A = small-scale training experiment; S = 
 |---|---|---|---|
 | H1 | At the pool sizes S4 finds viable, systolic-array units beat low-batch designs on cost per token | S | S4, cost model |
 | H2 | Parallel attn + MoE + memory in the shared block costs ≤ 1% loss at matched FLOPs and cuts the per-iteration critical path by ≥ 30% in sim | A + S | L2, S1 |
-| H3 | A 2:4 mask fixed at 1% of tokens, at 2× dense-equivalent width, matches dense within 1% loss; FP4 weights add ≤ 0.5% | A | L10a, L10b |
+| H3 | A weight-only 2:4 mask fixed at 1% of tokens (author, Q7), at 2× dense-equivalent width, matches dense within 1% loss; FP4 weights add ≤ 0.5% | A | L10a, L10b |
 | H4 | Coarse TP experts sized to the unit ($g$ = 1) are within 1% loss of $g$ = $U$ sub-experts at matched FLOPs and unit count | A | L7 |
 | H5 | Rail clos with unit = node keeps per-port bandwidth at $1/U$ with ≤ 5% utilisation loss at scale | S | S3 |
 | H6 | One depth-conditioned shared middle block with $r_{max} n$ experts matches $r_{max}$ stacked MoE layers with $n$ experts each, at matched params and FLOPs | A | L5 |
@@ -16,11 +16,12 @@ Numbered after the note's points. Tier A = small-scale training experiment; S = 
 | H9 | Co-activation placement + multicast + in-network reduction cut upper-tier bytes ≥ 3× vs random placement | S | S3 |
 | H10 | Utilisation vs pool size follows $Z_{min} \approx N_e b_{min}/k$; pooling two half-size installations gains ≥ X% utilisation | S | S4 |
 | H11 | Continuous scheduling reaches ≥ 90% expert utilisation with p99 iteration latency ≤ 3× p50 | S | S1, S2 |
-| H12 | Two $d$-streams through shared weights match a single √2·$d$ stream at equal FLOPs (≤ 1% loss); prefill FLOPs ≈ ½ of decode; decode weight bytes ≈ ½ | A + S | L4, L4b, Q1 |
+| H12 | *(optional — author, Q1)* Two $d$-streams through shared weights match a single √2·$d$ stream at equal FLOPs (≤ 1% loss); the latency floor at full utilisation halves with half the tokens in flight, throughput unchanged (S1, incl. the non-halving fabric term) | A + S | L4 (last), S1 |
 | H13 | Four MTP heads trained from scratch reach acceptance ≥ 70 / 55 / 45% for heads 2 / 3 / 4 with no main-loss regression | A | L3 |
 | H14 | Managed aggregation matches disaggregation's throughput at equal p99 TPOT, without KV transfer | S | S5 |
-| H15 | Indexed attention with a shared indexer: ≤ 2% loss on long-context evals; cold-tier hits per token low enough for SSD bandwidth at target throughput | A + S | L9, S6 |
-| H16 | `note64` (4 GB/chip) fits resident experts + hot KV at target $Z$; training does not fit | S | S7 |
+| H15a | *(v2)* Global attention over final vectors only, with per-iteration attention kept local ($W$ = 512), costs ≤ 2% loss vs global per-iteration attention at 2 k–8 k context, dense, no index | A | L5d |
+| H15b | Indexing the final-vector cache with a shared indexer adds ≤ 1% on long-context evals; cold-tier hits per token low enough for SSD bandwidth at target throughput | A + S | L9, S6 |
+| H16 | `note64` (4 GB/chip) fits resident experts + in-flight local caches + resident $\mathcal{G}$ at target $Z$; training does not fit | S | S7 |
 | H17 | Per-iteration knowledge memory from a clean pipeline lowers loss on knowledge-heavy evals at matched active FLOPs with ≤ 0.5% regression elsewhere | A | L8 |
 | H18 | Per-vector LoRA on the shared block reaches ≥ 80% of full-fine-tune gains at rank ≤ 4; multi-tenant batching costs ≤ 5% throughput | A + S | L11, S8 |
 | H19 | — (opinion) | — | — |
@@ -33,17 +34,18 @@ Each step = previous step + one feature, same data, same token budget, ≥ 2 see
 | L0 | Dense baseline | — | pre-norm, GQA, RoPE, SwiGLU, parallel form off |
 | L1 | Standard MoE baseline (fine-grained, per-layer experts, top-k, aux-free balance) | H4 | DeepSeek-style |
 | L2 | Parallel attention + FF | H2 | on L1 |
-| L3 | MTP heads ($m$ = 4) | H13 | |
-| L4 | Two streams (default visibility); **L4b** $p$ sees only $s < t$ | H12 | prefill = $c$ only; compare to a √2·$d$ single-stream model |
-| L5 | Shared middle block, depth-conditioned router/norms; **L5b** per-iteration LoRA on attention | H6 | fixed $r$ |
-| L6 | Variable depth (ACT); **L6b** KV sharing across iterations | H7 | ragged semantics from `01 §4.7` |
+| L3 | MTP heads ($m$ = 4) | H13 | heads read the single stream ($p$ only if L4 is on) |
+| L5 | Shared middle block, depth-conditioned router/norms, per-iteration KV; run at $N_e$ ∈ {1, 8, 128} (dense recurrent block; author's local default; parameter-matched); **L5b** per-iteration LoRA on attention; **L5c** unshared per-iteration attention with a shared expert pool; **E-Q2** router without $e_j$ | H6 | fixed $r$ = 8 |
+| L5d | *(v2 attention)* global range switched from per-iteration caches to the final-vector cache $\mathcal{G}$; local per-iteration attention within $W$; segment-recurrent training with stop-gradient memory | H15a | dense over $\mathcal{G}$, no index; the single most informative cheap run after L5 |
+| L6 | Variable depth (ACT, last-state output, halted-token KV stored once — ADR-010/011) on top of L5d; **L6b** KV sharing across iterations for the transient local caches (low priority after v2) | H7 | ragged semantics from `01 §4.7` |
 | L7 | Hardware-quantised experts ($g$ sweep); **L7b** $L_e$ = 2 | H4, H8 | |
 | L8 | Knowledge memory | H17 | |
-| L9 | Indexed attention (hot/warm/cold) | H15 | produces the hit-locality model for S6 |
-| L10a / L10b | 2:4 sparsity / FP4 | H3 | separately |
+| L9 | Index over $\mathcal{G}$ (hot/warm/cold tiers, shared indexer) | H15b | produces the hit-locality model for S6; one index per sequence |
+| L10a / L10b | weight-only 2:4 sparsity, fixed mask (one run) / FP4 fake-quant | H3 | separately |
 | L11 | Per-vector LoRA + tenant experts | H18 | |
+| L4 (optional, last) | Two streams (default visibility), $F_p$ prediction-only blocks, MTP from $p$; **L4b** $p$ sees only $s < t$ | H12 | the author suggests leaving it out; only if budget remains; compare to a √2·$d$ single-stream model |
 
-Model sizes are fixed by `docs/06 §3` (ADR-015): `screen` and `small` are matched to a 12-layer, $d$ = 768 dense model (≈ 0.6 GFLOP/token training cost; recurrent variants ≈ 200 M total params, $r$ = 8, $d_{ff}$ = 512, $N_e$ = 128); `medium` is matched to a 24-layer, $d$ = 1024 dense model (≈ 2 GFLOP/token; recurrent variants ≈ 500 M total, $r$ = 16). Token budgets 1 B / 2.5 B / 7 B (§7). `screen` runs every variant once; `small` runs the decisive steps (L0, L1, L2, L4, L5, L6, L7, L9) at 2 seeds; `medium` confirms L0, L1 and the two best recurrent variants. L8 splits into L8 (GPU product-key memory, in-loop) and L8b (chunk-level external retrieval, neighbours precomputed offline) — `docs/06 §5`.
+Model sizes are fixed by `docs/06 §3` (ADR-015, ADR-018): `screen` and `small` are matched to a 12-layer, $d$ = 768 dense model (≈ 0.6 GFLOP/token training cost); the recurrent default is single-stream, $r$ = 8, $N_e$ = 8, $k$ = 2 (≈ 80 M total params), with the parameter-matched $N_e$ = 128, $k$ = 4 variant (≈ 250 M total) for H6; `medium` is matched to a 24-layer, $d$ = 1024 dense model (≈ 2 GFLOP/token; $r$ = 16; ≈ 160 M / ≈ 700 M total). Token budgets 1 B / 2.5 B / 7 B (§7). `screen` runs every variant once; `small` runs the decisive steps (L0, L1, L2, L5, L5d, L6, L7, L9) at 2 seeds; `medium` confirms L0, L1 and the two best recurrent variants. L8 splits into L8 (GPU product-key memory over sentence embeddings, parametric values, in-loop), L8b (chunk-level external retrieval, neighbours precomputed offline), L8c (encoder fine-tuned by backpropagation, budget permitting) and L8d (entailments instead of sentences, only if L8 is used) — `docs/06 §5`, ADR-009.
 
 **Recurrence caveat.** Shared-block benefits (H6) may only appear with scale; if `small` is silent on H6, that is a recorded outcome, not a failure — fit across three sizes if the budget allows.
 
@@ -71,8 +73,8 @@ Simulator validation comes first: S0 on the local rig plus the published-deploym
 - Every `results.md` carries: H numbers touched, verdict (supports / weakens / silent), config hash, seeds, hardware, wall-clock, one-paragraph interpretation.
 
 ## 5. Milestones (ordered, undated)
-- **Phase 0 — Spec, cost model, rig.** Literature refresh (`docs/05`, incl. the author's linked post); ADR-006 to ADR-014 resolved; `costmodel/` with worked examples matching `01 §10`, `02 §2` and `06 §3`; eval suite and corpus chosen; `scripts/bench/` run and `sim/scenarios/local_3060.yaml` written from measured numbers; thresholds set against the noise floor in `06 §4`. Exit: no pending ADR blocks L0–L5; `bench_train_step` numbers replace the throughput assumptions.
-- **Phase 1 — Reference model, L0–L5.** `model/` with all knobs (DDP, replicated experts); unit tests for masks, stream visibility, halting/ragged semantics; every variant at `screen`, then L0–L5 at `small`.
+- **Phase 0 — Spec, cost model, rig.** Literature refresh (`docs/05`, incl. the author's linked post); ADR-006 to ADR-014 resolved; `costmodel/` with worked examples matching `01 §10`, `02 §2` and `06 §3`; eval suite and corpus chosen; `scripts/bench/` run and `sim/scenarios/local_3060.yaml` written from measured numbers; thresholds set against the noise floor in `06 §4`. Exit: no pending ADR blocks L0–L3 or L5; `bench_train_step` numbers replace the throughput assumptions; the author's updated note is in `docs/source/` and `docs/00`–`01` re-checked against it (I7).
+- **Phase 1 — Reference model, L0–L3 and L5.** `model/` with all knobs (DDP, replicated experts, single-stream default); unit tests for masks, halting/ragged semantics, per-iteration KV; every variant at `screen`, then L0–L3 and L5 at `small`.
 - **Phase 2 — Simulator.** `sim/` calibrated by S0 (local) and I1 (published); S1–S4; S10.
 - **Phase 3 — L6–L9 and S5–S7.** Includes the L9 → S6 hand-off using the measured VRAM/host/NVMe tiers.
 - **Phase 4 — L10–L11, S8–S9, `medium` confirmations (FSDP), write-up.**
@@ -85,10 +87,11 @@ Simulator validation comes first: S0 on the local rig plus the published-deploym
 | Compounded changes hide regressions | Ladder discipline; two baselines per step |
 | Simulator not trusted | Calibrate against a published deployment before any S-result |
 | Four 12 GB cards: `medium` ≈ 1 week per run, nothing larger | `screen` → `small` → `medium` gating (`06 §7`); `medium` for ≤ 5 runs; scaling statements marked provisional |
-| Thin experts ($d_{ff}$ ≈ 512) at matched FLOPs confound H4/H6 | Trade $k$ or $r$ explicitly and log it; report $d_{ff}$ next to every loss |
+| Thin experts at matched FLOPs confound H4/H6 (worst in the $N_e$ = 128 and two-stream variants) | Author's local default is $N_e$ = 8 (Q6); trade $k$ or $r$ explicitly and log it; report $d_{ff}$ next to every loss |
 | Per-iteration retrieval infeasible in training (CPU index QPS) | L8 = GPU product-key memory; L8b = chunk-level retrieval precomputed offline |
 | No FP8/FP4 on Ampere | quality via fake-quant; speed claims to the cost model, labelled as such |
 | Indexed attention hurts exact copy | Dense window $W$; needle/copy tasks in the eval suite |
+| Final-vector-only global attention (v2) loses what intermediate iterations could have offered far tokens | L5d measures it before anything is built on it; fallback variant: global over the final vector plus one mid-iteration vector |
 | Knowledge-pipeline noise | Start from a clean structured source; measure coverage separately from model quality |
 | Drifting into building a production trainer | `model/` stays a reference implementation on PyTorch DDP/FSDP built-ins; no custom kernels, no cross-GPU expert parallelism in training code |
 | Silent hardware faults (no ECC, thermal throttling) | Log loss spikes, gradient norms and `nvidia-smi` power/thermals per run; rerun before interpreting |
@@ -98,5 +101,5 @@ Simulator validation comes first: S0 on the local rig plus the published-deploym
 - **Hardware**: one workstation — Threadripper PRO 3945WX, 128 GB DDR4, 4 × RTX 3060 12 GB, no NVLink/P2P (`docs/06 §1`). Planning throughput 32 TFLOPS dense / 20 TFLOPS variants aggregate until measured.
 - **Token budgets**: `screen` 1.0 B, `small` 2.5 B, `medium` 7 B tokens at context 2048. Wall-clock ≈ 8 h / 21 h / 8 d per variant run (`06 §4`). Whole programme ≈ 2 months of GPU time, 3–4 calendar months.
 - **Pretraining corpus**: FineWeb-Edu 10 B-token sample, tokenised once to a `uint16` memmap; 32 k tokenizer chosen in ADR-014; licence recorded there.
-- **Knowledge source**: structured entailment sentences (Wikidata-derived) embedded into a 2²⁰–2²¹-entry product-key table for L8; Wikipedia slice with offline-precomputed chunk neighbours for L8b.
-- **Long-context evals**: synthetic needle/copy at 8 k–32 k, a RULER-style subset, long-document perplexity (PG-19 candidate), all at inference over the real VRAM/host/NVMe tiers.
+- **Knowledge source**: a Wikipedia sentence slice (e.g. article lead sentences) embedded with a pretrained sentence encoder into a 2²⁰–2²¹-entry product-key table for L8 (author's addendum: no entailment extraction); the same slice with offline-precomputed chunk neighbours for L8b; entailment-style atomic facts only for L8d.
+- **Long-context evals**: synthetic needle/copy at 8 k–32 k, a RULER-style subset, long-document perplexity (PG-19 candidate), all at inference over the real VRAM/host/NVMe tiers. Note: with one $\mathcal{G}$ entry per token, 32 k of context is ≈ 33 MB per sequence at `small` — S6's tier limits must be set artificially small to exercise the warm/cold paths at our context lengths.
