@@ -426,7 +426,7 @@ def main() -> None:
         cfg.validate()
 
     out = Path(a.out_dir) if a.out_dir else RESULTS_DIR / a.id
-    if a.smoke_steps == 0 and out.exists() and not a.resume:
+    if a.smoke_steps == 0 and (out / "config.yaml").exists() and not a.resume:
         sys.exit(
             f"refusing to overwrite {out} — experiments are append-only, pick a new id or --resume"
         )
