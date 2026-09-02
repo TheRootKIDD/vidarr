@@ -1,0 +1,381 @@
+{
+  "result_id": "013-tiers-nvme-qd",
+  "provenance": {
+    "date_utc": "2026-09-02T14:47:36+00:00",
+    "git_hash": "2ee4627d4c883320018088ab20bae5ec1a041742",
+    "git_dirty": true,
+    "driver_version": "595.80",
+    "torch_version": "2.13.0+cu130",
+    "torch_cuda_version": "13.0",
+    "python_version": "3.12.13",
+    "platform": "Linux-7.1.12-200.fc44.x86_64-x86_64-with-glibc2.43",
+    "gpus": [
+      {
+        "index": 0,
+        "name": "NVIDIA GeForce RTX 3060",
+        "sm": "8.6",
+        "multi_processor_count": 28,
+        "total_memory_bytes": 12490440704
+      },
+      {
+        "index": 1,
+        "name": "NVIDIA GeForce RTX 3060",
+        "sm": "8.6",
+        "multi_processor_count": 28,
+        "total_memory_bytes": 12490440704
+      },
+      {
+        "index": 2,
+        "name": "NVIDIA GeForce RTX 3060",
+        "sm": "8.6",
+        "multi_processor_count": 28,
+        "total_memory_bytes": 12490440704
+      },
+      {
+        "index": 3,
+        "name": "NVIDIA GeForce RTX 3060",
+        "sm": "8.6",
+        "multi_processor_count": 28,
+        "total_memory_bytes": 12490440704
+      }
+    ]
+  },
+  "bench": "tiers",
+  "tiers": [
+    "storage"
+  ],
+  "storage": {
+    "path": "/mnt/nvme/bench/bench.bin",
+    "file_bytes": 8589934592,
+    "o_direct": true,
+    "queue_depths": [
+      1,
+      4,
+      16,
+      64
+    ],
+    "reader": "python threads, synchronous preadv",
+    "results": [
+      {
+        "queue_depth": 1,
+        "bytes": 4096,
+        "reps": 2000,
+        "random_latency_s_median": 4.567099995256285e-05,
+        "random_latency_s_p99": 5.5640200016569e-05,
+        "random_GBps": 0.08758983732074001,
+        "random_iops": 21384.237627133793,
+        "sequential_GBps": 0.22233340098638013
+      },
+      {
+        "queue_depth": 1,
+        "bytes": 16384,
+        "reps": 2000,
+        "random_latency_s_median": 6.972100004531967e-05,
+        "random_latency_s_p99": 7.5420710020353e-05,
+        "random_GBps": 0.23405233976846104,
+        "random_iops": 14285.421128446109,
+        "sequential_GBps": 0.59921348110263
+      },
+      {
+        "queue_depth": 1,
+        "bytes": 65536,
+        "reps": 2000,
+        "random_latency_s_median": 9.159199998975964e-05,
+        "random_latency_s_p99": 9.625849994336021e-05,
+        "random_GBps": 0.7132055681898753,
+        "random_iops": 10882.653323209768,
+        "sequential_GBps": 2.1859454905478732
+      },
+      {
+        "queue_depth": 1,
+        "bytes": 262144,
+        "reps": 1024,
+        "random_latency_s_median": 0.00011288749988125346,
+        "random_latency_s_p99": 0.00015980300003093362,
+        "random_GBps": 2.202879819272935,
+        "random_iops": 8403.319623080959,
+        "sequential_GBps": 4.070585918936417
+      },
+      {
+        "queue_depth": 1,
+        "bytes": 1048576,
+        "reps": 256,
+        "random_latency_s_median": 0.00023472449993278133,
+        "random_latency_s_p99": 0.0002682848999256748,
+        "random_GBps": 4.372223007463436,
+        "random_iops": 4169.676787818371,
+        "sequential_GBps": 4.78937706605518
+      },
+      {
+        "queue_depth": 1,
+        "bytes": 4194304,
+        "reps": 64,
+        "random_latency_s_median": 0.0006619874999387321,
+        "random_latency_s_p99": 0.00293726599988986,
+        "random_GBps": 5.839186253716823,
+        "random_iops": 1392.170489720541,
+        "sequential_GBps": 6.015079317862428
+      },
+      {
+        "queue_depth": 1,
+        "bytes": 16777216,
+        "reps": 20,
+        "random_latency_s_median": 0.0023805350000429826,
+        "random_latency_s_p99": 0.011391818999982206,
+        "random_GBps": 5.619343153239203,
+        "random_iops": 334.93895251984617,
+        "sequential_GBps": 5.660238957730446
+      },
+      {
+        "queue_depth": 1,
+        "bytes": 67108864,
+        "reps": 20,
+        "random_latency_s_median": 0.009223876500072947,
+        "random_latency_s_p99": 0.04386963100000685,
+        "random_GBps": 5.786692222704875,
+        "random_iops": 86.22843358970992,
+        "sequential_GBps": 5.787950942408195
+      },
+      {
+        "queue_depth": 4,
+        "bytes": 4096,
+        "reps": 8000,
+        "random_latency_s_median": 4.941550014336826e-05,
+        "random_latency_s_p99": 7.869000000027881e-05,
+        "random_GBps": 0.30447003036665504,
+        "random_iops": 74333.50350748414,
+        "sequential_GBps": 0.32745216533206994
+      },
+      {
+        "queue_depth": 4,
+        "bytes": 16384,
+        "reps": 8000,
+        "random_latency_s_median": 7.187199992131355e-05,
+        "random_latency_s_p99": 9.751100013772884e-05,
+        "random_GBps": 0.875054744330673,
+        "random_iops": 53409.10304752643,
+        "sequential_GBps": 0.8263573964601746
+      },
+      {
+        "queue_depth": 4,
+        "bytes": 65536,
+        "reps": 8000,
+        "random_latency_s_median": 9.566200014887727e-05,
+        "random_latency_s_p99": 0.0001644920000558159,
+        "random_GBps": 2.457085916198819,
+        "random_iops": 37492.15570371733,
+        "sequential_GBps": 2.7346000184834267
+      },
+      {
+        "queue_depth": 4,
+        "bytes": 262144,
+        "reps": 4096,
+        "random_latency_s_median": 0.0001566230000662472,
+        "random_latency_s_p99": 0.0002358095000954563,
+        "random_GBps": 6.407779984372371,
+        "random_iops": 24443.740785111888,
+        "sequential_GBps": 6.8234821719586956
+      },
+      {
+        "queue_depth": 4,
+        "bytes": 1048576,
+        "reps": 1024,
+        "random_latency_s_median": 0.0005707960000336243,
+        "random_latency_s_p99": 0.000893899249945207,
+        "random_GBps": 7.191865268986418,
+        "random_iops": 6858.697194086473,
+        "sequential_GBps": 7.2776153683309746
+      },
+      {
+        "queue_depth": 4,
+        "bytes": 4194304,
+        "reps": 256,
+        "random_latency_s_median": 0.002275088999908803,
+        "random_latency_s_p99": 0.003828114160107816,
+        "random_GBps": 7.220829065888136,
+        "random_iops": 1721.5798058243122,
+        "sequential_GBps": 7.2253971301944215
+      },
+      {
+        "queue_depth": 4,
+        "bytes": 16777216,
+        "reps": 80,
+        "random_latency_s_median": 0.009110154499921919,
+        "random_latency_s_p99": 0.01305046999982551,
+        "random_GBps": 7.072662418626556,
+        "random_iops": 421.56353107849094,
+        "sequential_GBps": 7.068970471665697
+      },
+      {
+        "queue_depth": 4,
+        "bytes": 67108864,
+        "reps": 64,
+        "random_latency_s_median": 0.03647450900007243,
+        "random_latency_s_p99": 0.05268801900001563,
+        "random_GBps": 7.0426953547135875,
+        "random_iops": 104.94433871974927,
+        "sequential_GBps": 7.0491082995557175
+      },
+      {
+        "queue_depth": 16,
+        "bytes": 4096,
+        "reps": 32000,
+        "random_latency_s_median": 8.870099986779678e-05,
+        "random_latency_s_p99": 0.0003310538998243828,
+        "random_GBps": 0.5903072443998992,
+        "random_iops": 144117.97958981915,
+        "sequential_GBps": 0.6019502431035857
+      },
+      {
+        "queue_depth": 16,
+        "bytes": 16384,
+        "reps": 32000,
+        "random_latency_s_median": 0.00011438249998718675,
+        "random_latency_s_p99": 0.00022668359992849218,
+        "random_GBps": 2.0728933765597524,
+        "random_iops": 126519.37112791456,
+        "sequential_GBps": 2.0873988210487973
+      },
+      {
+        "queue_depth": 16,
+        "bytes": 65536,
+        "reps": 32000,
+        "random_latency_s_median": 0.00016361300004064105,
+        "random_latency_s_p99": 0.00040775779016485105,
+        "random_GBps": 5.781520088831542,
+        "random_iops": 88218.99549608676,
+        "sequential_GBps": 6.700188461011588
+      },
+      {
+        "queue_depth": 16,
+        "bytes": 262144,
+        "reps": 16384,
+        "random_latency_s_median": 0.0004989149999801157,
+        "random_latency_s_p99": 0.0013483475000043653,
+        "random_GBps": 7.331412528455489,
+        "random_iops": 27967.119325468022,
+        "sequential_GBps": 7.3124375261745165
+      },
+      {
+        "queue_depth": 16,
+        "bytes": 1048576,
+        "reps": 4096,
+        "random_latency_s_median": 0.002382495500000914,
+        "random_latency_s_p99": 0.003796463970052173,
+        "random_GBps": 7.31785706719662,
+        "random_iops": 6978.852336117382,
+        "sequential_GBps": 7.323495968062305
+      },
+      {
+        "queue_depth": 16,
+        "bytes": 4194304,
+        "reps": 1024,
+        "random_latency_s_median": 0.009219932000064546,
+        "random_latency_s_p99": 0.012773422249892974,
+        "random_GBps": 7.313093705135256,
+        "random_iops": 1743.5774100149288,
+        "sequential_GBps": 7.317856443778698
+      },
+      {
+        "queue_depth": 16,
+        "bytes": 16777216,
+        "reps": 256,
+        "random_latency_s_median": 0.031087270999933025,
+        "random_latency_s_p99": 0.07087408107000556,
+        "random_GBps": 7.255003218805433,
+        "random_iops": 432.4318897012134,
+        "sequential_GBps": 7.244777595196701
+      },
+      {
+        "queue_depth": 16,
+        "bytes": 67108864,
+        "reps": 64,
+        "random_latency_s_median": 0.13312774550001905,
+        "random_latency_s_p99": 0.23301209399983236,
+        "random_GBps": 7.0552933678708305,
+        "random_iops": 105.13206374452756,
+        "sequential_GBps": 7.03310904935152
+      },
+      {
+        "queue_depth": 64,
+        "bytes": 4096,
+        "reps": 128000,
+        "random_latency_s_median": 0.00042004800002359843,
+        "random_latency_s_p99": 0.0020351434100030017,
+        "random_GBps": 0.5385210388961765,
+        "random_iops": 131474.86301176186,
+        "sequential_GBps": 0.5692190754817682
+      },
+      {
+        "queue_depth": 64,
+        "bytes": 16384,
+        "reps": 128000,
+        "random_latency_s_median": 0.0004182579999678637,
+        "random_latency_s_p99": 0.001873190599908412,
+        "random_GBps": 2.1859258774136103,
+        "random_iops": 133418.32747885806,
+        "sequential_GBps": 2.164536747611251
+      },
+      {
+        "queue_depth": 64,
+        "bytes": 65536,
+        "reps": 65536,
+        "random_latency_s_median": 0.0003817125000296073,
+        "random_latency_s_p99": 0.0027131801999485104,
+        "random_GBps": 6.891083705865685,
+        "random_iops": 105149.59267983529,
+        "sequential_GBps": 6.839742325532722
+      },
+      {
+        "queue_depth": 64,
+        "bytes": 262144,
+        "reps": 16384,
+        "random_latency_s_median": 0.0018935914999929082,
+        "random_latency_s_p99": 0.005826493149879752,
+        "random_GBps": 7.317998847224903,
+        "random_iops": 27915.95019235574,
+        "sequential_GBps": 7.350172524836269
+      },
+      {
+        "queue_depth": 64,
+        "bytes": 1048576,
+        "reps": 4096,
+        "random_latency_s_median": 0.008058074500127077,
+        "random_latency_s_p99": 0.017708702070158323,
+        "random_GBps": 7.324742699398932,
+        "random_iops": 6985.418986700947,
+        "sequential_GBps": 7.328555130194915
+      },
+      {
+        "queue_depth": 64,
+        "bytes": 4194304,
+        "reps": 1024,
+        "random_latency_s_median": 0.026113710500112575,
+        "random_latency_s_p99": 0.07110448549985904,
+        "random_GBps": 7.306859764673887,
+        "random_iops": 1742.0911227879255,
+        "sequential_GBps": 7.299041523694467
+      },
+      {
+        "queue_depth": 64,
+        "bytes": 16777216,
+        "reps": 256,
+        "random_latency_s_median": 0.10636752800007798,
+        "random_latency_s_p99": 0.24504178609991414,
+        "random_GBps": 7.199714624274959,
+        "random_iops": 429.1364326640939,
+        "sequential_GBps": 7.188748733556324
+      },
+      {
+        "queue_depth": 64,
+        "bytes": 67108864,
+        "reps": 256,
+        "random_latency_s_median": 0.5016278159999956,
+        "random_latency_s_p99": 0.8278799482299587,
+        "random_GBps": 7.221624115024236,
+        "random_iops": 107.61058501935356,
+        "sequential_GBps": 7.199466343665681
+      }
+    ]
+  }
+}

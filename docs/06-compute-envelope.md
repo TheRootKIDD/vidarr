@@ -13,7 +13,7 @@ Status: DRAFT, 2026-09-02. Fixes what the local rig can measure, what it can onl
 | GPU memory | 12 GB GDDR6, 192-bit, nominal ≈ 360 GB/s; **measured $\beta_C$ = 342 GB/s** (`011-tiers-mem`) | ridge point **79** FLOP/byte measured (was 71 nominal) |
 | GPU interconnect | PCIe 4.0 x16 per card (nominal 32 GB/s per direction); **no NVLink; no PCIe P2P on GeForce** — NCCL traffic bounces through host memory | **measured: x16 gen 4 on all four under load** (`000-env`); pinned host link 24–27 GB/s (`011`); **collectives $\lambda_{link}$ = 3.59 GB/s per rank, 44 µs floor** (`002-nccl`) |
 | Supported numerics | BF16 ✔, FP16 ✔, TF32 ✔, **2:4 structured sparsity ✔** (SM 8.0+), FP8 ✘, FP4 ✘ | FP8/FP4 are quality-only via simulated quantisation |
-| Storage | WD_BLACK SN850X **4 TB NVMe** at `/mnt/nvme` (corpus, cold KV tier, indexes); 1 TB HDD at `/mnt/hdd` (bulk: archives, provenance checkpoints); Samsung 850 PRO 256 GB SATA for the OS. **Measured $\beta_{cold}$ = 7.3 GB/s sequential, 46 µs / 70 µs random latency at 4 / 16 KiB, queue depth 1** (`012-tiers-nvme`; I10/I12 closed) | cold tier is 10× the warm tier's latency at KV-block sizes: batch cold fetches to ≥ 1 MiB (I16 for queue depth > 1); HDD is never a KV tier |
+| Storage | WD_BLACK SN850X **4 TB NVMe** at `/mnt/nvme` (corpus, cold KV tier, indexes); 1 TB HDD at `/mnt/hdd` (bulk: archives, provenance checkpoints); Samsung 850 PRO 256 GB SATA for the OS. **Measured $\beta_{cold}$ = 7.3 GB/s from 256 KiB at queue depth ≥ 16; a 16 KiB block costs 70 µs and 0.23 GB/s from one reader, 114 µs and 2.1 GB/s at QD 16** (`012`/`013-tiers-nvme-qd`; I10/I12/I16 closed) | cold is 10× warm in latency per block; the fetch rule is the warm tier's: aggregate to ≥ 64 KiB, keep ≥ 8 in flight; ≤ 16 KiB is capped at ≈ 1.3 × 10⁵ IOPS by a single-process reader; HDD is never a KV tier |
 | Power | ≈ 1 kW under load (4 × 170 W + 280 W + rest) | multi-day runs: checkpoint ≤ 30 min apart |
 
 Derived per card, BF16 weights: roofline $b_{min} = (\phi/\beta_C)(b_w/2)$ = **79** tokens at measured $\phi$, $\beta_C$; **the empirical batch floor for ≥ 80 % of $\phi$ is 512, seven times that** (`003-gemm`), and the simulator's queue must use the larger (I13). Tile floor **$s_{min}$ = 256** on every card (`003-gemm`), so $U s_{min}$ = 1024 at $U$ = 4, not 512. Odd $d_{ff}$ costs 12–27 % — derived widths are rounded to a multiple of 64 (`004-gemm-alignment`, ADR-025). All values in `sim/scenarios/local_3060.yaml` with result ids.
@@ -29,7 +29,7 @@ Derived per card, BF16 weights: roofline $b_{min} = (\phi/\beta_C)(b_w/2)$ = **7
 | FP8 / FP4 (P3) | quality only, fake-quant | FP4-vs-2:4 *speed* comparison moves to the cost model |
 | Expert parallelism across GPUs (P4/P5/P11) | **Real at toy scale**: 4 units of $U$ = 1 over host-bounced PCIe | used for S0 calibration and S10, **not** for training (experts are replicated; see §3) |
 | Tensor parallel inside a unit (P4) | **Real at toy scale**: $U$ = 4 across the four cards | S10 measures where TP breaks at low link bandwidth — Q4 in miniature |
-| KV / knowledge tiers (P15, P16) | **Real three-tier system, all measured**: VRAM 342 GB/s (`011`) → host DDR4 over PCIe 24–27 GB/s pinned (`011`) → NVMe 7.3 GB/s bulk, 0.24 GB/s at 16 KiB blocks from one reader (`012`) | L9's hit-locality model and S6's cold-tier bandwidth get measured, not assumed |
+| KV / knowledge tiers (P15, P16) | **Real three-tier system, all measured**: VRAM 342 GB/s (`011`) → host DDR4 over PCIe 24–27 GB/s pinned (`011`) → NVMe 7.3 GB/s bulk, 0.23 GB/s at 16 KiB blocks from one reader and 2.1 GB/s at QD 16 (`012`/`013`) | L9's hit-locality model and S6's cold-tier bandwidth get measured, not assumed |
 | Per-iteration external retrieval during training (P17) | ✘ (CPU index QPS is 1–2 orders of magnitude short, §5) | in-loop memory is GPU product-key memory; external retrieval only at chunk granularity, precomputed offline |
 | Datacenter-scale claims (P5, P9, P10, P11, P14, P16, P19) | simulation / cost model only | unchanged from `docs/03 §3` |
 
@@ -82,7 +82,7 @@ Noise floor: at `small`, seed-to-seed spread in eval loss is typically 0.005–0
 | `bench_gemm.py` | BF16 GEMM TFLOPS over ($b$, $d_{ff}$, $d$) grid; grouped-GEMM efficiency vs experts-per-batch | $\phi$, $s_{min}$, $b_{min}$ curve; MoE MFU assumption |
 | `bench_sparse24.py` | 2:4 semi-structured vs dense GEMM at the same shapes | H3 speed half |
 | `bench_nccl.py` | all-reduce / all-gather / all-to-all bandwidth and latency, 1 KB–1 GB, 4 GPUs, host-bounced | $\lambda_{link}$, $\beta_{link}$ for `local_3060`; DDP/FSDP overhead check |
-| `bench_tiers.py` | VRAM↔host (pinned/pageable) and host↔NVMe bandwidth and latency at KV-block sizes | KV tier table `02 §7`, S6 |
+| `bench_tiers.py` | VRAM↔host (pinned/pageable) and host↔NVMe bandwidth and latency at KV-block sizes, storage at queue depths 1–64 (`--queue-depth`) | KV tier table `02 §7`, S6 |
 | `bench_faiss.py` | CPU IVF-PQ build time and QPS at 1 M–100 M vectors | §5.1 numbers; L8b offline precompute budget |
 | `bench_train_step.py` | end-to-end tokens/s for `small` dense and recurrent-MoE configs | replaces the 8 / 5 TFLOPS assumptions in §4 |
 

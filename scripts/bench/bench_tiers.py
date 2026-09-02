@@ -18,7 +18,7 @@ figure for any config.
 
 Run: `python -m scripts.bench.bench_tiers --id 011-tiers-mem --tiers vram host`
      `python -m scripts.bench.bench_tiers --id 0NN-tiers-nvme --tiers storage \\
-        --storage-path /path/on/nvme/bench.bin`
+        --storage-path /path/on/nvme/bench.bin --queue-depth 1 4 16 64`
 """
 
 from __future__ import annotations
@@ -28,6 +28,7 @@ import mmap
 import os
 import statistics
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -123,11 +124,46 @@ def host_tier(device: int) -> list[dict[str, Any]]:
     return rows
 
 
-def storage_tier(path: Path, file_bytes: int) -> dict[str, Any]:
-    """Random + sequential reads with O_DIRECT at KV-block sizes.
+def _read_worker(fd: int, n: int, offsets: list[int]) -> list[float]:
+    """One reader: issue `offsets` in order into a private page-aligned buffer,
+    return the per-request wall times. `os.preadv` releases the GIL, so several
+    of these in threads give the drive a real queue depth."""
+    buf = mmap.mmap(-1, n)
+    times = []
+    try:
+        for off in offsets:
+            t0 = time.perf_counter()
+            os.preadv(fd, [buf], off)
+            times.append(time.perf_counter() - t0)
+    finally:
+        buf.close()
+    return times
+
+
+def _run_reads(fd: int, n: int, offsets: list[int], queue_depth: int) -> tuple[list[float], float]:
+    """Spread `offsets` round-robin over `queue_depth` threads; return every
+    request's latency and the wall time of the whole batch."""
+    if queue_depth == 1:
+        t0 = time.perf_counter()
+        times = _read_worker(fd, n, offsets)
+        return times, time.perf_counter() - t0
+    slices = [offsets[i::queue_depth] for i in range(queue_depth)]
+    with ThreadPoolExecutor(max_workers=queue_depth) as pool:
+        t0 = time.perf_counter()
+        futs = [pool.submit(_read_worker, fd, n, sl) for sl in slices]
+        times = [t for f in futs for t in f.result()]
+        wall = time.perf_counter() - t0
+    return times, wall
+
+
+def storage_tier(path: Path, file_bytes: int, queue_depths: list[int]) -> dict[str, Any]:
+    """Random + sequential reads with O_DIRECT at KV-block sizes, at each queue depth.
 
     O_DIRECT bypasses the page cache, so this measures the device, not RAM.
-    It requires aligned buffers and offsets, hence the mmap-backed buffer.
+    It requires aligned buffers and offsets, hence the mmap-backed buffers.
+    Queue depth > 1 is `queue_depth` Python threads each issuing synchronous
+    `preadv`; the GIL bounds the aggregate issue rate (a few 10^5 calls/s), so
+    high-QD small-block figures are a lower bound on the drive (I16).
     """
     if not path.exists() or path.stat().st_size < file_bytes:
         with open(path, "wb") as fh:
@@ -140,37 +176,40 @@ def storage_tier(path: Path, file_bytes: int) -> dict[str, Any]:
     rng_state = torch.Generator().manual_seed(0)
     rows = []
     try:
-        for n in BLOCK_SIZES:
-            buf = mmap.mmap(-1, n)
-            n_blocks = file_bytes // n
-            reps = max(20, min(2000, (256 << 20) // n))
-            offsets = (torch.randint(0, n_blocks, (reps,), generator=rng_state) * n).tolist()
-            times = []
-            for off in offsets:
-                t0 = time.perf_counter()
-                os.preadv(fd, [buf], off)
-                times.append(time.perf_counter() - t0)
-            rand_med = statistics.median(times)
-            rand_total = sum(times)
+        for qd in queue_depths:
+            for n in BLOCK_SIZES:
+                n_blocks = file_bytes // n
+                base = max(20, min(2000, (256 << 20) // n))
+                # enough requests per thread to matter, bounded at 4 GiB of traffic
+                reps = max(qd * 4, min(base * qd, (4 << 30) // n))
+                offsets = (torch.randint(0, n_blocks, (reps,), generator=rng_state) * n).tolist()
+                rand_times, rand_wall = _run_reads(fd, n, offsets, qd)
 
-            t0 = time.perf_counter()
-            for i in range(reps):
-                os.preadv(fd, [buf], (i * n) % (file_bytes - n))
-            seq_total = time.perf_counter() - t0
-            buf.close()
-            rows.append(
-                {
-                    "bytes": n,
-                    "reps": reps,
-                    "random_latency_s_median": rand_med,
-                    "random_GBps": reps * n / rand_total / 1e9,
-                    "random_iops": reps / rand_total,
-                    "sequential_GBps": reps * n / seq_total / 1e9,
-                }
-            )
+                seq_offsets = [(i * n) % (file_bytes - n) for i in range(reps)]
+                _, seq_wall = _run_reads(fd, n, seq_offsets, qd)
+                rows.append(
+                    {
+                        "queue_depth": qd,
+                        "bytes": n,
+                        "reps": reps,
+                        "random_latency_s_median": statistics.median(rand_times),
+                        "random_latency_s_p99": statistics.quantiles(rand_times, n=100)[98]
+                        if len(rand_times) >= 100 else max(rand_times),
+                        "random_GBps": reps * n / rand_wall / 1e9,
+                        "random_iops": reps / rand_wall,
+                        "sequential_GBps": reps * n / seq_wall / 1e9,
+                    }
+                )
     finally:
         os.close(fd)
-    return {"path": str(path), "file_bytes": file_bytes, "o_direct": True, "results": rows}
+    return {
+        "path": str(path),
+        "file_bytes": file_bytes,
+        "o_direct": True,
+        "queue_depths": queue_depths,
+        "reader": "python threads, synchronous preadv",
+        "results": rows,
+    }
 
 
 def main() -> None:
@@ -180,6 +219,8 @@ def main() -> None:
     ap.add_argument("--device", type=int, default=0)
     ap.add_argument("--storage-path", type=Path, default=None)
     ap.add_argument("--storage-file-gib", type=int, default=8)
+    ap.add_argument("--queue-depth", type=int, nargs="+", default=[1],
+                    help="storage tier: concurrent readers to sweep, e.g. 1 4 16 64")
     args = ap.parse_args()
 
     payload: dict[str, Any] = {"bench": "tiers", "tiers": args.tiers}
@@ -193,7 +234,9 @@ def main() -> None:
     if "storage" in args.tiers:
         if args.storage_path is None:
             raise SystemExit("--storage-path is required for the storage tier")
-        payload["storage"] = storage_tier(args.storage_path, args.storage_file_gib << 30)
+        payload["storage"] = storage_tier(
+            args.storage_path, args.storage_file_gib << 30, args.queue_depth
+        )
 
     path = write_result(args.id, payload)
     print(f"wrote {path}\n")
@@ -218,13 +261,14 @@ def main() -> None:
                   f"{d[False]['h2d_GBps']:>13.2f} {d[False]['d2h_GBps']:>13.2f}")
     if "storage" in payload:
         print(f"\n  storage {payload['storage']['path']} (O_DIRECT)")
-        hdr = f"{'bytes':>10} {'rand lat us':>12} {'rand GB/s':>10} "
+        hdr = f"{'QD':>4} {'bytes':>10} {'rand lat us':>12} {'p99 us':>8} {'rand GB/s':>10} "
         print(f"  {hdr}{'rand IOPS':>10} {'seq GB/s':>9}")
         for r in payload["storage"]["results"]:
-            print(f"  {r['bytes']:>10} {r['random_latency_s_median'] * 1e6:>12.0f} "
+            print(f"  {r['queue_depth']:>4} {r['bytes']:>10} "
+                  f"{r['random_latency_s_median'] * 1e6:>12.0f} "
+                  f"{r['random_latency_s_p99'] * 1e6:>8.0f} "
                   f"{r['random_GBps']:>10.3f} {r['random_iops']:>10,.0f} "
                   f"{r['sequential_GBps']:>9.3f}")
-
 
 if __name__ == "__main__":
     main()

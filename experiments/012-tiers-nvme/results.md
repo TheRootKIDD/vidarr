@@ -58,3 +58,7 @@ simulator's cold tier is pessimistic by construction.
 the loader reads page by page; the `uint16` corpus memmap (`06 §7`) is read
 in contiguous windows of at least a sequence (≥ 4 KiB at 2048 tokens) and the
 page cache sits in front of it, so this is not a training-throughput concern.
+
+**Superseded on queue depth by `013-tiers-nvme-qd`** (same day): the QD 1
+small-block rows above stand as the single-reader floor; the batching knee at
+QD ≥ 16 is 64–256 KiB, not 1 MiB, and I16 is closed there.
