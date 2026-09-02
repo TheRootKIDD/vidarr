@@ -31,3 +31,6 @@ data/
 # Local secrets / machine-specific overrides
 .env
 .env.*
+
+# Bench scratch — result.json under experiments/<id>/ stays tracked
+scripts/bench/__pycache__/

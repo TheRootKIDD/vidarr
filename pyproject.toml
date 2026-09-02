@@ -1,0 +1,40 @@
+[project]
+name = "bigmoe"
+version = "0.1.0"
+description = "Spec, cost model and simulator for a big-DC MoE LLM architecture"
+requires-python = ">=3.11"
+dependencies = [
+    "torch>=2.9",
+    "numpy>=1.26",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+bench = ["faiss-cpu>=1.9"]
+dev = ["ruff>=0.6", "pytest>=8.0"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["model", "sim", "costmodel"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "ANN"]
+ignore = ["ANN401"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["model", "sim", "costmodel", "scripts"]
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/**" = ["ANN"]
+"tests/**" = ["ANN"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "costmodel", "sim"]
+addopts = "-q"
