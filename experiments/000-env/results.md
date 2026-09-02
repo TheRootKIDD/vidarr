@@ -34,20 +34,29 @@ cold tier and `docs/02 §7` builds a three-tier model on it; the real third tier
 is roughly an order of magnitude slower and its random-read profile differs in
 kind. `bench_tiers` measures what is actually there; the tier table and S6's
 cold-tier bandwidth need the measured number, not the assumed one. Recorded as
-open question **I7**.
+open question **I10**.
 
 **The four cards are not one part.** Same `sm_86` and same 28 SMs, so the FLOPs
 budget is unaffected, but GA104 and GA106 differ in memory subsystem and boost
 behaviour. Per-card throughput is therefore measured per card, not once and
 multiplied by four, and in DDP the slowest card sets step time. Recorded as
-**I8**; `bench_gemm` settles whether the difference is measurable.
+**I11**; `bench_gemm` settles whether the difference is measurable.
 
 **Disk headroom is 31 GiB.** `docs/06 §7` plans a 10 B-token `uint16` memmap at
 ≈ 20 GB plus FAISS indexes, which does not fit beside the venv and the OS.
-Recorded as **I9**; a 1 TB HDD is available to install as bulk storage, which
+Recorded as **I12**; a 1 TB HDD is available to install as bulk storage, which
 solves capacity but not cold-tier bandwidth — an HDD is slower than the SSD
 already present, so the SSD stays the measured cold tier.
 
 The idle PCIe gen-1 reading is not a fault: Ampere downtrains the link at P8 and
 retrains under traffic. Confirmed x16 gen 4 on all four cards while host→device
 copies are in flight, so `bench_nccl` runs against a full-width link.
+
+## Addendum, 2026-09-02 — question ids renumbered
+
+The three findings above were first written against ids I7/I8/I9. `docs/04` has
+since allocated those to different internal questions (I7 = v2 of the note
+stored, closed; I8 = which pretrained sentence encoder; I9 = which corpus slice
+to embed). Renumbered here to **I10** (SATA, not NVMe), **I11** (GA104/GA106
+mix) and **I12** (31 GiB disk headroom); the commit message of `de13e02`
+predates the renumbering and still names the old ids.

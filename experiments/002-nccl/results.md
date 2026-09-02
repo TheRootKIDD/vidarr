@@ -90,3 +90,38 @@ artefact, not a slow path: per byte on the wire it matches the other two.
 
 **No change to `docs/06 §1` is implied** — it predicted host-bounced NCCL and
 declined to guess a number. This supplies the number.
+
+## Addendum, 2026-09-02 — derived margins recomputed for the v2 `small` config
+
+The measurement above is unchanged and config-independent: λ_link ≈ 3.6 GB/s and
+the ≈ 44 µs floor are properties of the rig. The **derived** S0/S10 margins were
+computed against the pre-v2 `small` recurrent configuration (two streams,
+$N_e$ = 128, $k$ = 4, $d_{ff}$ = 512). ADR-018 and ADR-020 replaced that with a
+single-stream default at $N_e$ = 8, $k$ = 2, $d_{ff}$ ≈ 1.5–1.8 k, keeping
+$N_e$ = 128 / $k$ = 4 as the parameter-matched H6 variant (`06 §3`). Recomputed:
+
+| | as first written (v1 config) | v2 default ($N_e$=8, $k$=2) | v2 H6 variant ($N_e$=128, $k$=4) |
+|---|---|---|---|
+| λ_C required, φ = 25.5 TF | 133 GB/s | 41 GB/s | 85 GB/s |
+| λ_C required, φ = 15 TF | 78 GB/s | 24 GB/s | 50 GB/s |
+| **TP shortfall @ 15 TF** | 21.8× | **6.8×** | 13.9× |
+| fabric bytes/token/iteration | 24.6 kB | 6.1 kB | 12.3 kB |
+| S0 bandwidth ceiling | 18.3 k tok/s | 73.0 k tok/s | 36.5 k tok/s |
+| **S0 fabric-bound factor** | 11–16× | **2.7–4.1×** | 5.5–8.2× |
+
+Both conclusions survive. S10 still finds TP decisively bandwidth-starved — 7×
+at the default, 14× at the H6 variant — so it remains well-posed, and the
+shortfall is now a *function of the rung*, which makes the crossover cheaper to
+bracket: sweeping $N_e$/$k$ along the ladder moves the ratio by 2× without
+touching the hardware. S0 remains fabric-dominated but by 2.7–4.1× rather than
+5–8×, so the compute path is exercised somewhat more than first reported; the
+recommendation is unchanged — record S0 as a fabric-dominated calibration point
+and take the compute-side calibration separately.
+
+Note the table's first column also corrects an arithmetic point: the original
+entry used 12.3 kB/token/iteration for a two-stream config, which is the
+single-stream value. `01 §10` gives fabric bytes as $2 k d\, b_{act}$ under a
+section header reading "both streams unless noted", and does not say which this
+line is. The two readings differ by exactly 2× on every fabric number. Left as a
+question for `costmodel/` to settle rather than assumed here; it is inert at the
+single-stream default and becomes live only if L4 runs.
