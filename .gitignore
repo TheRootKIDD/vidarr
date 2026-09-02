@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# Local editor / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Training artefacts — experiments/<id>/{config.yaml,results.md} stay tracked,
+# the heavy outputs beside them do not (docs/06: no run leaves the workstation).
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+checkpoints/
+runs/
+wandb/
+data/
+*.log
+
+# Local secrets / machine-specific overrides
+.env
+.env.*
