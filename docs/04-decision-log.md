@@ -80,6 +80,9 @@ Decision: single-stream default; MTP heads read the single stream; $F_p$ predict
 - **ADR-013** — Numeric thresholds for H1–H18 and the `small` / `medium` sizes.
 - **ADR-014** — Eval suite and pretraining corpus.
 - **ADR-024** — Parallel prefill mode for long prompts (the author's "less effective mode"): (a) all segments at once with local attention only, global cache filled afterwards from context-poor final vectors; (b) pipelined segments, segment $k+1$ at iteration $j$ attending globally to segment $k$'s iteration-$j$ caches (transient per-iteration global cache during prefill, in-flight depth up to $r$ segments). Both are inference-time modes of a sequentially trained model; E-Q12 evaluates both against sequential prefill on continuation loss and TTFT (S5). If both degrade, a mixed-mode training variant becomes a later ladder step.
+- **ADR-025** — Skeleton block count and width in the FLOPs budget; derived $d_{ff}$ rounded to a multiple of 64. Context: `costmodel/` reproduces `06 §3`'s recurrent widths (1665, 833) exactly only with **two** skeleton blocks in total, while `01 §1` states $E$ = $F$ = 2 (four → 1153, 577); the skeleton's own $d_{ff}$ is stated nowhere (assumed 4$d$); and odd derived widths cost 12–27 % of GEMM throughput (`004-gemm-alignment`). Full text: `costmodel/README.md §A`.
+- **ADR-026** — L4 (two streams) requires an explicit $k$ or $r$ trade at `small`: the "halves every $d_{ff}$" sentence of `06 §3` is false (the width left is 362, below the tile floor; at the floor the config overspends by 11 %). `costmodel/README.md §B`.
+- **ADR-027** — Key-count convention for FLOPs budgets ($W$ alone vs $W + |\mathcal{G}_{visible}|$ at the training context): a 13 % swing in $d_{ff}$; the doc's ranges match only the local-window reading. `costmodel/README.md §D`.
 - **ADR-023** — Segment memory gradient: stop-gradient into earlier segments' final vectors (Transformer-XL / Memorizing-Transformer practice, cheap) vs backpropagation through the previous segment (more faithful, ~2× activation memory). Default: stop.
 
 ## Open questions
@@ -122,11 +125,17 @@ Decision: single-stream default; MTP heads read the single stream; $F_p$ predict
 - **I2** Whether `small` can show anything about H6 (recurrence may need scale).
 - **I3** Licence and provenance of the knowledge source for L8.
 - **I4** Which `note64` / `gpu_today` scenario numbers can be sourced from public vendor data vs must remain placeholders (`local_3060` is fully measured).
-- **I5** Does host-bounced NCCL on the four GeForce cards deliver enough all-to-all bandwidth for S0/S10 to be meaningful, or must those be run with 2 cards / smaller shapes? Decide from `bench_nccl` results.
+- **I5** *(answered 2026-09-02, `002-nccl`)* $\lambda_{link}$ = 3.59 GB/s per rank, 44 µs floor. **S10 is viable and well-posed**: the `02 §2` TP condition is missed by 7× at the `small` default and 14× at the $N_e$ = 128 variant, so TP loses decisively and the crossover is swept by rung rather than observed. **S0 is measurable but fabric-bound by 2.7–4×**; record it as a fabric-dominated calibration point and take compute-side calibration from `003-gemm`; two cards is not a fix.
 - **I6** Tokenizer: train a 32 k BPE on the corpus vs reuse an open 32 k vocabulary (feeds ADR-014).
 - **I7** *(closed 2026-09-02)* v2 stored as `docs/source/The_big-DC_MoE_LLM_design_v2.pdf` with extracted text; diff below; `docs/00`, `01`, `02`, `03` revised (ADR-021).
 - **I8** Which pretrained sentence encoder for the table (ADR-009), and whether its licence permits fine-tuning (L8c).
 - **I9** Which corpus slice to embed for L8 at 2²⁰–2²¹ entries (e.g. lead sentences of Wikipedia articles), and how to sample the 2²¹ from it.
+- **I10** *(downgraded to sequencing)* No NVMe was present (`000-env`: one SATA 850 PRO); a 4 TB NVMe is pending install. `bench_tiers --tiers storage` and $\beta_{cold}$ wait for it; never measure the cold tier on the SATA drive.
+- **I11** *(closed, `003-gemm`/`010`)* 3 × GA104 + 1 × GA106: per-card $\phi$ spread 2.5 %, identical DDP step times — immaterial.
+- **I12** *(resolved by the NVMe + 1 TB HDD)* 31 GiB free vs a ≈ 20 GB corpus; NVMe takes corpus, cold tier and indexes, HDD is bulk storage.
+- **I13** The empirical batch floor (512 for 80 % of $\phi$) is 7× the roofline $b_{min}$ (79). `02 §2` tells the simulator's queue to use $b_{min}$; it must use the larger. Is the gap a GA106-class property or intrinsic to the roofline argument — i.e. what is it on `note64` hardware? Scenario files carry both numbers.
+- **I14** `007-faiss-1m` recall is degenerate on random 768-d vectors; QPS stands (7.2 k at nprobe 8, 40× short of per-iteration retrieval, confirming `06 §5.1`). Re-measure recall on real sentence embeddings once I8/I9 settle. The 10 M run exceeded the 15-minute rule and has no result.
+- **I15** 2:4 sparsity measured at 1.3–1.6× best and a loss below $b$ ≈ 2–4 k (`005/006`) against a nominal 2×. Framework path (PyTorch semi-structured) or silicon ceiling? A Phase-3 kernel question; until then ADR-013's H3 threshold prices the trade at ≈ 1.4×, not 2×.
 
 ### Resolution plan — what we can settle ourselves, and at what cost
 *Revised after the author's answers. Author-only parts are now closed; the table keeps the experiments that still decide the spec.* Dropped: E-Q3 staleness emulation (Q3), the halted-token variants (Q5), the RigL and activation-sparsity variants (Q7), the frozen-values variant (Q10). Downgraded: L4 (Q1) to optional. Kept: E-Q2, L5 at three $N_e$, L5b/L5c, L7 sweep + S10, L9 variants, L8 vs L8c. Extra `screen` runs beyond the ladder ≈ 7 (≈ 2.5 days); `small` confirmations for Q2 and Q4 ≈ 8 days.
@@ -159,3 +168,8 @@ Cost units from `docs/06 §4`: one `screen` run ≈ 8 h (1 B tokens, 1 seed); on
 | I4 | vendor data for `note64` / `gpu_today` | hours–days |
 | I5 | `bench_nccl` on all four cards | ≈ 1 h, run first |
 | I6 | train a 32 k BPE on a 1 B-token subset; decide by convention, no A/B | ≈ 1 h CPU |
+
+## Session log
+
+### 2026-09-02 — Phase 0 bootstrap and measurements
+Repo bootstrapped (`.venv` py3.12 / torch 2.13+cu130; faiss has no cp314 wheel), `costmodel/` with 29 worked-example tests, all of `scripts/bench/` except the storage tier, `sim/scenarios/local_3060.yaml`. Measured: $\phi$ 27.1 TFLOPS (above nominal), $\beta_C$ 342 GB/s, $s_{min}$ 256, batch floor 512 vs roofline 79, $\lambda_{link}$ 3.59 GB/s / 44 µs, host link 24–27 GB/s pinned with a 64 KiB batching knee, ANN 7.2 k QPS, `small` dense 22.1 k tok/s per card and 67.5 k aggregate. **Surprises:** no NVMe in the box; three of four cards are GA104 (harmless); 2:4 is worth 1.3–1.6× not 2× and loses below $b$ ≈ 2–4 k; odd expert widths lose 12–27 %; the empirical batch floor is 7× the roofline; DDP all-reduce is 31 % per micro-step; `06 §3`'s parameter counts are MHA figures under a GQA spec, and its recurrent widths only reproduce with two skeleton blocks (ADR-025/026/027 proposed, `costmodel/README.md`). Storage tier deferred to the NVMe.

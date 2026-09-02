@@ -8,15 +8,15 @@ Status: DRAFT, 2026-09-02. Fixes what the local rig can measure, what it can onl
 |---|---|---|
 | CPU | AMD Threadripper PRO 3945WX — 12 cores / 24 threads, Zen 2, 8-channel DDR4-3200 (≈ 205 GB/s), 128 PCIe 4.0 lanes | verify per-core boost and memory speed actually configured |
 | Host RAM | 128 GB DDR4 | holds tokenised corpus, FAISS indexes, KV "warm" tier, optimiser offload if ever needed |
-| GPUs | 4 × NVIDIA RTX 3060 12 GB (GA106, SM 8.6, 28 SMs) | consumer Ampere |
-| GPU compute | BF16/FP16 tensor with FP32 accumulate ≈ 25.5 TFLOPS dense per card (≈ 51 with 2:4 sparsity); FP32 ≈ 12.7 TFLOPS | GeForce halves FP32-accumulate tensor rate; use BF16 autocast, FP32 master weights |
-| GPU memory | 12 GB GDDR6, 192-bit, ≈ 360 GB/s per card | ridge point $\phi/\beta_C \approx 71$ FLOP/byte |
-| GPU interconnect | PCIe 4.0 x16 per card (nominal 32 GB/s per direction); **no NVLink; no PCIe P2P on GeForce** — NCCL traffic bounces through host memory | confirm `nvidia-smi topo -m` shows x16 on all four; measure with `nccl-tests` |
+| GPUs | 4 × NVIDIA RTX 3060 12 GB (SM 8.6, 28 SMs) — **measured: 3 × GA104 + 1 × GA106**, 11.63 GiB usable | consumer Ampere; die mix is immaterial for compute (per-card $\phi$ spread 2.5 %, `003-gemm`; I11 closed) |
+| GPU compute | nominal 25.5 TFLOPS BF16 dense per card (≈ 51 with 2:4); **measured $\phi$ = 27.1 TFLOPS** (`003-gemm`); **2:4 effective ceiling ≈ 40 TFLOPS, 1.3–1.6×, a loss below $b$ ≈ 2–4 k** (`005/006-sparse24`) | GeForce halves FP32-accumulate tensor rate; use BF16 autocast, FP32 master weights |
+| GPU memory | 12 GB GDDR6, 192-bit, nominal ≈ 360 GB/s; **measured $\beta_C$ = 342 GB/s** (`011-tiers-mem`) | ridge point **79** FLOP/byte measured (was 71 nominal) |
+| GPU interconnect | PCIe 4.0 x16 per card (nominal 32 GB/s per direction); **no NVLink; no PCIe P2P on GeForce** — NCCL traffic bounces through host memory | **measured: x16 gen 4 on all four under load** (`000-env`); pinned host link 24–27 GB/s (`011`); **collectives $\lambda_{link}$ = 3.59 GB/s per rank, 44 µs floor** (`002-nccl`) |
 | Supported numerics | BF16 ✔, FP16 ✔, TF32 ✔, **2:4 structured sparsity ✔** (SM 8.0+), FP8 ✘, FP4 ✘ | FP8/FP4 are quality-only via simulated quantisation |
-| Storage | NVMe assumed (unmeasured) | measure random-read bandwidth/latency at 4 KB–1 MB blocks (KV cold tier) |
+| Storage | **measured: no NVMe present** — one Samsung 850 PRO 256 GB SATA SSD, 31 GiB free (`000-env`, I10/I12); a **4 TB NVMe and 1 TB HDD are pending install** | `bench_tiers --tiers storage` runs on the NVMe once installed, never on the SATA drive; HDD is bulk storage, not a KV tier |
 | Power | ≈ 1 kW under load (4 × 170 W + 280 W + rest) | multi-day runs: checkpoint ≤ 30 min apart |
 
-Derived per card, BF16 weights: compute-bound batch $b_{min} = (\phi/\beta_C)(b_w/2) \approx 71$ tokens per expert per step; the local tile floor $s_{min}$ for ≥ 80 % of peak is measured by `bench_gemm` (expect 128–256 on GA106). These are the `local_3060` scenario inputs (`02 §1`).
+Derived per card, BF16 weights: roofline $b_{min} = (\phi/\beta_C)(b_w/2)$ = **79** tokens at measured $\phi$, $\beta_C$; **the empirical batch floor for ≥ 80 % of $\phi$ is 512, seven times that** (`003-gemm`), and the simulator's queue must use the larger (I13). Tile floor **$s_{min}$ = 256** on every card (`003-gemm`), so $U s_{min}$ = 1024 at $U$ = 4, not 512. Odd $d_{ff}$ costs 12–27 % — derived widths are rounded to a multiple of 64 (`004-gemm-alignment`, ADR-025). All values in `sim/scenarios/local_3060.yaml` with result ids.
 
 ## 2. What the rig can and cannot do
 
@@ -48,18 +48,18 @@ Budgets are matched-FLOPs per token (training cost = forward + backward ≈ 3 ×
 Parallelism:
 - **`screen` / `small`**: plain DDP, one replica per GPU, **all experts replicated** (≈ 200 M params × 16 B ≈ 3.2 GB of states per GPU + activations). Routing and dispatch are intra-GPU; no expert parallelism is needed for training. Gradient all-reduce (≈ 0.4 GB BF16 per step) is ≪ step time even host-bounced.
 - **`medium`**: FSDP (sharded parameters, gradients, optimiser states across the four cards; ≈ 2 GB of states per GPU) with activation checkpointing per middle-block iteration. Per-step traffic ≈ 3 GB per GPU against a ≈ 30 s step at 0.5 M-token batches → communication stays under a few %, even through host memory. 8-bit optimiser states are the fallback, not the default (they change the experiment).
-- Per-GPU footprint must stay ≤ 10 GB in every config; the remaining 2 GB is for fragmentation and eval.
+- Per-GPU footprint must stay ≤ 10 GB in every config; the remaining 2 GB is for fragmentation and eval. **Measured at `small` dense: 7.6–8.0 GiB at micro-batch 4 × 2048; 8 × 2048 does not fit** — activations and the 32 k-vocab logits, not optimiser states, set the micro-batch (`009-train-step`); a chunked cross-entropy belongs in Phase 1's `model/`.
 - Expert / tensor parallelism across GPUs is implemented **only** in `sim/`-adjacent measurement scripts (S0, S10), never in `model/` training code.
 
 ## 4. Time budget
 
-Assumed achieved throughput until `bench_train_step` replaces it: 8 TFLOPS per card for dense (≈ 31 % of nominal), 5 TFLOPS per card for MoE / recurrent variants (smaller GEMMs, routing, recompute). Aggregate 32 / 20 TFLOPS.
+**Measured** (`009/010-train-step`, `small` dense, 4 × DDP, host-bounced): **67.5 k tokens/s aggregate with no gradient accumulation** = 9.6 TFLOPS per card (35 % MFU vs measured $\phi$; 12.0 incl. output head); single card 22.1 k tokens/s = 12.5 TFLOPS. The per-micro-step DDP all-reduce costs 31 % and amortises to ≈ 2 % at 0.5 M-token batches, so the accumulated rate approaches ≈ 88 k tokens/s. The dense assumption of 8 TFLOPS was conservative by 1.5×. **The recurrent/MoE figure (5 TFLOPS assumed) is not yet replaced** — it waits for `model/` (Phase 1); the variant column below still uses it.
 
 | Run | Cost | Dense | Variant |
 |---|---|---|---|
-| `screen` (1 B tok × 0.6 GFLOP) | 6 × 10¹⁷ | ≈ 5 h | ≈ 8 h |
-| `small` (2.5 B × 0.6 GFLOP) | 1.5 × 10¹⁸ | ≈ 13 h | ≈ 21 h |
-| `medium` (7 B × 2 GFLOP) | 1.4 × 10¹⁹ | ≈ 5 d | ≈ 8 d |
+| `screen` (1 B tok × 0.6 GFLOP) | 6 × 10¹⁷ | **4.1 h** (≈ 3.2 h accumulated) | ≈ 8 h (assumed) |
+| `small` (2.5 B × 0.6 GFLOP) | 1.5 × 10¹⁸ | **10.3 h** (≈ 7.9 h accumulated) | ≈ 21 h (assumed) |
+| `medium` (7 B × 2 GFLOP) | 1.4 × 10¹⁹ | ≈ 3.5 d (scaled from `small`; FSDP unmeasured) | ≈ 8 d (assumed) |
 
 Programme estimate: `screen` for every ladder variant (≈ 20 × 8 h ≈ 7 days); `small` for the decisive steps L0, L1, L2, L4, L5, L6, L7, L9 at 2 seeds (≈ 16–18 days incl. baselines); `medium` for L0, L1 and the two best recurrent variants (≈ 4 weeks). **≈ 2 months of continuous GPU time; plan 3–4 calendar months with debugging and reruns.** Baselines are trained once per size and seed and reused by every ladder step.
 
