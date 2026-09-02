@@ -61,7 +61,7 @@ bigmoe/
   sim/                  # discrete-event simulator of docs/02 (Tier S); scenarios in sim/scenarios/
   costmodel/            # FLOPs / bytes / latency / $ formulas as pure functions + tests
   experiments/<id>/     # config.yaml, run notes, results.md — append-only, never overwritten
-  scripts/              # bench/ (rig microbenchmarks -> experiments/0NN), data/ (corpus download + tokenisation, ADR-014)
+  scripts/              # bench/ (rig microbenchmarks -> experiments/0NN), data/ (corpus tokenisation, ADR-014), train/ (DDP trainer -> experiments/1NN+)
 ```
 
 ## Principles

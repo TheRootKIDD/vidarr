@@ -53,12 +53,12 @@ Parallelism:
 
 ## 4. Time budget
 
-**Measured** (`009/010-train-step`, `small` dense, 4 × DDP, host-bounced): **67.5 k tokens/s aggregate with no gradient accumulation** = 9.6 TFLOPS per card (35 % MFU vs measured $\phi$; 12.0 incl. output head); single card 22.1 k tokens/s = 12.5 TFLOPS. The per-micro-step DDP all-reduce costs 31 % and amortises to ≈ 2 % at 0.5 M-token batches, so the accumulated rate approaches ≈ 88 k tokens/s. The dense assumption of 8 TFLOPS was conservative by 1.5×. **The recurrent/MoE figure (5 TFLOPS assumed) is not yet replaced** — it waits for `model/` (Phase 1); the variant column below still uses it.
+**Measured** (`009/010-train-step`, `small` dense, 4 × DDP, host-bounced): **67.5 k tokens/s aggregate with no gradient accumulation** = 9.6 TFLOPS per card (35 % MFU vs measured $\phi$; 12.0 incl. output head); single card 22.1 k tokens/s = 12.5 TFLOPS. The per-micro-step DDP all-reduce costs 31 % and amortises to ≈ 2 % at 0.5 M-token batches, so the accumulated rate approaches ≈ 88 k tokens/s. The dense assumption of 8 TFLOPS was conservative by 1.5×. **Recurrent rungs measured** (`014-train-step-rungs`, `model/`, 4 × DDP with 4-step accumulation): L5 ≈ 47 k, L5d ≈ 33 k, L3 ≈ 43 k tokens/s aggregate → `screen` ≈ 6 / 8.4 / 6.5 h; the 128-expert variant ≈ 3× slower than L5. The per-micro-step all-reduce costs the recurrent rungs ≈ 8× what it costs the dense one (I21), so accumulation is mandatory, not optional. The variant column below is now measured for L5; other rungs scale from the table in `014`.
 
 | Run | Cost | Dense | Variant |
 |---|---|---|---|
-| `screen` (1 B tok × 0.6 GFLOP) | 6 × 10¹⁷ | **4.1 h** (≈ 3.2 h accumulated) | ≈ 8 h (assumed) |
-| `small` (2.5 B × 0.6 GFLOP) | 1.5 × 10¹⁸ | **10.3 h** (≈ 7.9 h accumulated) | ≈ 21 h (assumed) |
+| `screen` (1 B tok × 0.6 GFLOP) | 6 × 10¹⁷ | **4.1 h** (≈ 3.4 h accumulated, `model/` path) | **≈ 6 h** L5, ≈ 8.4 h L5d (measured, `014`) |
+| `small` (2.5 B × 0.6 GFLOP) | 1.5 × 10¹⁸ | **10.3 h** (≈ 8.5 h accumulated) | ≈ 15 h L5, ≈ 21 h L5d (scaled from `014`) |
 | `medium` (7 B × 2 GFLOP) | 1.4 × 10¹⁹ | ≈ 3.5 d (scaled from `small`; FSDP unmeasured) | ≈ 8 d (assumed) |
 
 Programme estimate: `screen` for every ladder variant (≈ 20 × 8 h ≈ 7 days); `small` for the decisive steps L0, L1, L2, L4, L5, L6, L7, L9 at 2 seeds (≈ 16–18 days incl. baselines); `medium` for L0, L1 and the two best recurrent variants (≈ 4 weeks). **≈ 2 months of continuous GPU time; plan 3–4 calendar months with debugging and reruns.** Baselines are trained once per size and seed and reused by every ladder step.

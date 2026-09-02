@@ -1,0 +1,511 @@
+{
+  "result_id": "014-train-step-rungs",
+  "provenance": {
+    "date_utc": "2026-09-02T18:02:33+00:00",
+    "git_hash": "9ec080d66b9354a442140ba6e3859bbeef09afcc",
+    "git_dirty": true,
+    "driver_version": "595.80",
+    "torch_version": "2.13.0+cu130",
+    "torch_cuda_version": "13.0",
+    "python_version": "3.12.13",
+    "platform": "Linux-7.1.12-200.fc44.x86_64-x86_64-with-glibc2.43",
+    "gpus": [
+      {
+        "index": 0,
+        "name": "NVIDIA GeForce RTX 3060",
+        "sm": "8.6",
+        "multi_processor_count": 28,
+        "total_memory_bytes": 12490440704
+      },
+      {
+        "index": 1,
+        "name": "NVIDIA GeForce RTX 3060",
+        "sm": "8.6",
+        "multi_processor_count": 28,
+        "total_memory_bytes": 12490440704
+      },
+      {
+        "index": 2,
+        "name": "NVIDIA GeForce RTX 3060",
+        "sm": "8.6",
+        "multi_processor_count": 28,
+        "total_memory_bytes": 12490440704
+      },
+      {
+        "index": 3,
+        "name": "NVIDIA GeForce RTX 3060",
+        "sm": "8.6",
+        "multi_processor_count": 28,
+        "total_memory_bytes": 12490440704
+      }
+    ]
+  },
+  "bench": "train_step_rungs",
+  "shape": {
+    "layers": 12,
+    "d": 768,
+    "heads": 12,
+    "kv_heads": 4,
+    "head_dim": 64,
+    "d_ff": 2048,
+    "vocab": 32000,
+    "context": 2048
+  },
+  "flops_per_token_budget": {
+    "train_no_head": 566231040.0,
+    "train_with_head": 713687040.0
+  },
+  "ddp": true,
+  "rungs": [
+    {
+      "rung": "L0",
+      "micro_batch": 4,
+      "world_size": 4,
+      "params_total": 100092672,
+      "per_gpu": [
+        {
+          "rank": 0,
+          "micro_batch_seqs": 4,
+          "tokens_per_step_per_gpu": 8192,
+          "step_s_median": 0.6938712189994476,
+          "step_s_min": 0.6365980099999433,
+          "step_s_p90": 0.8205067719991348,
+          "tokens_per_s_per_gpu": 11806.225385472462,
+          "peak_mem_bytes": 6341634048
+        },
+        {
+          "rank": 1,
+          "micro_batch_seqs": 4,
+          "tokens_per_step_per_gpu": 8192,
+          "step_s_median": 0.6940488229993207,
+          "step_s_min": 0.6367007820008439,
+          "step_s_p90": 0.8205101619987545,
+          "tokens_per_s_per_gpu": 11803.204225026138,
+          "peak_mem_bytes": 6341634048
+        },
+        {
+          "rank": 2,
+          "micro_batch_seqs": 4,
+          "tokens_per_step_per_gpu": 8192,
+          "step_s_median": 0.6939043744996525,
+          "step_s_min": 0.6365779890002159,
+          "step_s_p90": 0.8204574510000384,
+          "tokens_per_s_per_gpu": 11805.661271276656,
+          "peak_mem_bytes": 6341634048
+        },
+        {
+          "rank": 3,
+          "micro_batch_seqs": 4,
+          "tokens_per_step_per_gpu": 8192,
+          "step_s_median": 0.6938931545000742,
+          "step_s_min": 0.6366292000002431,
+          "step_s_p90": 0.8204577910000808,
+          "tokens_per_s_per_gpu": 11805.85216451955,
+          "peak_mem_bytes": 6341634048
+        }
+      ],
+      "aggregate_tokens_per_s": 47212.81690010455,
+      "peak_mem_gib_max": 5.906106948852539
+    },
+    {
+      "rung": "L1",
+      "micro_batch": 2,
+      "world_size": 4,
+      "params_total": 271153920,
+      "per_gpu": [
+        {
+          "rank": 0,
+          "micro_batch_seqs": 2,
+          "tokens_per_step_per_gpu": 4096,
+          "step_s_median": 1.0128360875005455,
+          "step_s_min": 1.0012905029998365,
+          "step_s_p90": 1.0180885289992148,
+          "tokens_per_s_per_gpu": 4044.089710614496,
+          "peak_mem_bytes": 8415371264
+        },
+        {
+          "rank": 1,
+          "micro_batch_seqs": 2,
+          "tokens_per_step_per_gpu": 4096,
+          "step_s_median": 1.0130931920002695,
+          "step_s_min": 1.001424705998943,
+          "step_s_p90": 1.0180830680001236,
+          "tokens_per_s_per_gpu": 4043.063394703881,
+          "peak_mem_bytes": 8431161856
+        },
+        {
+          "rank": 2,
+          "micro_batch_seqs": 2,
+          "tokens_per_step_per_gpu": 4096,
+          "step_s_median": 1.0128014464999069,
+          "step_s_min": 1.001338793999821,
+          "step_s_p90": 1.0181108500000846,
+          "tokens_per_s_per_gpu": 4044.2280312248513,
+          "peak_mem_bytes": 8415371264
+        },
+        {
+          "rank": 3,
+          "micro_batch_seqs": 2,
+          "tokens_per_step_per_gpu": 4096,
+          "step_s_median": 1.0128330919997097,
+          "step_s_min": 1.0013397139991866,
+          "step_s_p90": 1.0181211289982457,
+          "tokens_per_s_per_gpu": 4044.101671197345,
+          "peak_mem_bytes": 8415371264
+        }
+      ],
+      "aggregate_tokens_per_s": 16172.253578815524,
+      "peak_mem_gib_max": 7.852131366729736
+    },
+    {
+      "rung": "L2",
+      "micro_batch": 2,
+      "world_size": 4,
+      "params_total": 271144704,
+      "per_gpu": [
+        {
+          "rank": 0,
+          "micro_batch_seqs": 2,
+          "tokens_per_step_per_gpu": 4096,
+          "step_s_median": 1.3626044259999617,
+          "step_s_min": 1.3391062159989815,
+          "step_s_p90": 1.3774574990002293,
+          "tokens_per_s_per_gpu": 3006.0081428211324,
+          "peak_mem_bytes": 8252103680
+        },
+        {
+          "rank": 1,
+          "micro_batch_seqs": 2,
+          "tokens_per_step_per_gpu": 4096,
+          "step_s_median": 1.3626047805009875,
+          "step_s_min": 1.3393225010004244,
+          "step_s_p90": 1.3776412130009703,
+          "tokens_per_s_per_gpu": 3006.0073607653335,
+          "peak_mem_bytes": 8273150976
+        },
+        {
+          "rank": 2,
+          "micro_batch_seqs": 2,
+          "tokens_per_step_per_gpu": 4096,
+          "step_s_median": 1.3626030060013363,
+          "step_s_min": 1.3390580949999276,
+          "step_s_p90": 1.3774603989986645,
+          "tokens_per_s_per_gpu": 3006.0112754484726,
+          "peak_mem_bytes": 8273150976
+        },
+        {
+          "rank": 3,
+          "micro_batch_seqs": 2,
+          "tokens_per_step_per_gpu": 4096,
+          "step_s_median": 1.3626024215000143,
+          "step_s_min": 1.3390913360017294,
+          "step_s_p90": 1.377476048999597,
+          "tokens_per_s_per_gpu": 3006.0125649057177,
+          "peak_mem_bytes": 8252103680
+        }
+      ],
+      "aggregate_tokens_per_s": 12024.029443061334,
+      "peak_mem_gib_max": 7.704972267150879
+    },
+    {
+      "rung": "L3",
+      "micro_batch": 2,
+      "world_size": 4,
+      "params_total": 272916480,
+      "per_gpu": [
+        {
+          "rank": 0,
+          "micro_batch_seqs": 2,
+          "tokens_per_step_per_gpu": 4096,
+          "step_s_median": 1.9384780899999896,
+          "step_s_min": 1.131201919999512,
+          "step_s_p90": 2.0062181070006773,
+          "tokens_per_s_per_gpu": 2112.9978312006724,
+          "peak_mem_bytes": 8448557056
+        },
+        {
+          "rank": 1,
+          "micro_batch_seqs": 2,
+          "tokens_per_step_per_gpu": 4096,
+          "step_s_median": 1.9389519244996336,
+          "step_s_min": 1.1314018039993243,
+          "step_s_p90": 2.0086967650004226,
+          "tokens_per_s_per_gpu": 2112.4814639522406,
+          "peak_mem_bytes": 8431213568
+        },
+        {
+          "rank": 2,
+          "micro_batch_seqs": 2,
+          "tokens_per_step_per_gpu": 4096,
+          "step_s_median": 1.9384184945001834,
+          "step_s_min": 1.1312299000001076,
+          "step_s_p90": 2.0062262370011013,
+          "tokens_per_s_per_gpu": 2113.0627940361987,
+          "peak_mem_bytes": 8431213568
+        },
+        {
+          "rank": 3,
+          "micro_batch_seqs": 2,
+          "tokens_per_step_per_gpu": 4096,
+          "step_s_median": 1.938400203999663,
+          "step_s_min": 1.1312580899993918,
+          "step_s_p90": 2.0062581579986727,
+          "tokens_per_s_per_gpu": 2113.0827326309504,
+          "peak_mem_bytes": 8448557056
+        }
+      ],
+      "aggregate_tokens_per_s": 8449.925855808962,
+      "peak_mem_gib_max": 7.8683319091796875
+    },
+    {
+      "rung": "L5",
+      "micro_batch": 4,
+      "world_size": 4,
+      "params_total": 77480321,
+      "per_gpu": [
+        {
+          "rank": 0,
+          "micro_batch_seqs": 4,
+          "tokens_per_step_per_gpu": 8192,
+          "step_s_median": 2.526440007999554,
+          "step_s_min": 2.49572354799966,
+          "step_s_p90": 3.8087546200004,
+          "tokens_per_s_per_gpu": 3242.5072331270044,
+          "peak_mem_bytes": 3851454464
+        },
+        {
+          "rank": 1,
+          "micro_batch_seqs": 4,
+          "tokens_per_step_per_gpu": 8192,
+          "step_s_median": 2.5264237125002182,
+          "step_s_min": 2.495727708999766,
+          "step_s_p90": 3.8087154690001626,
+          "tokens_per_s_per_gpu": 3242.5281473838654,
+          "peak_mem_bytes": 3851454464
+        },
+        {
+          "rank": 2,
+          "micro_batch_seqs": 4,
+          "tokens_per_step_per_gpu": 8192,
+          "step_s_median": 2.5264247925006202,
+          "step_s_min": 2.4956836180008395,
+          "step_s_p90": 3.808681237998826,
+          "tokens_per_s_per_gpu": 3242.5267612623734,
+          "peak_mem_bytes": 3851454464
+        },
+        {
+          "rank": 3,
+          "micro_batch_seqs": 4,
+          "tokens_per_step_per_gpu": 8192,
+          "step_s_median": 2.5264139374994556,
+          "step_s_min": 2.495708417998685,
+          "step_s_p90": 3.808685678000984,
+          "tokens_per_s_per_gpu": 3242.540693117026,
+          "peak_mem_bytes": 3851454464
+        }
+      ],
+      "aggregate_tokens_per_s": 12970.028932508018,
+      "peak_mem_gib_max": 3.586946487426758
+    },
+    {
+      "rung": "L5d",
+      "micro_batch": 4,
+      "world_size": 4,
+      "params_total": 77481089,
+      "per_gpu": [
+        {
+          "rank": 0,
+          "micro_batch_seqs": 4,
+          "tokens_per_step_per_gpu": 8192,
+          "step_s_median": 3.7793018924994612,
+          "step_s_min": 2.1426689330000954,
+          "step_s_p90": 3.880837177999638,
+          "tokens_per_s_per_gpu": 2167.5960886475195,
+          "peak_mem_bytes": 3893344256
+        },
+        {
+          "rank": 1,
+          "micro_batch_seqs": 4,
+          "tokens_per_step_per_gpu": 8192,
+          "step_s_median": 3.779186765000304,
+          "step_s_min": 2.1426647629996296,
+          "step_s_p90": 3.8806680950001464,
+          "tokens_per_s_per_gpu": 2167.6621213504227,
+          "peak_mem_bytes": 3893344256
+        },
+        {
+          "rank": 2,
+          "micro_batch_seqs": 4,
+          "tokens_per_step_per_gpu": 8192,
+          "step_s_median": 3.7791917899994587,
+          "step_s_min": 2.1425624099993,
+          "step_s_p90": 3.8806509240002924,
+          "tokens_per_s_per_gpu": 2167.6592391203235,
+          "peak_mem_bytes": 3893344256
+        },
+        {
+          "rank": 3,
+          "micro_batch_seqs": 4,
+          "tokens_per_step_per_gpu": 8192,
+          "step_s_median": 3.779255191499942,
+          "step_s_min": 2.142621771999984,
+          "step_s_p90": 3.880717955000364,
+          "tokens_per_s_per_gpu": 2167.622874058603,
+          "peak_mem_bytes": 3893344256
+        }
+      ],
+      "aggregate_tokens_per_s": 8670.384354590078,
+      "peak_mem_gib_max": 3.6259593963623047
+    },
+    {
+      "rung": "L5-ne128",
+      "micro_batch": 4,
+      "world_size": 4,
+      "params_total": 193101185,
+      "per_gpu": [
+        {
+          "rank": 0,
+          "micro_batch_seqs": 4,
+          "tokens_per_step_per_gpu": 8192,
+          "step_s_median": 5.8622620779997305,
+          "step_s_min": 3.3750835540013213,
+          "step_s_p90": 6.034400820999508,
+          "tokens_per_s_per_gpu": 1397.412788954533,
+          "peak_mem_bytes": 5719322112
+        },
+        {
+          "rank": 1,
+          "micro_batch_seqs": 4,
+          "tokens_per_step_per_gpu": 8192,
+          "step_s_median": 5.863299087499399,
+          "step_s_min": 3.374626265000188,
+          "step_s_p90": 6.034622404999027,
+          "tokens_per_s_per_gpu": 1397.1656362312149,
+          "peak_mem_bytes": 5721124864
+        },
+        {
+          "rank": 2,
+          "micro_batch_seqs": 4,
+          "tokens_per_step_per_gpu": 8192,
+          "step_s_median": 5.862280657998781,
+          "step_s_min": 3.3750573039997107,
+          "step_s_p90": 6.034394591000819,
+          "tokens_per_s_per_gpu": 1397.4083599737648,
+          "peak_mem_bytes": 5721124864
+        },
+        {
+          "rank": 3,
+          "micro_batch_seqs": 4,
+          "tokens_per_step_per_gpu": 8192,
+          "step_s_median": 5.8622788080001555,
+          "step_s_min": 3.3750874640008988,
+          "step_s_p90": 6.03439834999881,
+          "tokens_per_s_per_gpu": 1397.4088009632897,
+          "peak_mem_bytes": 5721124864
+        }
+      ],
+      "aggregate_tokens_per_s": 5588.6625449248595,
+      "peak_mem_gib_max": 5.328212738037109
+    },
+    {
+      "rung": "L5-ne1",
+      "micro_batch": 4,
+      "world_size": 4,
+      "params_total": 65093121,
+      "per_gpu": [
+        {
+          "rank": 0,
+          "micro_batch_seqs": 4,
+          "tokens_per_step_per_gpu": 8192,
+          "step_s_median": 2.651970349500516,
+          "step_s_min": 2.6167347640002845,
+          "step_s_p90": 2.661620111000957,
+          "tokens_per_s_per_gpu": 3089.0239785459585,
+          "peak_mem_bytes": 3652771328
+        },
+        {
+          "rank": 1,
+          "micro_batch_seqs": 4,
+          "tokens_per_step_per_gpu": 8192,
+          "step_s_median": 2.651912568499938,
+          "step_s_min": 2.6166631929991127,
+          "step_s_p90": 2.661654950999946,
+          "tokens_per_s_per_gpu": 3089.0912835161184,
+          "peak_mem_bytes": 3652771328
+        },
+        {
+          "rank": 2,
+          "micro_batch_seqs": 4,
+          "tokens_per_step_per_gpu": 8192,
+          "step_s_median": 2.651900568500423,
+          "step_s_min": 2.616677782998522,
+          "step_s_p90": 2.6615793599994504,
+          "tokens_per_s_per_gpu": 3089.1052618282556,
+          "peak_mem_bytes": 3652771328
+        },
+        {
+          "rank": 3,
+          "micro_batch_seqs": 4,
+          "tokens_per_step_per_gpu": 8192,
+          "step_s_median": 2.6519085840000116,
+          "step_s_min": 2.616699084001084,
+          "step_s_p90": 2.661622071000238,
+          "tokens_per_s_per_gpu": 3089.095924884251,
+          "peak_mem_bytes": 3652771328
+        }
+      ],
+      "aggregate_tokens_per_s": 12356.095914183834,
+      "peak_mem_gib_max": 3.4019083976745605
+    },
+    {
+      "rung": "L7b",
+      "micro_batch": 4,
+      "world_size": 4,
+      "params_total": 77486465,
+      "per_gpu": [
+        {
+          "rank": 0,
+          "micro_batch_seqs": 4,
+          "tokens_per_step_per_gpu": 8192,
+          "step_s_median": 2.6782326715001545,
+          "step_s_min": 1.9712461240014818,
+          "step_s_p90": 4.025568511000529,
+          "tokens_per_s_per_gpu": 3058.7335025718385,
+          "peak_mem_bytes": 3857076736
+        },
+        {
+          "rank": 1,
+          "micro_batch_seqs": 4,
+          "tokens_per_step_per_gpu": 8192,
+          "step_s_median": 2.678209066499221,
+          "step_s_min": 1.9712457740006357,
+          "step_s_p90": 4.025621562001106,
+          "tokens_per_s_per_gpu": 3058.760461410895,
+          "peak_mem_bytes": 3857076736
+        },
+        {
+          "rank": 2,
+          "micro_batch_seqs": 4,
+          "tokens_per_step_per_gpu": 8192,
+          "step_s_median": 2.6782113014996867,
+          "step_s_min": 1.9712220530000195,
+          "step_s_p90": 4.025595262000934,
+          "tokens_per_s_per_gpu": 3058.7579088374473,
+          "peak_mem_bytes": 3857076736
+        },
+        {
+          "rank": 3,
+          "micro_batch_seqs": 4,
+          "tokens_per_step_per_gpu": 8192,
+          "step_s_median": 2.6782267415001115,
+          "step_s_min": 1.971240652999768,
+          "step_s_p90": 4.0255977920005535,
+          "tokens_per_s_per_gpu": 3058.740275071538,
+          "peak_mem_bytes": 3857076736
+        }
+      ],
+      "aggregate_tokens_per_s": 12234.934010287354,
+      "peak_mem_gib_max": 3.5921826362609863
+    }
+  ]
+}
