@@ -1,7 +1,7 @@
 # bigmoe — Research plan v0.1
 
 ## 1. Hypotheses
-Numbered after the note's points. Tier A = small-scale training experiment; S = simulation; — = not testable here. Numeric thresholds are placeholders until ADR-013.
+Numbered after the note's points. Tier A = small-scale training experiment; S = simulation; — = not testable here. Numeric thresholds are fixed by ADR-013 (`docs/04`): percentages are fractions of the matched baseline's held-out loss, "0.5 %" tests are non-inferiority within $2\sigma$, and a verdict is *silent* inside a $2\sigma$ band above the threshold.
 
 | H | Falsifiable statement | Tier | Ladder / sim |
 |---|---|---|---|
@@ -14,7 +14,7 @@ Numbered after the note's points. Tier A = small-scale training experiment; S = 
 | H7 | Learned $r_t$ saves ≥ 30% middle-block FLOPs at ≤ 1% loss vs fixed $r_{max}$ | A | L6 |
 | H8 | $L_e$ = 2 halves fabric bytes per FLOP at ≤ 0.5% loss | A + S | L7b, S3 |
 | H9 | Co-activation placement + multicast + in-network reduction cut upper-tier bytes ≥ 3× vs random placement | S | S3 |
-| H10 | Utilisation vs pool size follows $Z_{min} \approx N_e b_{min}/k$; pooling two half-size installations gains ≥ X% utilisation | S | S4 |
+| H10 | Utilisation vs pool size follows $Z_{min} \approx N_e b_{min}/k$; pooling two half-size installations gains ≥ 10 % utilisation (ADR-013) | S | S4 |
 | H11 | Continuous scheduling reaches ≥ 90% expert utilisation with p99 iteration latency ≤ 3× p50 | S | S1, S2 |
 | H12 | *(optional — author, Q1)* Two $d$-streams through shared weights match a single √2·$d$ stream at equal FLOPs (≤ 1% loss); the latency floor at full utilisation halves with half the tokens in flight, throughput unchanged (S1, incl. the non-halving fabric term) | A + S | L4 (last), S1 |
 | H13 | Four MTP heads trained from scratch reach acceptance ≥ 70 / 55 / 45% for heads 2 / 3 / 4 with no main-loss regression | A | L3 |

@@ -23,6 +23,17 @@ from costmodel.flops import (
 )
 
 
+def budget_n_keys(context: int = 2048) -> int:
+    """Attention keys per query to charge when budgeting (ADR-027).
+
+    Un-indexed global attention over a causal context of `context` tokens sees
+    $(L+1)/2$ keys on average — local window plus global final vectors — and
+    the dense baseline is charged the same, so matched FLOPs stay matched.
+    1024 at the 2048-token training context of `docs/06 §3`.
+    """
+    return (context + 1) // 2
+
+
 @dataclass(frozen=True)
 class WidthSolution:
     """Result of solving a FLOPs budget for expert width."""

@@ -28,7 +28,7 @@ Tests: `tests/test_costmodel_worked_examples.py`, one test per worked example.
 CLAUDE.md: the doc wins until an ADR says otherwise, and disagreements are
 reported rather than patched. The code implements what `docs/01 §10` says and
 makes each contested convention an explicit argument, so either resolution is
-one call away. **Five findings, in descending order of what they change.**
+one call away. **Five findings, in descending order of what they change.** *Status 2026-09-02:* all five are resolved in `docs/04` — **A** and **C** by ADR-025 ($E$ = $F$ = 2 stands, skeleton $d_{ff}$ = 4$d$, widths re-derived and rounded to 64, GQA counts), **B** by ADR-026 (L4 at 2× budget vs √2·$d$), **D** and **E** by ADR-027 (1024 budget keys at the 2048 context; fabric bytes per stream). The text below is kept as the record of what each choice cost; `tests/test_costmodel_worked_examples.py::test_canonical_widths_adr_025_027` pins the accepted numbers.
 
 ### A. `docs/06 §3` recurrent widths need two skeleton blocks, not four
 

@@ -24,6 +24,7 @@ from costmodel import (
     Model,
     Numerics,
     b_min,
+    budget_n_keys,
     dense_baseline_flops_per_token,
     dense_baseline_params,
     expert_params,
@@ -273,6 +274,47 @@ def test_budget_is_sensitive_to_the_attention_key_convention() -> None:
     assert local_only == 1665
     assert with_global == 1452
     assert abs(with_global - local_only) / local_only > 0.10
+
+
+def test_canonical_widths_adr_025_027() -> None:
+    """The accepted widths of `docs/06 §3` after ADR-025 (E = F = 2, skeleton
+    d_ff = 4d, multiples of 64) and ADR-027 (1024 budget keys at the 2048
+    training context). These are the numbers every ladder config must use."""
+    small = {(8, 2): 896, (128, 4): 448, (1, 1): 1792}
+    for (n_e, k), width in small.items():
+        keys = budget_n_keys(2048)
+        assert keys == 1024
+        sol = solve_d_ff(small_recurrent(n_e, k, 2, 2), 0.6e9, n_keys=keys, multiple_of=64)
+        assert sol.d_ff == width, (n_e, k, sol.d_ff)
+        assert not sol.at_floor
+        assert abs(sol.relative_error) < 0.01
+
+    med_attn = replace(SMALL_ATTN_GQA, heads=16, kv_heads=4, head_dim=64)
+    medium = {(8, 2): 1920, (128, 4): 960, (1, 1): 3776}
+    for (n_e, k), width in medium.items():
+        cfg = Model(
+            d=1024,
+            vocab=32_000,
+            early_blocks=2,
+            final_blocks=2,
+            r_max=16,
+            attn=med_attn,
+            experts=Experts(n_e=n_e, k=k, d_ff=None, L_e=1),
+        )
+        sol = solve_d_ff(cfg, 2.0e9, n_keys=1024, multiple_of=64)
+        assert sol.d_ff == width, (n_e, k, sol.d_ff)
+        assert abs(sol.relative_error) < 0.02
+
+
+def test_two_streams_overspend_at_e_f_2_adr_026() -> None:
+    """ADR-026: with E = F = 2 and 1024 budget keys, a two-stream `small` model
+    at r = 8 exceeds 0.6 GFLOP/token before any expert width is added, so L4
+    runs at 2x budget instead of shrinking d_ff."""
+    with pytest.raises(ValueError, match="already spent"):
+        solve_d_ff(small_recurrent(8, 2, 2, 2, two=True), 0.6e9, n_keys=1024)
+    # at 2x budget the single-stream widths are affordable again
+    sol = solve_d_ff(small_recurrent(8, 2, 2, 2, two=True), 1.2e9, n_keys=1024, multiple_of=64)
+    assert sol.d_ff >= 256
 
 
 def test_two_streams_do_not_halve_d_ff_and_break_the_budget() -> None:

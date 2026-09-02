@@ -36,7 +36,7 @@ Defines the model as a function from token sequences to next-token distributions
 | $\tau$ | tenant id | — |
 | $b_w, b_{act}, b_{kv}$ | bytes per weight / activation / KV element | — |
 
-Positions $t$ are causal. `screen`/`small`/`medium` sizes are anchored in `docs/06 §3` (ADR-015, ADR-018); `costmodel/` derives $d_{ff}$ from the FLOPs budget (single-stream `small`, $r$ = 8: ≈ 1.5–1.8 k at $N_e$ = 8, $k$ = 2; ≈ 0.8 k at $N_e$ = 128, $k$ = 4; two streams halve it, down to the $U s_{min}$ floor). Quality thresholds remain ADR-013.
+Positions $t$ are causal. `screen`/`small`/`medium` sizes are anchored in `docs/06 §3` (ADR-015, ADR-018); `costmodel/` derives $d_{ff}$ from the FLOPs budget (single-stream `small`, $r$ = 8, $E$ = $F$ = 2, 1024 budget keys: 896 at $N_e$ = 8, $k$ = 2; 448 at $N_e$ = 128, $k$ = 4; 1792 dense — ADR-025/027; two streams do not fit the budget and run at 2× against a √2·$d$ comparator, ADR-026). Quality thresholds remain ADR-013.
 
 ## 2. Macro-structure
 
@@ -174,12 +174,12 @@ $m$ heads on $p_t^{out}$: head 1 predicts $x_{t+1}$ (main loss); heads $2..m$ pr
 
 ## 10. Accounting (per token, per iteration, both streams unless noted; FLOPs count multiply-add as 2)
 - Attention projections: Q and O on both streams: $2 \cdot 2 \cdot 2 d^2$; K and V on $c$ only: $2 \cdot 2\, d\, H_{kv} d_h$.
-- Attention scores: $2 \cdot 2\, d\,(W + |\mathcal{G}_{visible}|)$ per stream, with $|\mathcal{G}_{visible}| = K_{idx} B_{idx}$ once indexed.
+- Attention scores: $2 \cdot 2\, d\,(W + |\mathcal{G}_{visible}|)$ per stream, with $|\mathcal{G}_{visible}| = K_{idx} B_{idx}$ once indexed. **Budget convention (ADR-027):** at the training context un-indexed, $W + |\mathcal{G}_{visible}|$ averages $(L+1)/2$ = 1024 keys at $L$ = 2048; that is the figure every `06 §3` anchor uses.
 - KV bytes: persistent $2 H_{kv} d_h b_{kv}$ per token (one $\mathcal{G}$ entry); transient $\le W \cdot r_{max} \cdot 2 H_{kv} d_h b_{kv}$ per in-flight sequence.
 - MoE: $2 \cdot k \cdot 3\, d\, d_{ff}\, L_e$ per stream; router $O(d_r \sqrt{N_e})$.
 - Memory: $O(d_m \sqrt{N_m}) + 2\, k_m\, d_v\, d$ per stream.
 - Prefill: $c$ only → drop the per-stream doubling → ≈ ½ of decode per token.
-- Fabric bytes per token per iteration (activations): $2 \cdot k \cdot d \cdot b_{act}$ before multicast/reduction dedup.
+- Fabric bytes per token per iteration (activations): $2 \cdot k \cdot d \cdot b_{act}$ **per stream** (dispatch + combine; two streams double it — ADR-027), before multicast/reduction dedup.
 
 Worked examples for the Tier-A `small` config and for a note-scale config ($d$ = 8192, $U$ = 64, $s_{min}$ = 256 → $d_{ff}$ = 16384, $N_e$ = 65 536, $k$ = 8, $r_{max}$ = 128, $L_e$ = 1: ≈ 0.4 B params per expert, ≈ 13 GFLOP per token per iteration for two streams) live in `costmodel/` and must match `docs/02 §2`.
 

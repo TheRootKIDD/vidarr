@@ -41,7 +41,7 @@ from costmodel.params import (
     experts_total_params,
     total_params,
 )
-from costmodel.solve import WidthSolution, solve_d_ff, with_d_ff
+from costmodel.solve import WidthSolution, budget_n_keys, solve_d_ff, with_d_ff
 
 __all__ = [
     "Attention",
@@ -68,6 +68,7 @@ __all__ = [
     "min_d_ff",
     "persistent_kv_bytes_per_token",
     "prefill_flops_per_token",
+    "budget_n_keys",
     "solve_d_ff",
     "tile_ok",
     "tokens_at_floor",
