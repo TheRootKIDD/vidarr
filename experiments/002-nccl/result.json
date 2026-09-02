@@ -1,0 +1,555 @@
+{
+  "result_id": "002-nccl",
+  "provenance": {
+    "date_utc": "2026-09-02T11:16:54+00:00",
+    "git_hash": "b2d50f743da57ad3f08d4c2d3f19cc524e4fed5e",
+    "git_dirty": true,
+    "driver_version": "595.80",
+    "torch_version": "2.13.0+cu130",
+    "torch_cuda_version": "13.0",
+    "python_version": "3.12.13",
+    "platform": "Linux-7.1.10-200.fc44.x86_64-x86_64-with-glibc2.43",
+    "gpus": [
+      {
+        "index": 0,
+        "name": "NVIDIA GeForce RTX 3060",
+        "sm": "8.6",
+        "multi_processor_count": 28,
+        "total_memory_bytes": 12490440704
+      },
+      {
+        "index": 1,
+        "name": "NVIDIA GeForce RTX 3060",
+        "sm": "8.6",
+        "multi_processor_count": 28,
+        "total_memory_bytes": 12490440704
+      },
+      {
+        "index": 2,
+        "name": "NVIDIA GeForce RTX 3060",
+        "sm": "8.6",
+        "multi_processor_count": 28,
+        "total_memory_bytes": 12490440704
+      },
+      {
+        "index": 3,
+        "name": "NVIDIA GeForce RTX 3060",
+        "sm": "8.6",
+        "multi_processor_count": 28,
+        "total_memory_bytes": 12490440704
+      }
+    ]
+  },
+  "bench": "nccl",
+  "world_size": 4,
+  "backend": "nccl",
+  "nccl_p2p_disable": true,
+  "nccl_version": "2.29.7",
+  "note": "host-bounced: no NVLink, no PCIe P2P on GeForce",
+  "results": [
+    {
+      "op": "all_gather",
+      "bytes_per_rank": 1024,
+      "median_s": 3.965100017921941e-05,
+      "min_s": 3.7321000036172336e-05,
+      "algbw_GBps": 0.025825325852351776,
+      "busbw_GBps": 0.01936899438926383
+    },
+    {
+      "op": "all_gather",
+      "bytes_per_rank": 2048,
+      "median_s": 3.909550014213892e-05,
+      "min_s": 3.769100021600025e-05,
+      "algbw_GBps": 0.05238454534547755,
+      "busbw_GBps": 0.039288409009108155
+    },
+    {
+      "op": "all_gather",
+      "bytes_per_rank": 4096,
+      "median_s": 3.9030500147418934e-05,
+      "min_s": 3.767099997276091e-05,
+      "algbw_GBps": 0.10494356937598368,
+      "busbw_GBps": 0.07870767703198776
+    },
+    {
+      "op": "all_gather",
+      "bytes_per_rank": 8192,
+      "median_s": 4.362100003163505e-05,
+      "min_s": 4.086099988853675e-05,
+      "algbw_GBps": 0.1877994542550367,
+      "busbw_GBps": 0.1408495906912775
+    },
+    {
+      "op": "all_gather",
+      "bytes_per_rank": 16384,
+      "median_s": 5.7311500086143496e-05,
+      "min_s": 5.396100004873006e-05,
+      "algbw_GBps": 0.2858763071176573,
+      "busbw_GBps": 0.21440723033824297
+    },
+    {
+      "op": "all_gather",
+      "bytes_per_rank": 32768,
+      "median_s": 8.046199991440517e-05,
+      "min_s": 7.442100013577146e-05,
+      "algbw_GBps": 0.40724814241329244,
+      "busbw_GBps": 0.3054361068099693
+    },
+    {
+      "op": "all_gather",
+      "bytes_per_rank": 65536,
+      "median_s": 0.00012821250015804253,
+      "min_s": 0.00012080199985575746,
+      "algbw_GBps": 0.511151408163918,
+      "busbw_GBps": 0.3833635561229385
+    },
+    {
+      "op": "all_gather",
+      "bytes_per_rank": 131072,
+      "median_s": 0.0001533079998807807,
+      "min_s": 0.00012958300021637115,
+      "algbw_GBps": 0.854958646006259,
+      "busbw_GBps": 0.6412189845046944
+    },
+    {
+      "op": "all_gather",
+      "bytes_per_rank": 262144,
+      "median_s": 0.0002515095000035217,
+      "min_s": 0.00024025499988056254,
+      "algbw_GBps": 1.0422826970604666,
+      "busbw_GBps": 0.7817120227953498
+    },
+    {
+      "op": "all_gather",
+      "bytes_per_rank": 524288,
+      "median_s": 0.00047846450001998164,
+      "min_s": 0.0004704090001723671,
+      "algbw_GBps": 1.095771995577738,
+      "busbw_GBps": 0.8218289966833036
+    },
+    {
+      "op": "all_gather",
+      "bytes_per_rank": 1048576,
+      "median_s": 0.0009143629999925906,
+      "min_s": 0.0006890029999340186,
+      "algbw_GBps": 1.146783061003668,
+      "busbw_GBps": 0.8600872957527511
+    },
+    {
+      "op": "all_gather",
+      "bytes_per_rank": 2097152,
+      "median_s": 0.0017985295000926271,
+      "min_s": 0.0017855740002232778,
+      "algbw_GBps": 1.166037031859635,
+      "busbw_GBps": 0.8745277738947261
+    },
+    {
+      "op": "all_gather",
+      "bytes_per_rank": 4194304,
+      "median_s": 0.00354412349975064,
+      "min_s": 0.003501698000036413,
+      "algbw_GBps": 1.183453116206336,
+      "busbw_GBps": 0.887589837154752
+    },
+    {
+      "op": "all_gather",
+      "bytes_per_rank": 8388608,
+      "median_s": 0.007053256000062902,
+      "min_s": 0.006969744999878458,
+      "algbw_GBps": 1.1893241929578606,
+      "busbw_GBps": 0.8919931447183955
+    },
+    {
+      "op": "all_gather",
+      "bytes_per_rank": 16777216,
+      "median_s": 0.014171009500159926,
+      "min_s": 0.014106152999829646,
+      "algbw_GBps": 1.1839111391330774,
+      "busbw_GBps": 0.887933354349808
+    },
+    {
+      "op": "all_gather",
+      "bytes_per_rank": 33554432,
+      "median_s": 0.028426005000028454,
+      "min_s": 0.028279407000354695,
+      "algbw_GBps": 1.180413216699512,
+      "busbw_GBps": 0.885309912524634
+    },
+    {
+      "op": "all_gather",
+      "bytes_per_rank": 67108864,
+      "median_s": 0.05696745199975339,
+      "min_s": 0.0565020139997614,
+      "algbw_GBps": 1.1780211619836973,
+      "busbw_GBps": 0.8835158714877731
+    },
+    {
+      "op": "all_gather",
+      "bytes_per_rank": 134217728,
+      "median_s": 0.11416329899998345,
+      "min_s": 0.11375125099993966,
+      "algbw_GBps": 1.1756644138325003,
+      "busbw_GBps": 0.8817483103743751
+    },
+    {
+      "op": "all_gather",
+      "bytes_per_rank": 268435456,
+      "median_s": 0.22725698250019377,
+      "min_s": 0.22655644399992525,
+      "algbw_GBps": 1.181197836241494,
+      "busbw_GBps": 0.8858983771811206
+    },
+    {
+      "op": "all_gather",
+      "bytes_per_rank": 536870912,
+      "median_s": 0.45265967849991284,
+      "min_s": 0.451785251000274,
+      "algbw_GBps": 1.1860365247886848,
+      "busbw_GBps": 0.8895273935915137
+    },
+    {
+      "op": "all_gather",
+      "bytes_per_rank": 1073741824,
+      "median_s": 0.9044495199998437,
+      "min_s": 0.9029741109998213,
+      "algbw_GBps": 1.1871771726963662,
+      "busbw_GBps": 0.8903828795222747
+    },
+    {
+      "op": "all_reduce",
+      "bytes_per_rank": 1024,
+      "median_s": 4.5985500037204474e-05,
+      "min_s": 4.256100010024966e-05,
+      "algbw_GBps": 0.022267888773016165,
+      "busbw_GBps": 0.03340183315952425
+    },
+    {
+      "op": "all_reduce",
+      "bytes_per_rank": 2048,
+      "median_s": 4.7170500010906835e-05,
+      "min_s": 4.2661000406951644e-05,
+      "algbw_GBps": 0.04341696610225582,
+      "busbw_GBps": 0.06512544915338374
+    },
+    {
+      "op": "all_reduce",
+      "bytes_per_rank": 4096,
+      "median_s": 4.466600012165145e-05,
+      "min_s": 4.257099999449565e-05,
+      "algbw_GBps": 0.09170286098697475,
+      "busbw_GBps": 0.13755429148046214
+    },
+    {
+      "op": "all_reduce",
+      "bytes_per_rank": 8192,
+      "median_s": 4.7860999757176614e-05,
+      "min_s": 4.3541000195546076e-05,
+      "algbw_GBps": 0.1711623250989786,
+      "busbw_GBps": 0.2567434876484679
+    },
+    {
+      "op": "all_reduce",
+      "bytes_per_rank": 16384,
+      "median_s": 4.800600004273292e-05,
+      "min_s": 4.5990999751666095e-05,
+      "algbw_GBps": 0.34129067169553085,
+      "busbw_GBps": 0.5119360075432963
+    },
+    {
+      "op": "all_reduce",
+      "bytes_per_rank": 32768,
+      "median_s": 6.121649994383915e-05,
+      "min_s": 5.935099989073933e-05,
+      "algbw_GBps": 0.5352805212657014,
+      "busbw_GBps": 0.8029207818985521
+    },
+    {
+      "op": "all_reduce",
+      "bytes_per_rank": 65536,
+      "median_s": 8.885650004231138e-05,
+      "min_s": 8.577200014769915e-05,
+      "algbw_GBps": 0.7375487439725095,
+      "busbw_GBps": 1.1063231159587643
+    },
+    {
+      "op": "all_reduce",
+      "bytes_per_rank": 131072,
+      "median_s": 0.00016078349995041208,
+      "min_s": 0.00013469299983626115,
+      "algbw_GBps": 0.8152080284383937,
+      "busbw_GBps": 1.2228120426575906
+    },
+    {
+      "op": "all_reduce",
+      "bytes_per_rank": 262144,
+      "median_s": 0.00024049000012382749,
+      "min_s": 0.0002344039999115921,
+      "algbw_GBps": 1.0900411653915878,
+      "busbw_GBps": 1.6350617480873817
+    },
+    {
+      "op": "all_reduce",
+      "bytes_per_rank": 524288,
+      "median_s": 0.0002664150001692178,
+      "min_s": 0.000259235000157787,
+      "algbw_GBps": 1.9679372395210102,
+      "busbw_GBps": 2.9519058592815153
+    },
+    {
+      "op": "all_reduce",
+      "bytes_per_rank": 1048576,
+      "median_s": 0.00046810949993414397,
+      "min_s": 0.000460408999970241,
+      "algbw_GBps": 2.2400229009398847,
+      "busbw_GBps": 3.360034351409827
+    },
+    {
+      "op": "all_reduce",
+      "bytes_per_rank": 2097152,
+      "median_s": 0.0009161029997812875,
+      "min_s": 0.0007971850000103586,
+      "algbw_GBps": 2.289209838304949,
+      "busbw_GBps": 3.4338147574574243
+    },
+    {
+      "op": "all_reduce",
+      "bytes_per_rank": 4194304,
+      "median_s": 0.0017834044999744947,
+      "min_s": 0.0017684549998193688,
+      "algbw_GBps": 2.3518523139646583,
+      "busbw_GBps": 3.5277784709469873
+    },
+    {
+      "op": "all_reduce",
+      "bytes_per_rank": 8388608,
+      "median_s": 0.0035311829999500333,
+      "min_s": 0.0035136480000801384,
+      "algbw_GBps": 2.3755800818362287,
+      "busbw_GBps": 3.563370122754343
+    },
+    {
+      "op": "all_reduce",
+      "bytes_per_rank": 16777216,
+      "median_s": 0.00698324999984834,
+      "min_s": 0.006958214999940537,
+      "algbw_GBps": 2.402493967760622,
+      "busbw_GBps": 3.603740951640933
+    },
+    {
+      "op": "all_reduce",
+      "bytes_per_rank": 33554432,
+      "median_s": 0.013919774500209314,
+      "min_s": 0.01388731800034293,
+      "algbw_GBps": 2.410558590550115,
+      "busbw_GBps": 3.6158378858251723
+    },
+    {
+      "op": "all_reduce",
+      "bytes_per_rank": 67108864,
+      "median_s": 0.027971187000048303,
+      "min_s": 0.027851808000377787,
+      "algbw_GBps": 2.399214019765558,
+      "busbw_GBps": 3.5988210296483363
+    },
+    {
+      "op": "all_reduce",
+      "bytes_per_rank": 134217728,
+      "median_s": 0.056176886499997636,
+      "min_s": 0.05613327599985496,
+      "algbw_GBps": 2.38919841169919,
+      "busbw_GBps": 3.5837976175487842
+    },
+    {
+      "op": "all_reduce",
+      "bytes_per_rank": 268435456,
+      "median_s": 0.11231974349993834,
+      "min_s": 0.11207343900014166,
+      "algbw_GBps": 2.3899222668732976,
+      "busbw_GBps": 3.5848834003099466
+    },
+    {
+      "op": "all_reduce",
+      "bytes_per_rank": 536870912,
+      "median_s": 0.22460262100003092,
+      "min_s": 0.2238714909999544,
+      "algbw_GBps": 2.390314545794753,
+      "busbw_GBps": 3.5854718186921297
+    },
+    {
+      "op": "all_reduce",
+      "bytes_per_rank": 1073741824,
+      "median_s": 0.44864597099990533,
+      "min_s": 0.4479513369997221,
+      "algbw_GBps": 2.3932942529427654,
+      "busbw_GBps": 3.5899413794141477
+    },
+    {
+      "op": "all_to_all",
+      "bytes_per_rank": 1024,
+      "median_s": 4.38859997302643e-05,
+      "min_s": 4.214000000501983e-05,
+      "algbw_GBps": 0.0233331815680124,
+      "busbw_GBps": 0.017499886176009297
+    },
+    {
+      "op": "all_to_all",
+      "bytes_per_rank": 2048,
+      "median_s": 4.508100028033368e-05,
+      "min_s": 4.1821000195341185e-05,
+      "algbw_GBps": 0.045429338019667406,
+      "busbw_GBps": 0.03407200351475056
+    },
+    {
+      "op": "all_to_all",
+      "bytes_per_rank": 4096,
+      "median_s": 4.285600016373792e-05,
+      "min_s": 4.1741000131878536e-05,
+      "algbw_GBps": 0.09557588165835831,
+      "busbw_GBps": 0.07168191124376874
+    },
+    {
+      "op": "all_to_all",
+      "bytes_per_rank": 8192,
+      "median_s": 4.2890999793598894e-05,
+      "min_s": 4.186099977232516e-05,
+      "algbw_GBps": 0.1909957809195808,
+      "busbw_GBps": 0.1432468356896856
+    },
+    {
+      "op": "all_to_all",
+      "bytes_per_rank": 16384,
+      "median_s": 4.3810999841298326e-05,
+      "min_s": 4.209100006846711e-05,
+      "algbw_GBps": 0.37397000888702986,
+      "busbw_GBps": 0.28047750666527244
+    },
+    {
+      "op": "all_to_all",
+      "bytes_per_rank": 32768,
+      "median_s": 4.873099987889873e-05,
+      "min_s": 4.6190999910322716e-05,
+      "algbw_GBps": 0.6724261780269575,
+      "busbw_GBps": 0.5043196335202181
+    },
+    {
+      "op": "all_to_all",
+      "bytes_per_rank": 65536,
+      "median_s": 6.0936000181754935e-05,
+      "min_s": 5.7221000133722555e-05,
+      "algbw_GBps": 1.075489034470995,
+      "busbw_GBps": 0.8066167758532464
+    },
+    {
+      "op": "all_to_all",
+      "bytes_per_rank": 131072,
+      "median_s": 6.27360000180488e-05,
+      "min_s": 6.0461000430223066e-05,
+      "algbw_GBps": 2.089262942525684,
+      "busbw_GBps": 1.566947206894263
+    },
+    {
+      "op": "all_to_all",
+      "bytes_per_rank": 262144,
+      "median_s": 8.837699988362147e-05,
+      "min_s": 8.041199998842785e-05,
+      "algbw_GBps": 2.9662016174480033,
+      "busbw_GBps": 2.2246512130860023
+    },
+    {
+      "op": "all_to_all",
+      "bytes_per_rank": 524288,
+      "median_s": 0.00014379799995367648,
+      "min_s": 0.00013736299979427713,
+      "algbw_GBps": 3.646003422640758,
+      "busbw_GBps": 2.7345025669805683
+    },
+    {
+      "op": "all_to_all",
+      "bytes_per_rank": 1048576,
+      "median_s": 0.00024770950017227733,
+      "min_s": 0.00023656399980609422,
+      "algbw_GBps": 4.233087545171804,
+      "busbw_GBps": 3.174815658878853
+    },
+    {
+      "op": "all_to_all",
+      "bytes_per_rank": 2097152,
+      "median_s": 0.00046877399995537417,
+      "min_s": 0.0004434180000316701,
+      "algbw_GBps": 4.473695213897619,
+      "busbw_GBps": 3.3552714104232146
+    },
+    {
+      "op": "all_to_all",
+      "bytes_per_rank": 4194304,
+      "median_s": 0.0009161579998817615,
+      "min_s": 0.0003561769999578246,
+      "algbw_GBps": 4.578144818406118,
+      "busbw_GBps": 3.433608613804589
+    },
+    {
+      "op": "all_to_all",
+      "bytes_per_rank": 8388608,
+      "median_s": 0.0017895900000439724,
+      "min_s": 0.0017569629999343306,
+      "algbw_GBps": 4.68744684525164,
+      "busbw_GBps": 3.515585133938729
+    },
+    {
+      "op": "all_to_all",
+      "bytes_per_rank": 16777216,
+      "median_s": 0.0035120729999107425,
+      "min_s": 0.0033815450001384306,
+      "algbw_GBps": 4.777012323042939,
+      "busbw_GBps": 3.5827592422822048
+    },
+    {
+      "op": "all_to_all",
+      "bytes_per_rank": 33554432,
+      "median_s": 0.0070274709999011975,
+      "min_s": 0.006984404999911931,
+      "algbw_GBps": 4.7747521121711864,
+      "busbw_GBps": 3.58106408412839
+    },
+    {
+      "op": "all_to_all",
+      "bytes_per_rank": 67108864,
+      "median_s": 0.013911618999827624,
+      "min_s": 0.01387586900000315,
+      "algbw_GBps": 4.823943496499691,
+      "busbw_GBps": 3.6179576223747683
+    },
+    {
+      "op": "all_to_all",
+      "bytes_per_rank": 134217728,
+      "median_s": 0.02790518000006159,
+      "min_s": 0.027779426999586576,
+      "algbw_GBps": 4.809778256212781,
+      "busbw_GBps": 3.6073336921595858
+    },
+    {
+      "op": "all_to_all",
+      "bytes_per_rank": 268435456,
+      "median_s": 0.05594464249975317,
+      "min_s": 0.0556674870003917,
+      "algbw_GBps": 4.798233468042706,
+      "busbw_GBps": 3.598675101032029
+    },
+    {
+      "op": "all_to_all",
+      "bytes_per_rank": 536870912,
+      "median_s": 0.11191162000000077,
+      "min_s": 0.11160161900033927,
+      "algbw_GBps": 4.797275850354023,
+      "busbw_GBps": 3.597956887765517
+    },
+    {
+      "op": "all_to_all",
+      "bytes_per_rank": 1073741824,
+      "median_s": 0.22381108549984674,
+      "min_s": 0.22311635700043553,
+      "algbw_GBps": 4.797536375832176,
+      "busbw_GBps": 3.5981522818741323
+    }
+  ]
+}
