@@ -60,3 +60,38 @@ stored, closed; I8 = which pretrained sentence encoder; I9 = which corpus slice
 to embed). Renumbered here to **I10** (SATA, not NVMe), **I11** (GA104/GA106
 mix) and **I12** (31 GiB disk headroom); the commit message of `de13e02`
 predates the renumbering and still names the old ids.
+
+## Addendum, 2026-09-02 — I10 and I12 downgraded: NVMe and HDD are available
+
+Hardware that was not present when this was measured is available to install: a
+**4 TB NVMe** (moving from another workstation) and a **1 TB HDD**, both pending
+a power-off.
+
+This changes the standing of two of the three findings.
+
+**I10 (SATA, not NVMe) — downgraded from a spec problem to a scheduling one.**
+The three-tier model of `docs/06 §2` and `docs/02 §7` assumed a 3–7 GB/s cold
+tier and got a ~0.5 GB/s SATA drive. With the 4 TB NVMe installed the assumption
+is met by real hardware, so `docs/06 §1`'s "NVMe assumed (unmeasured)" becomes
+correct rather than wrong, and `bench_tiers` measures the tier the design
+actually specifies. **Consequence for sequencing: `bench_tiers` should not be run
+against the SATA drive.** Measuring a cold tier that is about to be replaced
+produces a `local_3060.yaml` value that is obsolete on arrival, and $\beta_{cold}$
+is a scenario input other results are scored against. `bench_tiers` therefore
+moves to after the install; every other bench is storage-independent and runs
+before it.
+
+**I12 (31 GiB headroom) — resolved by the same install.** 4 TB plus 1 TB against
+a ≈ 20 GB tokenised corpus and FAISS indexes removes the constraint entirely,
+including the `docs/06 §7` rule that the corpus lives as a `uint16` memmap on
+NVMe, which becomes satisfiable as written. Role split: NVMe carries the corpus,
+the KV cold tier and the indexes; the HDD is bulk storage (archives, checkpoints
+kept for provenance) and is **not** a KV tier — spinning disk is slower than the
+SATA SSD already present, which is in turn ~10× slower than the NVMe.
+
+**I11 (GA104/GA106 mix) is unaffected** and still wants `bench_gemm` per card.
+
+Note that ADR-021 has meanwhile shrunk the persistent cache by ~$r_{max}$×, and
+`docs/06 §5.4` sets tier limits artificially small on purpose to exercise the
+warm/cold paths. So the cold tier was already under less pressure than the v1
+design implied; the NVMe removes the concern rather than merely easing it.
