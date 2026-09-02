@@ -97,12 +97,20 @@ tiers:
     note: G entry at small = 1 KiB, B_idx=16 block = 16 KiB; batch several blocks per fetch
     source: experiments/011-tiers-mem (host[])
   cold:
-    medium: NVMe (4 TB, pending install — I10)
-    bandwidth_bytes_per_s: null
-    random_latency_s: null
-    status: placeholder
-    note: measure with bench_tiers --tiers storage on the NVMe once installed; do NOT use the SATA SSD
-    source: pending
+    medium: NVMe, WD_BLACK SN850X 4 TB, PCIe 4.0 x4, ext4, O_DIRECT, mounted /mnt/nvme
+    bandwidth_bytes_per_s: 7.29e9        # sequential, >= 16 MiB blocks; drive rated 7.3
+    random_bytes_per_s_4mib: 5.9e9       # random reads reach ~6 GB/s from 4 MiB up
+    random_latency_s: 46e-6              # 4 KiB, queue depth 1, median
+    random_latency_16kib_s: 70e-6        # one B_idx=16 block at small
+    random_iops_16kib: 14345
+    random_bytes_per_s_16kib: 0.235e9
+    random_bytes_per_s_64kib: 0.71e9
+    random_bytes_per_s_256kib: 2.18e9
+    batch_knee_bytes: 1048576            # random reads pass half the drive at 1 MiB = 64 blocks per fetch
+    queue_depth: 1                       # single synchronous reader; a lower bound (I16)
+    status: measured
+    note: 10x the warm tier's latency at KV-block sizes; batch cold fetches to >= 1 MiB or model a 70 us stall
+    source: experiments/012-tiers-nvme
 
 host:
   cpu: AMD Ryzen Threadripper PRO 3945WX, 12C/24T

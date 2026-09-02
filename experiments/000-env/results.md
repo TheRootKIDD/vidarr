@@ -95,3 +95,6 @@ Note that ADR-021 has meanwhile shrunk the persistent cache by ~$r_{max}$×, and
 `docs/06 §5.4` sets tier limits artificially small on purpose to exercise the
 warm/cold paths. So the cold tier was already under less pressure than the v1
 design implied; the NVMe removes the concern rather than merely easing it.
+
+**Installed 2026-09-02**, same day: NVMe at `/mnt/nvme`, HDD at `/mnt/hdd`, both
+ext4. The cold tier is measured in `012-tiers-nvme`; I10 and I12 are closed there.
