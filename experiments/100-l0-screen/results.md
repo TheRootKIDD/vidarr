@@ -12,7 +12,7 @@
 | tokens | 1.000 B in 1907 steps |
 | final val loss (full held-out, 5606 windows) | **3.3358** nats |
 | final train loss (last step, main head) | 3.3048 |
-| throughput (last step) | 63,308 tokens/s aggregate |
+| throughput (last step) | 63,308 tokens/s **CPU-side, invalid** — three cards were thermally throttled (I23); true aggregate ≈ 15 k tokens/s over the run |
 | peak memory per GPU | 6.25 GiB |
 | wall-clock | 17.99 h (20:06 → 14:05) — **of which 4.28 h in timed steps**; see I22 |
 | seed | 0 |
@@ -32,7 +32,8 @@ the second half. For ADR-013 this fixes the thresholds at `screen`: "1 %" =
 the run occupied the cards for 18 h. The first checkpoint landed 30 min after
 launch at step ≈ 220, i.e. wall-clock tracked step time early on; the loss was
 somewhere later, outside the timed region (evaluation, checkpointing to the
-SATA `/home` volume, or the end-of-step barrier). Recorded as **I22**; the
-trainer now logs absolute time and eval/checkpoint durations per step, and
-`101-l1-screen` is being watched with timestamps. The loss figures are
-unaffected — every token was trained and evaluated as configured.
+SATA `/home` volume, or the end-of-step barrier). Resolved as **I23**: three of the four cards were thermally throttled (91–93 °C,
+SM clocks down to 270 MHz) and DDP ran at the slowest card; the step timer
+had no `cuda.synchronize`, so it measured CPU enqueue time. Per `06 §7` the
+throughput of this run is invalid; the loss figures are unaffected — every
+token was trained and evaluated as configured.

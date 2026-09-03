@@ -87,6 +87,36 @@ def make_optimizer(model: nn.Module, a: TrainArgs) -> torch.optim.Optimizer:
     return torch.optim.AdamW(groups, lr=a.lr, betas=a.betas, fused=True)
 
 
+# ---- thermals (docs/06 §7: a throttled card invalidates throughput numbers) ---------------
+def gpu_thermals() -> dict[str, float]:
+    """min SM clock, max temperature and any active throttle reason across all cards."""
+    import subprocess
+
+    try:
+        out = (
+            subprocess.run(
+                [
+                    "nvidia-smi",
+                    "--query-gpu=clocks.sm,temperature.gpu,clocks_throttle_reasons.active",
+                    "--format=csv,noheader,nounits",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=True,
+            )
+            .stdout.strip()
+            .splitlines()
+        )
+    except Exception:  # noqa: BLE001 — telemetry must never stop training
+        return {}
+    rows = [line.split(", ") for line in out]
+    clocks = [float(r[0]) for r in rows]
+    temps = [float(r[1]) for r in rows]
+    throttled = sum(int(r[2], 16) not in (0, 1) for r in rows)  # 0x1 = GPU idle, not a throttle
+    return {"sm_mhz_min": min(clocks), "temp_c_max": max(temps), "n_throttled": float(throttled)}
+
+
 # ---- evaluation ---------------------------------------------------------------------
 @torch.no_grad()
 def evaluate(
@@ -246,6 +276,7 @@ def worker(rank: int, world: int, a: TrainArgs, cfg: ModelCfg, out: Path) -> Non
                 moe.router.update_bias(ld)
         step += 1
         tokens_seen += step_tokens
+        torch.cuda.synchronize(dev)  # the step time must include queued GPU work (I22)
         dt = time.time() - t0
         if world > 1:
             dist.all_reduce(sums)
@@ -302,6 +333,8 @@ def worker(rank: int, world: int, a: TrainArgs, cfg: ModelCfg, out: Path) -> Non
         if is_main:
             rec["eval_s"] = time.time() - t_eval
             rec["wall"] = time.time()  # absolute, to reconcile step time with wall-clock (I22)
+            if step % 10 == 0:
+                rec.update(gpu_thermals())  # I23: throttling is the wall-clock gap
             due = (time.time() - t_ckpt) / 60 >= a.ckpt_minutes
             if due or step == total_steps:
                 t_save = time.time()
