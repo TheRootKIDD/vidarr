@@ -280,6 +280,7 @@ def worker(rank: int, world: int, a: TrainArgs, cfg: ModelCfg, out: Path) -> Non
                     f"{rec['peak_gib']:.2f} GiB",
                     flush=True,
                 )
+        t_eval = time.time()
         if step % a.eval_every == 0 or step == total_steps:
             ev = evaluate(
                 raw,
@@ -299,10 +300,11 @@ def worker(rank: int, world: int, a: TrainArgs, cfg: ModelCfg, out: Path) -> Non
                     flush=True,
                 )
         if is_main:
-            log.write(json.dumps(rec) + "\n")
-            log.flush()
+            rec["eval_s"] = time.time() - t_eval
+            rec["wall"] = time.time()  # absolute, to reconcile step time with wall-clock (I22)
             due = (time.time() - t_ckpt) / 60 >= a.ckpt_minutes
             if due or step == total_steps:
+                t_save = time.time()
                 ckpt_path.parent.mkdir(parents=True, exist_ok=True)
                 torch.save(
                     {
@@ -316,6 +318,9 @@ def worker(rank: int, world: int, a: TrainArgs, cfg: ModelCfg, out: Path) -> Non
                     ckpt_path,
                 )
                 t_ckpt = time.time()
+                rec["ckpt_s"] = time.time() - t_save
+            log.write(json.dumps(rec) + "\n")
+            log.flush()
         if world > 1:
             dist.barrier()
 
