@@ -1,12 +1,12 @@
-# 016-thermal-soak-bottom-fans — L5 DDP soak after the first cooling step (three bottom 140 mm intakes)
+# 016-thermal-soak-bottom-fans — L5 DDP soak after the first cooling step (bottom intakes + top exhaust)
 
 2026-09-04 13:22–13:29 · `scripts/bench/thermal_soak.sh 016-thermal-soak-bottom-fans 350` ·
 same rung, micro-batch, power limit (170 W) and sampler as `015-thermal-soak-170w` ·
 cards started **cold** (33–42 °C, machine idle since yesterday; 015 started at 50–59 °C) ·
 case change since 015: **three 140 mm intake fans added in the bottom of the Lian Li
-O11D EVO XL**, blowing up into the card stack. Everything else unchanged: four dual-slot
-cards back to back in slots 1/3/5/7 (bus IDs 01/02/41/42 as before), 3 side intakes,
-1 rear exhaust, no top exhaust. The upright bracket, vertical kit and 900 mm riser have
+O11D EVO XL, blowing up into the card stack, and top exhaust fans installed** (erratum
+below). Everything else unchanged: four dual-slot cards back to back in slots 1/3/5/7
+(bus IDs 01/02/41/42 as before), 3 side intakes, 1 rear exhaust. The upright bracket, vertical kit and 900 mm riser have
 not arrived, so no card has been moved yet.
 
 **Bears on:** no hypothesis; interim reading of the I23 remedy. This is *not* the
@@ -46,7 +46,7 @@ soak after the rebuild use ≈ 1100 steps (`thermal_soak.sh 017-… 1100`).
 
 ## Interpretation
 
-**The bottom intakes help but do not fix it: the three sandwiched cards still reach
+**The bottom intakes and top exhaust help but do not fix it: the three sandwiched cards still reach
 93 °C and `sw_thermal_slowdown` within about two minutes.** The extra airflow roughly
 doubles the time to first throttle (50–70 s → 110–130 s), lifts the steady-state clock
 floor of the worst card from 225 to 990 MHz and its mean from 328 to 1518 MHz, and lets
@@ -54,11 +54,19 @@ the cards draw 120–132 W instead of 84–104 W — so the DDP step drops from 
 826 ms (1.55×), against a cold-card floor of ≈ 760 ms in both runs. GPU 2, the card
 with a free slot beside it, is unchanged at 62 °C and full clocks, which again points
 at spacing rather than case airflow as the remaining constraint: the three back-to-back
-cards recirculate their own exhaust no matter how much air enters the bottom. The
+cards recirculate their own exhaust no matter how much air passes through the case. The
 result is consistent with 015's conclusion and does not warrant any training run yet:
 throughput at this state is still set by whichever card throttles hardest and is not
 stable across a multi-hour run (this soak started cold). Next: install the upright
 bracket and vertical kit when they arrive, so that every board-mounted card has a free
 slot on each side, and rerun the soak as `017-thermal-soak-<config>` for ≥ 15 min.
-Optional in the meantime, if a top exhaust fan can be fitted without the brackets: it
-would remove the hot air the bottom fans now push into the top of the case.
+With intake below and exhaust above already in place, there is no further case-fan
+step left before the re-slotting.
+
+## Erratum (2026-09-04, same day)
+
+The first version of this file said only the bottom intakes were installed and no top
+exhaust. The user's message was misread: **the top exhaust fans were installed at the
+same time as the three bottom intakes**, so this soak measured both. No number changed;
+the setup line, title and interpretation above were corrected accordingly. The
+directory slug is kept (ids are never renamed).

@@ -3,10 +3,12 @@
 # power limit while sampling every GPU every 10 s. Writes
 # experiments/<id>/{thermals.csv,soak.log}; the caller sets the power limit
 # beforehand (root): sudo nvidia-smi -pl <watts>.
-#   scripts/bench/thermal_soak.sh 015-thermal-soak-120w [steps]
+#   scripts/bench/thermal_soak.sh 017-thermal-soak-<config> [steps]
+# The run is step-bound: 1100 steps is ~15 min at the un-throttled L5 step of
+# ~0.8 s (015 and 016 used 350, which is 5-9 min depending on throttling).
 set -euo pipefail
 cd "$(dirname "$0")/../.."
-ID=$1; STEPS=${2:-350}
+ID=$1; STEPS=${2:-1100}
 OUT=experiments/$ID; mkdir -p "$OUT"
 [ -e "$OUT/thermals.csv" ] && { echo "refusing to overwrite $OUT (append-only)"; exit 1; }
 nvidia-smi --query-gpu=index,power.limit --format=csv,noheader > "$OUT/power_limit.txt"
