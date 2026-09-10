@@ -120,7 +120,24 @@ tiers:
 
 host:
   cpu: AMD Ryzen Threadripper PRO 3945WX, 12C/24T
-  ram_bytes: 134e9
+  ram_bytes: 270e9                     # 8 x 32 GB, 8/8 channels populated; was 134e9 before the upgrade
+  ram_note: DDR4-2133 registered ECC, one DIMM per channel. Not DDR4-3200 -- the
+    modules are HMA84GR7MFR4N-TF, whose -TF speed code IS 2133 CL15, so the
+    controller's 3200 rating and docs/06 §1's old ~205e9 are both unreachable.
+  ram_source: experiments/020-env-post-rebuild, experiments/022-ddp-throttle-cost
+  ram_bandwidth:
+    copy_bytes_per_s: 71.0e9           # the usable plateau -- use this one
+    scale_bytes_per_s: 47.6e9
+    add_bytes_per_s: 51.7e9
+    saturates_at_threads: 6            # of 12 cores; past 6 the curve is flat to 1%
+    single_thread_copy_bytes_per_s: 32.2e9
+    theoretical_peak_bytes_per_s: 136.5e9   # 8 x DDR4-2133; the plateau is 52% of it
+    note: >-
+      Threaded STREAM kernels on float64. A lower bound on the hardware (byte counts
+      omit write-allocate read-for-ownership) and an upper bound on what a real
+      host-side stage gets. The plateau, not a single-thread figure, is the input:
+      one thread understates the memory system by 2.2x.
+    source: experiments/025-membw
   ann_cpu:
     index: IVF4000,PQ96x8 over 1 M x 768-d
     qps_batched_nprobe_8: 7224
@@ -141,10 +158,23 @@ training_throughput:
     peak_mem_bytes_mb4: 8.58e9         # micro-batch 4 x 2048; 8 x 2048 does not fit
     source: experiments/009-train-step, experiments/010-train-step-ddp
   small_recurrent:
-    tokens_per_s: null
-    status: placeholder
-    note: waits for model/ (Phase 1); docs/06 §4's 5 TFLOPS assumption not yet replaced
-    source: pending
+    # L5 only. 014 measured every rung but its cards were already thermally saturated
+    # when each later rung began (erratum in experiments/014-train-step-rungs/results.md),
+    # so no other rung has a valid number yet -- 018 re-measures them one at a time
+    # from cold.
+    rung: L5
+    step_s_median: 0.7375              # 1100 steps, 0 thermal-slowdown samples
+    step_s_p90_over_median: 1.007      # flat over 13.7 min: the un-throttled signature
+    tokens_per_s_4gpu_ddp_no_accum: 44429
+    micro_batch_seqs: 4
+    peak_mem_bytes_mb4: 3.86e9
+    ddp_overhead_s_per_microstep: 0.086
+    ddp_overhead_note: >-
+      vs 014's 651 ms single-GPU L5, so BELOW the dense rung's ~0.25 s -- not the ~1.9 s
+      that 014 reported and that I21 was opened on. I21's premise is withdrawn but I21
+      is not closed: this is one rung, and 014 kept no thermal telemetry.
+    status: measured (L5); other rungs pending 018
+    source: experiments/024-thermal-soak-bracket-move
 
 provenance:
   driver: "595.80"

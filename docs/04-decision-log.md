@@ -171,9 +171,9 @@ Decision: single-stream default; MTP heads read the single stream; $F_p$ predict
 - **I14** `007-faiss-1m` recall is degenerate on random 768-d vectors; QPS stands (7.2 k at nprobe 8, 40× short of per-iteration retrieval, confirming `06 §5.1`). Re-measure recall on real sentence embeddings once I8/I9 settle, and run 10 M and `faiss-gpu` in that same job. The 10 M run exceeded the 15-minute rule; **1 M is accepted as the Phase-0 measurement** (`007-faiss-1m` §Decision): the 40× shortfall is structural at note scale (≈ 10⁸ QPS needed), not a property of this CPU, so ADR-009's memory-layer reading of P17 transfers to any hardware; only the cold-tier lookup ceiling and the offline L8b budget are rig-specific numbers.
 - **I15** 2:4 sparsity measured at 1.3–1.6× best and a loss below $b$ ≈ 2–4 k (`005/006`) against a nominal 2×. Framework path (PyTorch semi-structured) or silicon ceiling? A Phase-3 kernel question; until then ADR-013's H3 threshold prices the trade at ≈ 1.4×, not 2×.
 - **I20** Priors from the literature refresh (`docs/05 §Headline`) expect four of the note's claims to *fail* ADR-013's thresholds at our scale: H4 (granularity law: $g$ = 1 ≈ 3 % worse than $g$ = 4 at `small`), H3 (2:4 at equal width costs 1.5–3.8 %; no precedent for the 2×-width claim), H13 (MTP hurts main quality below ≈ 1 B without a curriculum), H15b (1 % is below Landmark's +1.5 % at ≈ 100 M). Thresholds stay — they are the note's claims — but each of these steps gets its recovery variant scheduled beside it rather than after: L7b ($L_e$ = 2) with L7, a forward MTP curriculum as L3b, and for H15b the RULER/PG-19 subset at 8–32 k that ≈ 100 M models can resolve (HELMET and LongBench v2 cannot). Also from `docs/05`: `007-faiss-1m` recall must be re-measured on real *block keys* (attention queries are out-of-distribution for IVF; 30–50 % of lists scanned in RetrievalAttention) before H15b-S is scored — extends I14.
-- **I23** *(closes I22)* **Thermal throttling.** During `101-l1-screen` (14:46, after ≈ 19 h of continuous load) three cards read 91–93 °C with `sw_thermal_slowdown` active and SM clocks of 270 / 1320 / 1620 MHz against 2115 max; the fourth (GPU 2) sat at 58 °C and 1950 MHz. DDP runs at the slowest card, so the wall-clock gap of I22 is the 270 MHz card. The timed step missed it because the timer had no `cuda.synchronize` (fixed). Consequences per `06 §7`: **throughput numbers from `100-l0-screen` and the queued runs are invalid; loss numbers stand.** The trainer now logs min SM clock, max temperature and throttle count every 10 steps. `015-thermal-soak-170w` shows the three hot cards throttle within a minute while drawing only 85–105 W of their 170 W limit, so a power cap is not a remedy; the fix is airflow and spacing (`015` §Interpretation), verified by a 15-minute un-throttled soak before any run. The `014` bench ran cold and is unaffected. **2026-09-04, first cooling step** (`016-thermal-soak-bottom-fans`: three 140 mm bottom intakes plus top exhaust fans, cards not yet re-slotted): time to first throttle 50–70 s → 110–130 s, worst-card steady clock 328 → 1518 MHz, DDP step 1277 → 826 ms, but the three sandwiched cards still reach 93 °C with `sw_thermal_slowdown`; GPU 2 (free slot beside it) unchanged at 62 °C. Spacing is the remaining constraint; the acceptance soak waits for the bracket/riser and needs ≈ 1100 steps to last 15 min. **2026-09-10, after the rebuild and two re-slottings** (`017`, `019`, `021`, `022`): spacing is confirmed as the constraint — three cards now hold 1921–1958 MHz at 63–66 °C with zero throttled samples, while the fourth sits beside another card and throttles at 93 °C with its fan at 100 % and 113 W of a 170 W limit, costing the lockstep DDP step 13.4 %. No fan fault and no power fault: `019`'s 0 % fan reading was the bracket fouling the header and is retired (`021`). The remaining lever is the one slot position, and **Q16 now confirms the bottom bracket's riser is replaceable with a longer cable**, so the bracket can move. Acceptance soak is `023`: cold, 1100 steps, final layout.
+- **I23** *(closes I22)* **Thermal throttling.** During `101-l1-screen` (14:46, after ≈ 19 h of continuous load) three cards read 91–93 °C with `sw_thermal_slowdown` active and SM clocks of 270 / 1320 / 1620 MHz against 2115 max; the fourth (GPU 2) sat at 58 °C and 1950 MHz. DDP runs at the slowest card, so the wall-clock gap of I22 is the 270 MHz card. The timed step missed it because the timer had no `cuda.synchronize` (fixed). Consequences per `06 §7`: **throughput numbers from `100-l0-screen` and the queued runs are invalid; loss numbers stand.** The trainer now logs min SM clock, max temperature and throttle count every 10 steps. `015-thermal-soak-170w` shows the three hot cards throttle within a minute while drawing only 85–105 W of their 170 W limit, so a power cap is not a remedy; the fix is airflow and spacing (`015` §Interpretation), verified by a 15-minute un-throttled soak before any run. The `014` bench ran cold and is unaffected. **2026-09-04, first cooling step** (`016-thermal-soak-bottom-fans`: three 140 mm bottom intakes plus top exhaust fans, cards not yet re-slotted): time to first throttle 50–70 s → 110–130 s, worst-card steady clock 328 → 1518 MHz, DDP step 1277 → 826 ms, but the three sandwiched cards still reach 93 °C with `sw_thermal_slowdown`; GPU 2 (free slot beside it) unchanged at 62 °C. Spacing is the remaining constraint; the acceptance soak waits for the bracket/riser and needs ≈ 1100 steps to last 15 min. **2026-09-10, after the rebuild and two re-slottings** (`017`, `019`, `021`, `022`): spacing is confirmed as the constraint — three cards now hold 1921–1958 MHz at 63–66 °C with zero throttled samples, while the fourth sits beside another card and throttles at 93 °C with its fan at 100 % and 113 W of a 170 W limit, costing the lockstep DDP step 13.4 %. No fan fault and no power fault: `019`'s 0 % fan reading was the bracket fouling the header and is retired (`021`). The remaining lever was the one slot position. **Closed 2026-09-10 by `024-thermal-soak-bracket-move`**: after the user's bracket and GPU work, 1100 steps from cold gave **zero thermal-slowdown samples on all four cards over a 13.7-minute load window**, peaks of 82 / 70 / 71 / 67 °C, every card's clock minimum within 20 MHz of its mean, and a `step_s_median` of **737.5 ms** — below the ≈ 760 ms cold floor the criterion asked it to approach. The starved card of `022` (`GPU-88074816`) runs at 70 °C and 1931 MHz. The DDP step falls 968 → 737.5 ms against `022`, **23.8 %**, which is ≈ 1.9 h per `screen` rung. One caveat carried forward: GPU 0 holds 82 °C with its fan at 97 % and has almost no margin, where the other three keep 15–20 points in reserve — a `screen` rung runs for hours, not fourteen minutes, so checklist step 6's watch on `106` stands. **The acceptance soak was `024`, not `023`**: ids are allocated in order and the env re-capture came first in the order of work.
 - **I22** *(closed by I23)* `100-l0-screen` took 18 h of wall-clock for 4.28 h of timed steps; the first checkpoint came on time (30 min), so the loss is later and outside the timed region — evaluation, checkpointing to `/home` (SATA, 31 GiB free, btrfs zstd), the per-step barrier, or the host. The trainer now records absolute time, `eval_s` and `ckpt_s` per step; `101-l1-screen` is watched with timestamps to locate it. Until closed, every `results.md` reports timed-step hours *and* wall-clock.
-- **I21** `014-train-step-rungs`: DDP's per-micro-step all-reduce costs the recurrent rungs ≈ 1.9–2.9 s against ≈ 0.25 s for the dense baseline, for a smaller gradient. Likely no bucket/compute overlap because the shared block's gradient completes only at the end of backward, plus many small expert matrices and checkpoint recompute; unverified. Gradient accumulation (16 micro-steps per step) hides it in training; measure the reducer timeline before any throughput statement about the recurrent design on this rig.
+- **I21** `014-train-step-rungs`: DDP's per-micro-step all-reduce costs the recurrent rungs ≈ 1.9–2.9 s against ≈ 0.25 s for the dense baseline, for a smaller gradient. Likely no bucket/compute overlap because the shared block's gradient completes only at the end of backward, plus many small expert matrices and checkpoint recompute; unverified. Gradient accumulation (16 micro-steps per step) hides it in training; measure the reducer timeline before any throughput statement about the recurrent design on this rig. **Premise withdrawn 2026-09-10 (`024`, and the erratum appended to `014`).** `024` measures the identical DDP L5 configuration at **737.5 ms** where `014` reported 2526 ms, so against `014`'s own 651 ms single-GPU figure the DDP overhead is **≈ 86 ms — below the dense rung's ≈ 250 ms**, not eight times above it. `014`'s minimum sits 1 % under its median, i.e. it never ran a fast step, which dates the loss to cards already saturated before the rung began rather than to the reducer. **I21 is not closed**: `024` measures one rung, and `014` kept no thermal telemetry, so the recurrent rungs' true all-reduce cost is simply unmeasured. `018` re-measures every rung one at a time from cold with a cooldown between rungs; until then no throughput statement about the recurrent design on this rig may cite `014`.
 - **I17** `docs/07 §4.1`: the author's baseline unit is $U$ = 16 (even 4×4 torus + cheap routers), the note's is 64 (asymmetric 1:4:16:64). `note64.yaml` carries both; every S-experiment that depends on $U$ reports the pair until Q14 is answered.
 - **I18** `docs/07 §4.3`: the tile floor is a row floor and speculation multiplies rows per token (1 + $m$). Our `003-gemm` floor (512 tokens for 80 % of $\phi$) was measured without speculation rows; the roofline $b_{min}$, the tile-row floor and the empirical occupancy floor are three separate constraints and the scenario file must name which one the scheduler uses (extends I13).
 - **I19** `docs/07 §6`: the document gives ratios and structural constants only; absolute $\phi$, $\beta_C$, $\lambda_C$, $\nu_C$, \$/chip and W/chip for `note64` still need vendor sources (I4). Candidates: TPU v5p/v6 torus link bandwidth and NVLink 5 for `gpu_today`; GDDR7 / CXL vendor figures for the copper-trace and "other RAM" guesses.
@@ -227,7 +227,7 @@ Repo bootstrapped (`.venv` py3.12 / torch 2.13+cu130; faiss has no cp314 wheel),
 3. **Re-bench throughput warm** so `06 §4` gets a valid number: run `bench_train_step --ddp --steps 350 --rung L0:4 L1:2 L2:2 L3:2 L5:4 L5d:4` as `018-train-step-rungs-warm` immediately after the soak (cards warm), and compare with `014` (cold). If warm and cold agree within ≈ 5 %, `014`'s per-rung numbers stand and the `screen` time budget in `06 §4` can be recomputed from them; if not, the warm number is the budget. Also decide whether L5's 2526 ms in `014` versus 1277 / 826 ms in `015` / `016` is a `014` artefact (it ran nine rungs back to back) — the soak's L5:4 number is the one measured in isolation.
 4. **Checkpoint location.** `100-l0-screen` wrote checkpoints to `/home` (SATA, btrfs zstd, 27 GB free), one of I22's suspects. Before the ladder restarts, either point the trainer's `ckpt` directory at `/mnt/nvme/ckpt/<id>` and symlink it back, or prune `experiments/100-l0-screen/ckpt` to the final checkpoint only. Check `scripts/train/train.py` for the ckpt path argument first.
 5. **Relaunch the ladder from L1 with new ids** by copying `/mnt/nvme/queue_screen.sh` to `queue_screen_2.sh`, dropping the L0 wait loop, and setting the specs to `106-l1-screen L1 2`, `107-l2-screen L2 2`, `108-l3-screen L3 2`, `109-l5-screen L5 4`, `110-l5d-screen L5d 4` (same `--tokens 1e9 --seed 0`). Run it under `nohup … &` and log to `/mnt/nvme/queue_screen.log`. Do not resume `101` from its checkpoint: its throughput is invalid and the ladder is append-only. The 101 partial (180 steps, loss 5.47 at 0.094 B tokens) stays as a record only.
-6. **Watch the first eval of 106** (about 30 min in): in `experiments/106-l1-screen/log.jsonl` the trainer writes `sm_mhz_min`, `temp_c_max`, `n_throttled` every 10 steps; abort if `n_throttled` > 0 for more than a few consecutive records or `temp_c_max` ≥ 90 °C. `train.log` shows tok/s per step; L1 ran at ≈ 45 k tok/s aggregate at step 180 while still cold, which is the number to beat. Report timed-step hours *and* wall-clock in every `results.md` until I22's residual (eval, ckpt, host) is separated by the `eval_s` / `ckpt_s` columns.
+6. **Watch the first eval of 106** (about 30 min in): in `experiments/106-l1-screen/log.jsonl` the trainer writes `sm_mhz_min`, `temp_c_max`, `n_throttled`, `n_thermal` and `n_power_cap` every 10 steps; abort if **`n_thermal`** > 0 for more than a few consecutive records or `temp_c_max` ≥ 90 °C. **Read `n_thermal`, not `n_throttled`** (`024`): NVML packs every reason into one bitmask, and a well-cooled card at full clock hits the 170 W software power cap often, which `n_throttled` counts as throttling. `n_throttled` is retained only so records before `024` stay comparable. `train.log` shows tok/s per step; L1 ran at ≈ 45 k tok/s aggregate at step 180 while still cold, which is the number to beat. Report timed-step hours *and* wall-clock in every `results.md` until I22's residual (eval, ckpt, host) is separated by the `eval_s` / `ckpt_s` columns.
 7. **Results.** Each rung's `results.md` states the H it bears on and the verdict against $L_{ref}$ = 3.336 nats (ADR-013 bands), with `100-l0-screen` as the dense comparator; the matched-FLOPs fine-grained MoE baseline (CLAUDE.md rule) is still owed for the ladder — L5-ne128 in `014` is the candidate config; open a queue entry for it once L1–L5d are in.
 
 **What not to do:** no power cap (015: the cards are thermally, not power, limited); no run > 1 node-day without a finished screen; no `git push` (the user pushes); no edits to numbers in existing `experiments/*` (new id + note).
@@ -607,3 +607,84 @@ so C is a no-bottom-fans layout like `017`/`019`/`022`. That is very likely fine
 bottom fans already holds three cards at 63–66 °C — and it is the cheapest way to find out. **Try C
 first; keep B (the pedestal) as the fallback if `023` shows the fourth card still short of the bar.**
 Ordering hardware before `023` has run on C would be buying against an untested assumption.
+
+### 2026-09-10 (very late) — I23 closes; and `014` turns out to have been measuring heat, not the reducer
+
+**State.** The user reports the RAM and GPU hardware work finished; the machine booted 22:27. Three
+runs tonight: `023-env-post-bracket-move` (environment capture), a 60 s fan check (scratch, no id) and
+`024-thermal-soak-bracket-move` (the I23 acceptance soak). Nothing is training. **The ladder is
+cleared to restart.**
+
+**Ids: the soak is `024`, not `023`.** The previous entry reserved `023` for the soak, but the order of
+work puts the env re-capture first and ids are allocated in order and never reused, so the capture took
+`023`. `018` still stands reserved for the per-rung re-bench.
+
+**`023` — the layout moved again and one card is back on the x8 link.** Bus map 01 / 21 / 41 / 42 =
+GPU 0 / 1 / 2 / 3, root ports 00:03.1, **20:03.3**, 40:01.1, 40:03.1. Keyed by UUID, **three of the
+four cards changed position**; `GPU-88074816` — `022`'s starved card — now sits on `20:03.3`, the x8
+port that `017` and `020` flagged and `021` had emptied. All four reach gen 4 under load, BF16 autocast
+passes on all four (3.10e-3 relative error). The x8 link costs nothing measurable, since collectives are
+host-bounced at 3.59 GB/s, but `06 §1` asserted x16-on-all-four as measured fact two hours ago and that
+is false again; the row is corrected to say the width follows the *slot* and must be re-read after every
+re-slotting, never assumed. `bench_env` now captures `uuid` and the sysfs root port on every PCIe row —
+the fix `021` asked for, so that tracking a card across a move is a capture rather than a
+reconstruction.
+
+**`024` — I23 closes, on every clause.** Cards cold at 42/45/44/36 °C, 1100 steps, 13.7 min of load.
+**Zero thermal-slowdown samples on all four cards**, peaks 82 / 70 / 71 / 67 °C, every card's clock
+minimum within 20 MHz of its mean across 82 samples, and `step_s_median` **737.5 ms**, *below* the
+≈ 760 ms cold floor the criterion asked it to approach. `GPU-88074816` runs at 70 °C and 1931 MHz
+against 93 °C and 1499 MHz in `022`. Against `022` the DDP step falls **968 → 737.5 ms, 23.8 %** —
+a `screen` rung 8.2 h → 6.3 h, ≈ 9.5 h over the five queued rungs.
+
+**The pass criterion had to be repaired before it could be read.** The script printed
+`GPU0: throttled 3/30`, which reads as a fail; all three samples are `0x4`, the software power cap, on
+a card at full clock drawing its 170 W. NVML packs every reason into one bitmask and the summary counted
+anything not idle — backwards here, because these cards are thermally, not power, limited (`015`), so
+**better cooling yields more power-cap samples, not fewer**. `thermal_soak.sh` and `train.py` now split
+`SwThermalSlowdown | HwThermalSlowdown` from `SwPowerCap`; the trainer logs `n_thermal` and
+`n_power_cap` alongside the old `n_throttled`, and checklist step 6's abort rule reads `n_thermal`.
+
+**The larger finding: `014-train-step-rungs` was measuring heat.** Five runs now measure the same rung
+at the same micro-batch with the same 3.59 GiB peak.
+
+| run | median | min | p90 | p90/median |
+|---|---|---|---|---|
+| `024` | **737.5 ms** | 723.0 | 742.4 | **1.007** |
+| `022` | 968.1 | 838.0 | 999.2 | 1.032 |
+| `016` | 825.8 | 758.6 | 1086.0 | 1.315 |
+| `015` | 1277.2 | 760.6 | 2546.0 | 1.993 |
+| `014` | 2526.4 | 2495.7 | 3808.8 | 1.507 |
+
+`014`'s minimum is 1 % under its median: over 40 timed micro-steps it never ran one fast step, where
+`015` and `016` both reach ≈ 760 ms cold and only then degrade. That is a run whose cards were
+**already saturated when the rung began** — `014` ran nine rungs back to back, L5 fifth, on the layout
+`015` measured at 328 MHz steady the same day. `014` kept no thermal telemetry, so this is inference
+from the step-time distribution, not a reading.
+
+**What it costs us.** `014`'s L0 row (first, cold) stands, as do its parameter counts, peak-memory
+column and the "memory is not the constraint" conclusion. Its ms/micro-step and tokens/s columns for L1
+through L7b do not, nor do the `screen` hour estimates built on them, nor `06 §4`'s variant column.
+**I21 loses its premise**: `014` read a 1.9 s gap between single-GPU 651 ms and DDP 2526 ms as the
+per-micro-step all-reduce and concluded the recurrent rungs pay ≈ 8× the dense DDP overhead; `024` puts
+that overhead at **≈ 86 ms, below the dense rung's ≈ 250 ms**. I21 is *not* closed — the recurrent
+rungs' true reducer cost is simply unmeasured, and `024` measures one rung. Erratum appended to
+`014/results.md`; no number in it is edited.
+
+**Also done.** `scripts/bench/bench_membw.py` written — the real host-memory benchmark owed since `019`,
+a STREAM sweep over thread count whose plateau, not a single-thread figure, is the scenario input. Not
+yet run. `ruff` now excludes `experiments/`, which is an append-only record rather than source.
+`/mnt/nvme/queue_screen_2.sh` drafted for ids 106–110 with checkpoints on the NVMe (checklist step 4;
+`/home` is no longer tight at 179 GB free, but `/home` is SATA with btrfs zstd and was one of I22's
+suspects). **Not launched.**
+
+**Next, in order.** (1) Run `bench_membw` under its own id and put the plateau into
+`sim/scenarios/local_3060.yaml`. (2) `018`, the per-rung re-bench, **one rung at a time from cold with a
+cooldown between rungs** — it now carries `014`'s replacement and I21's test, not just warm-vs-cold.
+(3) Recompute `06 §4`'s variant column and the per-rung micro-batches from `018`. (4) Restart the ladder
+at L1 with id 106 and watch the first eval per checklist step 6. GPU 0 is the card to watch: it passes
+at 82 °C but with its fan at 97 % and almost no margin, over a run measured in hours rather than
+minutes.
+
+**Still owed and not answerable from a command:** which slot or bracket physically holds which card,
+and whether the layout built is candidate C. Open since `017`; `024` is the accepted layout on record.

@@ -88,8 +88,18 @@ def make_optimizer(model: nn.Module, a: TrainArgs) -> torch.optim.Optimizer:
 
 
 # ---- thermals (docs/06 §7: a throttled card invalidates throughput numbers) ---------------
+# NVML packs every reason into one bitmask, and they are not equivalent. I23 is about
+# *thermal* slowdown; hitting the 170 W software power cap is the card working as
+# configured (`015`: these cards are thermally, not power, limited) and a well-cooled
+# card reaches it more often, not less. Counting them together makes better cooling
+# look like more throttling, so `n_thermal` is the field the acceptance criterion and
+# the abort rule read; `n_throttled` is kept so records before 024 stay comparable.
+SW_POWER_CAP = 0x4
+THERMAL_REASONS = 0x20 | 0x40  # SwThermalSlowdown | HwThermalSlowdown
+
+
 def gpu_thermals() -> dict[str, float]:
-    """min SM clock, max temperature and any active throttle reason across all cards."""
+    """min SM clock, max temperature and the active throttle reasons across all cards."""
     import subprocess
 
     try:
@@ -113,8 +123,15 @@ def gpu_thermals() -> dict[str, float]:
     rows = [line.split(", ") for line in out]
     clocks = [float(r[0]) for r in rows]
     temps = [float(r[1]) for r in rows]
-    throttled = sum(int(r[2], 16) not in (0, 1) for r in rows)  # 0x1 = GPU idle, not a throttle
-    return {"sm_mhz_min": min(clocks), "temp_c_max": max(temps), "n_throttled": float(throttled)}
+    reasons = [int(r[2], 16) for r in rows]
+    throttled = sum(r not in (0, 1) for r in reasons)  # 0x1 = GPU idle, not a throttle
+    return {
+        "sm_mhz_min": min(clocks),
+        "temp_c_max": max(temps),
+        "n_throttled": float(throttled),
+        "n_thermal": float(sum(bool(r & THERMAL_REASONS) for r in reasons)),
+        "n_power_cap": float(sum(bool(r & SW_POWER_CAP) for r in reasons)),
+    }
 
 
 # ---- evaluation ---------------------------------------------------------------------

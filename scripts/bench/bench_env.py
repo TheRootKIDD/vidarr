@@ -10,20 +10,47 @@ Run: `python -m scripts.bench.bench_env --id 000-env`
 from __future__ import annotations
 
 import argparse
+import os
+import re
 import shutil
 import subprocess
 from typing import Any
 
 import torch
 
-from scripts.bench._common import write_result
+from scripts.bench._common import gpu_uuids, write_result
+
+
+def root_port(bus_id: str) -> str | None:
+    """The upstream root port of a GPU, from the sysfs device symlink.
+
+    Which root port a card hangs off is what makes a re-slotting legible: two
+    ports under one host bridge are the bifurcated x8/x8 pair that cost this rig
+    a link in `017` and `020`. sysfs spells the whole chain, so the last bridge
+    before the device is the last path component above it.
+    """
+    dev = bus_id.lower().removeprefix("00000000:")
+    if not dev.startswith("0000:"):
+        dev = f"0000:{dev}"
+    try:
+        chain = os.readlink(f"/sys/bus/pci/devices/{dev}").split("/")
+    except OSError:
+        return None
+    bdf = re.compile(r"[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-9a-f]")
+    parents = [c for c in chain if bdf.fullmatch(c)]
+    return parents[-2].removeprefix("0000:") if len(parents) >= 2 else None
 
 
 def pcie_state() -> list[dict[str, Any]]:
-    """Per-GPU PCIe link width and generation.
+    """Per-GPU PCIe link width and generation, keyed by UUID as well as by index.
 
     `gen.current` idles below `gen.max` on Ampere (power state P8), so this is
     only meaningful alongside a loaded reading — see `pcie_under_load`.
+
+    The index and the bus id both describe a *slot*, so neither survives a
+    re-slotting; `021` had to reconstruct which physical card had moved by hand.
+    The UUID and the root port are carried here so that table is a capture, not
+    a reconstruction.
     """
     fields = (
         "index,pci.bus_id,pcie.link.width.current,pcie.link.width.max,"
@@ -35,6 +62,7 @@ def pcie_state() -> list[dict[str, Any]]:
         text=True,
         check=True,
     ).stdout
+    uuids = gpu_uuids()
     rows = []
     for line in out.strip().splitlines():
         idx, bus, wc, wm, gc, gm = (f.strip() for f in line.split(","))
@@ -42,6 +70,8 @@ def pcie_state() -> list[dict[str, Any]]:
             {
                 "index": int(idx),
                 "bus_id": bus,
+                "uuid": uuids.get(int(idx)),
+                "root_port": root_port(bus),
                 "link_width_current": int(wc),
                 "link_width_max": int(wm),
                 "link_gen_current": int(gc),
@@ -143,6 +173,12 @@ def main() -> None:
     }
     path = write_result(args.id, payload)
     print(f"wrote {path}")
+    for r in loaded:
+        print(
+            f"  GPU{r['index']} bus {r['bus_id'].removeprefix('00000000:')}"
+            f" root {r['root_port']} uuid {r['uuid']}"
+            f" x{r['link_width_current']} gen{r['link_gen_current']} under load"
+        )
     print(f"  all four cards at x16: {payload['all_x16']}")
     print(f"  all four at PCIe gen4 under load: {payload['all_gen4_under_load']}")
     print(f"  bf16 autocast ok: {bf16['all_ok']}")

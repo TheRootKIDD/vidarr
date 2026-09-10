@@ -1,0 +1,115 @@
+{
+  "result_id": "024-thermal-soak-bracket-move",
+  "provenance": {
+    "date_utc": "2026-09-10T21:30:37+00:00",
+    "git_hash": "3c2bdd46fdda91fa3e9bcdaf152b398698800f7a",
+    "git_dirty": true,
+    "driver_version": "610.57.04",
+    "torch_version": "2.13.0+cu130",
+    "torch_cuda_version": "13.0",
+    "python_version": "3.12.13",
+    "platform": "Linux-7.2.4-200.fc44.x86_64-x86_64-with-glibc2.43",
+    "gpus": [
+      {
+        "index": 0,
+        "name": "NVIDIA GeForce RTX 3060",
+        "uuid": "GPU-4673cc7d-9e44-4578-a9ca-48215bc5ddc8",
+        "sm": "8.6",
+        "multi_processor_count": 28,
+        "total_memory_bytes": 12487622656
+      },
+      {
+        "index": 1,
+        "name": "NVIDIA GeForce RTX 3060",
+        "uuid": "GPU-88074816-a56d-dc95-d744-6096efc59bfc",
+        "sm": "8.6",
+        "multi_processor_count": 28,
+        "total_memory_bytes": 12487622656
+      },
+      {
+        "index": 2,
+        "name": "NVIDIA GeForce RTX 3060",
+        "uuid": "GPU-56c7aa62-b07a-0d35-3792-44b0a78ef58d",
+        "sm": "8.6",
+        "multi_processor_count": 28,
+        "total_memory_bytes": 12487622656
+      },
+      {
+        "index": 3,
+        "name": "NVIDIA GeForce RTX 3060",
+        "uuid": "GPU-8cb4f7cc-d2a2-fb38-c9ee-14dc7f1515ab",
+        "sm": "8.6",
+        "multi_processor_count": 28,
+        "total_memory_bytes": 12487622656
+      }
+    ]
+  },
+  "bench": "train_step_rungs",
+  "shape": {
+    "layers": 12,
+    "d": 768,
+    "heads": 12,
+    "kv_heads": 4,
+    "head_dim": 64,
+    "d_ff": 2048,
+    "vocab": 32000,
+    "context": 2048
+  },
+  "flops_per_token_budget": {
+    "train_no_head": 566231040.0,
+    "train_with_head": 713687040.0
+  },
+  "ddp": true,
+  "rungs": [
+    {
+      "rung": "L5",
+      "micro_batch": 4,
+      "world_size": 4,
+      "params_total": 77480321,
+      "per_gpu": [
+        {
+          "rank": 0,
+          "micro_batch_seqs": 4,
+          "tokens_per_step_per_gpu": 8192,
+          "step_s_median": 0.737510569999813,
+          "step_s_min": 0.7230564030001005,
+          "step_s_p90": 0.7424241720000282,
+          "tokens_per_s_per_gpu": 11107.63741325372,
+          "peak_mem_bytes": 3853708288
+        },
+        {
+          "rank": 1,
+          "micro_batch_seqs": 4,
+          "tokens_per_step_per_gpu": 8192,
+          "step_s_median": 0.7375344155000221,
+          "step_s_min": 0.7230298619997484,
+          "step_s_p90": 0.7424198019998585,
+          "tokens_per_s_per_gpu": 11107.27828808655,
+          "peak_mem_bytes": 3853708288
+        },
+        {
+          "rank": 2,
+          "micro_batch_seqs": 4,
+          "tokens_per_step_per_gpu": 8192,
+          "step_s_median": 0.7375324154997998,
+          "step_s_min": 0.7230110320001586,
+          "step_s_p90": 0.7424632529996416,
+          "tokens_per_s_per_gpu": 11107.308408198669,
+          "peak_mem_bytes": 3853708288
+        },
+        {
+          "rank": 3,
+          "micro_batch_seqs": 4,
+          "tokens_per_step_per_gpu": 8192,
+          "step_s_median": 0.7374931285000912,
+          "step_s_min": 0.7229387909997058,
+          "step_s_p90": 0.7424186319999535,
+          "tokens_per_s_per_gpu": 11107.900105673983,
+          "peak_mem_bytes": 3853708288
+        }
+      ],
+      "aggregate_tokens_per_s": 44429.1131523462,
+      "peak_mem_gib_max": 3.589045524597168
+    }
+  ]
+}

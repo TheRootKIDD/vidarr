@@ -55,3 +55,31 @@ layer) and need micro-batch 2 to stay under the 10 GB rule with DDP buckets.
 single-GPU): the reference implementation's explicit streams, rotary in
 Python and the checkpointed cross-entropy. Accepted (CLAUDE.md: readability
 over speed).
+
+## Erratum (2026-09-10, from `024`) — every rung after L0 is thermally contaminated
+
+`024-thermal-soak-bracket-move` measures the identical DDP L5 configuration (rung `L5`, micro-batch 4,
+peak 3.59 GiB) at **737.5 ms median, 723.0 min, 742.4 p90** on a rig with zero thermal-slowdown
+samples. This file reports 2526 ms.
+
+The distribution is what dates the fault. `014`'s minimum, 2496 ms, is 1 % under its median: across 40
+timed micro-steps it never ran one fast step. `015` and `016`, both starting from cold on worse
+layouts, both reach ≈ 760 ms on their first steps and only then degrade. A run that is uniformly slow
+from its first step was measured on cards that were **already saturated when the rung began** — and
+`014` ran nine rungs back to back, with L5 fifth, on the pre-rebuild back-to-back layout that `015`
+measured the same day at 328 MHz steady. `014` recorded no thermal telemetry, so this is inference
+from the step-time distribution, not a direct reading.
+
+**What still stands:** the L0 row (first rung, cards cold, 694 ms against `024`'s 737.5 ms for the more
+expensive L5), the parameter counts, the peak-memory column and the micro-batch feasibility conclusion
+— memory is not the constraint. The single-GPU reference times are less exposed, one card at a time,
+but were taken in the same back-to-back session and are not clean either.
+
+**What does not stand:** the ms/micro-step and tokens/s columns for L1 through L7b, the `screen` hour
+estimates derived from them, and §Interpretation's central claim that DDP costs the recurrent rungs
+≈ 1.9–2.9 s against ≈ 0.25 s for the dense baseline. Against `014`'s own 651 ms single-GPU L5 figure,
+`024` puts the DDP overhead at **≈ 86 ms**, below the dense rung's. **I21 was opened on that claim and
+is reduced to an open question**; `docs/06 §4`'s variant column inherits the same fault.
+
+Superseded for L5 by `024`. The remaining rungs are re-measured by `018`, one rung at a time from cold
+with a cooldown between rungs. No number in this file is edited.
