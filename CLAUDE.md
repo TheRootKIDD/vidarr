@@ -37,4 +37,8 @@ Research project: an LLM architecture derived from the 19-point note "The big-DC
 - Commit prefixes: `docs:`, `model:`, `sim:`, `cost:`, `exp:`, `chore:`.
 
 ## Current phase
-Phase 0 — spec hardening, literature refresh (`docs/05`, including the author's linked in-depth post), cost model, eval-suite and corpus choice, `scripts/bench/` → `sim/scenarios/local_3060.yaml`. No training runs yet except `bench_train_step`.
+**Phase 1 — reference model and the `screen` ladder.** Phase 0 exited 2026-09-02 (`docs/03 §5`): spec, cost model, corpus (ADR-014), thresholds (ADR-013), reading list and `sim/scenarios/local_3060.yaml` are all done; ADR-007/008/024/028 stay proposed and block only Phase 2–3.
+
+`model/` is implemented and the ladder is running at `screen` over the ADR-014 corpus: `100-l0-screen` gives $L_{ref}$ = 3.336 nats, and ids **106–110** (L1, L2, L3, L5, L5d) are queued by `/mnt/nvme/queue_screen_2.sh` — ids 101–105 are burnt. Every `results.md` states its H and its verdict against $L_{ref}$ under ADR-013's bands.
+
+**Read `docs/04 §Session log` from 2026-09-10 before trusting any throughput number.** Thermal throttling on the pre-rebuild layout invalidated `014-train-step-rungs` entirely, and I21 was opened on the artefact. Both are settled: `018`/`026` are the per-rung table (DDP and single-GPU), `024` closed I23, and the rig now holds four cards at full clock indefinitely. A throttled card invalidates throughput numbers but not loss numbers (`06 §7`), and the field to read is **`n_thermal`**, never `n_throttled` — the latter counts the power cap, which a healthy card hits more often, not less.
