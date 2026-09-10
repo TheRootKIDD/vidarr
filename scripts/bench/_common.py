@@ -39,6 +39,21 @@ def driver_version() -> str | None:
     return out.splitlines()[0].strip() if out else None
 
 
+def gpu_uuids() -> dict[int, str]:
+    """Index -> GPU UUID. The index and the bus id are properties of the *slot*,
+    so neither survives a re-slotting; the UUID is the only stable handle on a
+    physical card, and GeForce parts report no serial (`docs/04`, 2026-09-10
+    night: tracking one card across a move is what `021` had to reconstruct by
+    hand)."""
+    out = _sh(["nvidia-smi", "--query-gpu=index,uuid", "--format=csv,noheader"])
+    uuids = {}
+    for line in (out or "").strip().splitlines():
+        idx, _, uuid = line.partition(",")
+        if uuid.strip():
+            uuids[int(idx)] = uuid.strip()
+    return uuids
+
+
 def gpu_inventory() -> list[dict[str, Any]]:
     """Per-device identity. Kept per-device on purpose: the four cards are not
     guaranteed to be the same die (see `docs/04` I8)."""
@@ -48,6 +63,7 @@ def gpu_inventory() -> list[dict[str, Any]]:
         return []
     if not torch.cuda.is_available():
         return []
+    uuids = gpu_uuids()
     inv = []
     for i in range(torch.cuda.device_count()):
         p = torch.cuda.get_device_properties(i)
@@ -55,6 +71,7 @@ def gpu_inventory() -> list[dict[str, Any]]:
             {
                 "index": i,
                 "name": p.name,
+                "uuid": uuids.get(i),
                 "sm": f"{p.major}.{p.minor}",
                 "multi_processor_count": p.multi_processor_count,
                 "total_memory_bytes": p.total_memory,

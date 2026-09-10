@@ -131,6 +131,7 @@ Decision: single-stream default; MTP heads read the single stream; $F_p$ predict
 - **Q10** *(answered — ADR-009)* P17: is the entailment table frozen after construction, and are the value vectors learned or fixed?
 - **Q14** *(from `docs/07`)* The document's recommended unit is an even-bandwidth 4×4 donut of 16 chips; the 64-chip 1:4:16:64 torus is a "nerd box" variant the author endorses only if every expert is 64-way tensor-parallel. Is the note's $U$ = 64 that variant — i.e. does P4 exist to make the asymmetric torus work — and is 16 the fallback if experts stay smaller?
 - **Q15** *(from `docs/07`)* The document predicts that within-layer retrieval (P17) will shrink MoE to 4–8 experts; the note designs for thousands. Which is the intended end state, and does P17 reduce $N_e$ in the note's design?
+- **Q16** *(rig, `022`)* The bracket blocking the bottom four PCIe slots is a Lian Li 4-slot vertical GPU kit (VG4 family), shipped with a **200 mm** riser — which is why it can only sit at the bottom-*back*, and why two cards had to go side by side, and why one of them now holds 93 °C at 100 % fan. Does the VG4's riser **detach** from its frame, so the 900 mm `PW-PCIV-4-90X` already on hand can replace it and move the bracket to the bottom-front? Lian Li sells the O11DEXL-1X upright bracket with *no* cable, so a Lian Li bracket taking a separately-bought riser is a supported configuration; what is unconfirmed is whether the 900 mm cable's slot-end PCB matches the VG4's mounting holes and its three 10.16 mm height positions. No vendor page states it. Settle it by inspection with the machine off. This is the only remaining lever on I23.
 - **Q13** *(from the author's baseline remark)* Is the plain-transformer comparison our own L0 (same corpus, matched FLOPs per token, `06 §3`), or a specific published model? If the latter, which, and matched on what — parameters, training FLOPs, or tokens?
 
 ### Author's answers (received 2026-09-02, in Danish; paraphrased)
@@ -275,3 +276,213 @@ clear will also discard whatever produced the x8 links above.
 **Owed when the machine comes back:** (1) `019` full soak, cards cold, then I23's verdict; (2)
 checklist step 3, the warm re-bench as `018`; (3) `06 §1` corrections — RAM speed, channel count and
 the measured-vs-nominal memory bandwidth, plus the new bus map; (4) checklist steps 4–7 unchanged.
+
+**Update, 20:04 boot (after the user re-slotted the PCIe risers; no DIMM was moved).** Same board and
+BIOS (`WRX80 Creator R2.0`, BIOS 10.03 12/19/2025). **5/8 slots now populated**, `MemTotal` 157.0 GiB
+(160 GB), up from 4/8 and 125.6 GiB, with nothing touched on the memory side — so **detection is
+intermittent, which is a contact symptom, not a settings one**. `dmidecode -t 17`: channels A, B, C,
+D, F hold 32 GiB; **E, G, H report `No Module Installed`**. All eight sticks are the *same* part,
+`HMA84GR7MFR4N-TF` (SK Hynix 32 GiB 2Rx4 RDIMM, DDR4-2933), so the mixed-module hypothesis is dead.
+Serials split into two batches: `277BCC7C` / `277BCD8D` / `277BCD67` in A / B / F and `914DD9A6` /
+`914DD9D6` in C / D. On the reading that `277B…` is the original four and `914D…` the new four,
+**the three dark channels are one old stick and two new ones** — failure crosses both batches, which
+again points at contact or socket rather than at modules. Configured speed is still **2133 MT/s** on
+a 2933 part, the JEDEC fallback, consistent with training that cannot close.
+
+The user reports the original four sticks sit in the slots silkscreened A, B, G and H and were not
+moved; SMBIOS shows an original-batch serial in **channel F**. So either the setup-screen/SMBIOS
+channel letters do not follow the silkscreen on this board, or the recollection is by position rather
+than by label. **Unresolved, and it blocks any slot-level conclusion.** Settle it physically: with the
+machine off, record slot silkscreen → serial from each DIMM's own label and pair that with the table
+above. That is the definitive map and costs no boot.
+
+**Memory Context Restore and the stale-training-cache hypothesis are withdrawn**: that option is Zen 4
+/ AM5 AGESA and does not exist on this Zen 2 Threadripper PRO. ASRock's Fast Boot is under *Boot*,
+not *Advanced*; DRAM frequency was already Auto. **No BIOS setting is missing or wrong**, so the CMOS
+clear drops to last resort — it would also discard whatever currently gives the PCIe layout below.
+Revised order of work: (a) physical slot → serial map; (b) reseat all eight hard, both latches
+closing unaided, inspect the dark slots for debris; (c) re-read `dmidecode`; (d) if the same channels
+stay dark under different sticks it is the board or socket pins, if the darkness follows the sticks it
+is the modules. Open question for the user: whether the CPU cooler was removed or retorqued during the
+cooling rebuild — uneven sWRX8 mount pressure drops whole channels.
+
+**PCIe, after the riser move.** Bus map changed again: **01 / 21 / 41 / 42 = GPU 0 / 1 / 2 / 3**, and
+the GA106 is now **GPU 2** (it was GPU 1 at bus 21 earlier the same day, and GPU 2 at bus 41 before
+the rebuild — the index is not stable across re-slotting and must be re-read, never assumed). **Only
+bus 21 still negotiates x8**; 01, 41 and 42 are x16. So the move cleared one of the two x8 links of
+`017`. Idle link gen reads 1 on all four, which is power-save down-training, not a fault; re-check gen
+under load. No AER or PCIe errors in the boot journal (the platform does not export AER at all:
+`_OSC: platform does not support [AER LTR DPC]`).
+
+**`017`'s thermal result is now stale**: it measured a physical arrangement that the riser move has
+changed. The `019` soak must run on the *final* layout, and any further re-slotting invalidates it
+again. Settle the DIMMs and the risers first, then soak.
+
+**Cooler ruled out; and the pre-upgrade channel map was never recorded.** The user confirms the CPU
+and its cooler were not touched during the cooling rebuild, so uneven sWRX8 mount pressure is out as
+a *newly introduced* cause. `000-env` logged host RAM only as "125 GiB total" — **no per-channel or
+per-slot record exists from before the upgrade**, so we cannot distinguish a channel that stopped
+working from one that never worked. What the serials do say: one original-batch stick is dark in a
+slot the user did not move it out of, i.e. **one channel that carried a working DIMM before the
+upgrade is dark now**, alongside two channels whose history is unknown. Mixed, and still consistent
+with contact. If the reseat does not clear it, run the **revert test**: pull the four new sticks, put
+the original four back in their original slots, boot. 125.6 GiB and 4/8 restores the known-good
+baseline and puts the fault on loading or on the new modules; anything less is a regression in a
+configuration that demonstrably worked, which is a cleaner fault to chase. Record slot → serial either
+way — that record is what `000-env` is missing.
+
+### 2026-09-10 (late) — RAM upgrade takes; soak aborts on a dead GPU fan
+
+**Host RAM is fixed.** After the user reseated the DIMMs, the 20:39 boot reports `DMI: Memory slots
+populated: 8/8` and `MemTotal` 251.5 GiB (263 750 232 kB). `dmidecode -t 17`: all eight channels A–H
+hold 32 GiB `HMA84GR7MFR4N-TF`. The machine runs **8-channel**. It was a contact fault, as the
+intermittent 4/8 → 5/8 → 8/8 progression suggested; **no BIOS setting was ever at fault and no CMOS
+clear was needed**. The batch reading in the 20:04 update above is withdrawn: the serials split
+**six `277B…` / two `914D…`**, not four and four, so neither batch is "the original four". The
+per-slot map now on record (A–H): `277BCC7C`, `277BCD8D`, `914DD9A6`, `914DD9D6`, `277BCBA1`,
+`277BCD67`, `277BCD6E`, `277BCD81`. The revert test and the slot-level diagnosis in the 20:04 update
+are moot.
+
+**The 2133 MT/s fallback is not.** All eight modules still report a configured speed of 2133 MT/s
+against the part's rated 2933. It survived a correct 8/8 population, so it is a BIOS/AGESA setting
+(DRAM frequency is on Auto), not a symptom of the missing sticks. Recovering 2933 is ≈ 37 % of host
+memory bandwidth for free. **`06 §1` is wrong twice**: DDR4-3200 is not what is installed (2933 is
+the ceiling) and 2133 is what is running.
+
+**First host memory-bandwidth measurement on this box** (ad-hoc threaded STREAM-style probe,
+`experiments/019-…/membw_probe.py`, 12 threads, 4 GiB arrays, best of 5): copy 70.8, scale 47.1,
+add 51.3, triad 29.3 GB/s. Crude, so lower bounds — but copy exceeds the 68.3 GB/s 4-channel
+DDR4-2133 peak, which independently confirms the 8-channel population, and every figure is far under
+`06 §1`'s ≈ 205 GB/s, which is unreachable at 2133 MT/s. **Not yet a scenario input**: it needs a
+real `scripts/bench/bench_membw.py` under its own id before it may enter
+`sim/scenarios/local_3060.yaml` (CLAUDE.md: every number carries a source line).
+
+**PCIe (`020-env-post-rebuild`).** Bus map held across the reboot: 01 / 21 / 41 / 42 = GPU 0 / 1 /
+2 / 3, GA106 at bus 41 = GPU 2. **One card still negotiates x8** (GPU 1, bus 21), down from two in
+`017` — the riser move cleared one. All four reach **gen 4 under load**; the gen-1 idle reading is
+ASPM, not a fault. BF16 autocast passes on all four. Still owed: the BIOS check of checklist step 1,
+and which slot or bracket physically holds which card.
+
+**Acceptance soak `019` failed on hardware, not on cooling.** `019-thermal-soak-riser-respaced-full`
+started cold at 20:43 and was stopped at 5.2 min. **GPU 0's fan reported 0 % for every sample**, idle
+through 93 °C, while GPUs 1–3 ramped to 77–81 %. GPU 0 raised `sw_thermal_slowdown` at 91 s and sat
+pinned at 92–93 °C with its clock sawing 525–1492 MHz; once idle it took over 4 min to fall to 88 °C,
+fan still at 0 %, while the others dropped to 45–50 °C. GPUs 1–3 reproduced `017` exactly (1920–1961
+MHz flat, 63–67 °C, 0 throttled samples), so **the spacing fix still holds for three of four cards**.
+`nvidia-smi` reports commanded fan duty, so 0 % at 93 °C is a fan that is not driven, not a cooling
+margin that is too small. Decisive: in `017`, 70 min and two case-openings earlier, **GPU 0 was the
+card whose fan ran hardest (93 %)** and it peaked at 78 °C — same bus, same chip, same root port,
+same physical card. The fault therefore dates to the 20:04 riser re-slotting or the RAM reseat.
+Leading candidate is the 900 mm riser cable fouling the fan or its header (the user's own guess);
+next is the fan lead unseated at the PCB. **I23 stays open.** `018` stays reserved for the warm
+re-bench; the next acceptance soak is **`021`** (`020` is the env re-check).
+
+**Operational note.** Killing `thermal_soak.sh` leaves the `torchrun` children and the
+`multiprocessing` workers training at full power — it took three rounds of `SIGTERM` to release the
+GPUs, in both `017` and `019`. The script's `trap` should `pkill -f bench_train_step`.
+
+**Next shutdown closes three things at once:** (1) GPU 0's fan / the riser cable; (2) DRAM frequency
+to 2933 MT/s in BIOS; (3) the x8 link on bus 21. Then run the full soak as `021` and let it write
+`result.json`. No training run before that.
+
+### 2026-09-10 (night) — the x8 link and the "dead fan" both close; one card is starved; the DRAM instruction was wrong
+
+**State.** Machine booted 21:26 after the user re-slotted the GPUs "to match the PCIe
+configurations". Two runs tonight: `021-env-gpu-remap` (environment capture) and
+`022-ddp-throttle-cost` (a 420-step DDP soak, deliberately *not* the I23 acceptance soak). Nothing is
+training. Host RAM unchanged and healthy: 8/8 slots, `MemTotal` 251.5 GiB, and `amd64_edac` now agrees
+with SMBIOS at 262 144 MB with `ce_count` = `ue_count` = 0, so `019`'s 192 GiB / 6-channel misreport
+is gone.
+
+**PCIe: fixed.** All four cards negotiate **x16 and gen 4 under load** (`021`) — the first time this
+rig has done so. Bus map 01 / 02 / 41 / 42 = GPU 0 / 1 / 2 / 3, root ports 00:01.1, 00:03.1, 40:01.1,
+40:03.1; the GA106 is GPU 2. Item (3) of the previous entry's three-item list is closed. It changes no
+throughput number — collectives are host-bounced at 3.59 GB/s (`002-nccl`) — but `06 §1` asserted
+x16-on-all-four as measured fact and that was false until tonight.
+
+**Card identity is now on record.** The GPU index and the bus id are properties of *position*, so
+neither survives a re-slotting; the UUID does. `021` records UUID → chip → VBIOS for all four.
+`bench_env` should capture `index,pci.bus_id,uuid` from now on.
+
+**There is no fan fault, and there never was.** The user confirms only the x8 card moved. Pairing that
+with the root ports, `019`'s GPU 0 (root port 00:03.1, fan at 0 % through 93 °C) is tonight's GPU 1 —
+the same physical card, unmoved — and tonight it runs its fan to **100 %**. Nothing was done to the
+card except the bracket work in the same downtime. The "fan lead unseated at the PCB" candidate is
+retired; the mechanical one stands: the riser or the bracket fouled the fan or its header, and
+disassembling the bracket freed it. Item (1) of the three-item list is closed.
+
+**But the same card is now thermally starved.** In `022` GPU 1 enters the load window at 73 °C, raises
+`sw_thermal_slowdown` at 40 s, holds it for 37 of 41 samples and settles at 1499 MHz mean / 1320 min
+against a 2115 max, at 93 °C, **with its fan at 100 % and drawing 113 W of a 170 W limit**. Full fan
+duty and well under the power cap is `015`'s conclusion again: this is airflow, not the controller and
+not power. The user reports the card sits in an ordinary motherboard slot **side by side with another
+card, because the bottom bracket takes up too much space** — so the bracket is not holding the hot
+card, it is consuming the slots that would let the cards be spaced.
+
+**The other three cards are the best this rig has recorded**: 63–66 °C peak, clocks flat within 8 MHz
+of their means at 1921–1958 MHz, zero throttled samples. The cooling rebuild works. It is being wasted
+by one slot position.
+
+**What the starvation costs.** DDP is lockstep, so one card sets the step for all four.
+
+| | DDP L5:4 step | vs tonight's median |
+|---|---|---|
+| `022` median | 968 ms | — |
+| `022` min, GPU 1 not yet throttled | 838 ms | −13.4 % |
+| `016`, three cards at 93 °C, bottom fans only | 826 ms | −14.7 % |
+| cold floor, checklist step 2 | ≈ 760 ms | −21.5 % |
+
+The `016` row is a cross-session comparison and its cards were cold where GPU 1 was not, so do not
+quote it as a controlled result — but the direction is not in doubt and it is the useful finding:
+**tonight's arrangement is no faster in DDP than the pre-bracket arrangement `016` measured.**
+Concentrating the throttling in one card instead of spreading it over three buys nothing, because DDP
+runs at the slowest rank either way. Recovering the 13.4 % takes a `screen` rung from 8.2 h to ≈ 7.1 h,
+≈ 5.5 h over the five queued rungs 106–110.
+
+**The DRAM instruction in the previous entry was wrong and is withdrawn.** `019` read the modules as
+"`HMA84GR7MFR4N-TF`, DDR4-2933" and concluded 2133 MT/s was a JEDEC fallback worth ≈ 37 % of host
+bandwidth. In SK Hynix's DDR4 module part numbering the trailing code carries the grade *and* the
+timings — `TF` = 2133 15-15-15, `UH` = 2400 17-17-17, `VK` = 2666 19-19-19, `WM` = 2933 21-21-21,
+`XN` = 3200 22-22-22 — so `…-TF` is a **DDR4-2133 CL15** part and a 2933 part would be `…-WM`. Every
+vendor listing of the part number agrees. **2133 MT/s is the rated speed, correctly applied; there is
+nothing to recover, and "(2) DRAM frequency to 2933 MT/s in BIOS" must not be carried out** — it would
+be a 37 % overclock of registered ECC modules. `019`'s 70.8 GB/s copy is 52 % of the 136.5 GB/s
+8-channel DDR4-2133 peak, an ordinary figure for a threaded numpy probe, and no longer evidence of
+headroom; it still exceeds the 68.3 GB/s 4-channel ceiling, so it still confirms the population.
+Confirmation owed before `06 §1` is edited: `sudo dmidecode -t 17`, comparing `Speed:` (the SPD
+maximum) with `Configured Memory Speed:`.
+
+**`06 §1` corrections still owed**, now with a different content than the previous entry said: host
+RAM is **256 GB of DDR4-2133 registered ECC across 8 channels**, not 128 GB and not DDR4-3200; the
+≈ 205 GB/s figure is unreachable and the measured lower bound is 70.8 GB/s copy; the GPU-interconnect
+row's "measured x16 gen4 on all four" is true again as of `021` and should cite `021`, not `000-env`.
+Host memory bandwidth needs a real `scripts/bench/bench_membw.py` under its own id before it enters
+`sim/scenarios/local_3060.yaml`.
+
+**Next.** The remaining lever is one slot position, not a setting. Two candidate moves, both physical:
+free the bottom slots so the side-by-side pair can be separated, or give the starved card its own air.
+The bracket's own riser is the limit on where the bracket can sit — see the open question below. Then
+run the I23 acceptance soak **cold, 1100 steps, on the final layout, as `023`**; `018` stays reserved
+for the warm re-bench of checklist step 3. No ladder run before I23 closes.
+
+**Open question — Q16, the bottom bracket.** The bracket blocking the bottom four PCIe slots is a
+Lian Li 4-slot vertical GPU kit (VG4 family), which ships with a **200 mm** riser; that short cable is
+why it can only sit at the bottom-*back*. The user already owns a **900 mm PW-PCIV-4-90X**, bought for
+the O11DEXL-1X upright bracket, which Lian Li ships *without* a cable — so a Lian Li bracket taking an
+arbitrary separately-bought riser is a configuration Lian Li itself sells. What is **not** confirmed is
+whether the VG4's riser detaches from *its* bracket: the slot-end of these kits is a small PCB screwed
+to the frame, and the question is whether the 900 mm cable's PCB matches the VG4's mounting holes and
+its three 10.16 mm height positions. Settle it by looking at the VG4 frame with the machine off — is
+the slot-end PCB removable with the same screws, or moulded into the frame? Vendor pages do not say.
+
+**DRAM confirmed the same night, and the thread is closed.** `sudo dmidecode -t 17` on all eight
+modules, channels A–H: `Part Number: HMA84GR7MFR4N-TF`, **`Speed: 2133 MT/s`**, `Configured Memory
+Speed: 2133 MT/s`, `Configured Voltage: 1.2 V`. `Speed:` is the SPD *maximum*, so the modules declare
+2133 as their own ceiling and the configured value equals it. The part-number reading above is
+confirmed by SMBIOS: **DDR4-2133 is the rating, not a fallback**, there is no 37 % to recover, and the
+2933 instruction stays withdrawn. `06 §1` corrected: the CPU row no longer carries ≈ 205 GB/s as a
+usable figure, the host-RAM row now reads 256 GB of DDR4-2133 registered ECC over 8 channels with the
+136.5 GB/s theoretical peak and the 70.8 GB/s measured lower bound, and the GPU-interconnect row cites
+`021` rather than `000-env` for x16 gen4 on all four. The only remaining host-memory item is a real
+`scripts/bench/bench_membw.py` under its own id before any bandwidth number enters
+`sim/scenarios/local_3060.yaml`.
