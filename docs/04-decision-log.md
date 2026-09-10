@@ -532,3 +532,33 @@ and cannot contribute more while the fourth throttles, because DDP runs at the s
 **Everything measured before the move is thermally stale**, per the standing rule that re-slotting
 invalidates a thermal result — `017`, `019` and `022` included. Their non-thermal content (the bus
 map, the UUIDs, the DRAM finding, the 13.4 % cost of one starved rank) stands.
+
+**Candidate B, raised the same night: replace the bracket instead of its cable.** The user proposes the
+be quiet! PCIe 4.0 riser (accessory 4430, 20 cm) in place of the VG4. Product photographs identify it
+as a riser cable whose **slot end is screwed to a rigid pedestal** — two cross-head screws hold the
+female x16 PCB to the block, and the block's top face carries several spare holes, so the slot
+position is adjustable along it. There is **no multi-slot frame, no slot covers and no rotation
+adjustment**: the pedestal bolts to a case's vertical-GPU mounting points and the card stands inboard
+of the expansion-slot covers, which stay in place.
+
+**This is a better read of `022` than the long-cable plan.** The complaint in `022` is *footprint*, not
+reach: the VG4's four-slot frame consumes the bottom four PCIe slots and that is what forces two cards
+side by side. A pedestal that occupies no slot positions frees them directly. Cable length is
+unchanged at 20 cm, i.e. the same 200 mm the VG4 ships, so the card lands in much the same region —
+which is fine, because length was never the constraint that mattered.
+
+**Three things to check before buying**, none of them answerable from vendor pages:
+
+1. **Hole pattern.** The pedestal is designed for be quiet! case mounting points. This case is a Lian
+   Li O11D EVO XL. Compare the pedestal's footprint with the floor and bracket holes actually present.
+2. **Clearance over the bottom intakes.** Three 140 mm bottom intakes went in on 2026-09-04 and are
+   part of why three of four cards now hold 63–66 °C. A floor-mounted pedestal competes for that
+   space. It must not sit over a fan.
+3. **Second anchor.** The kit brings no slot-cover bracket, so the card is held by the pedestal alone
+   unless the case's vertical slots take its I/O plate. This rig runs multi-day jobs; a cantilevered
+   card is not acceptable for that.
+
+If Candidate B is taken, the "order a second `PW-PCIV-4-90X`" assumption above is dropped and Q16's
+answer stops mattering, because this unit's cable is not the part being replaced. Either way the
+sequence is unchanged: move, re-map by UUID, re-check links, check the fan of any card touched, then
+`023` cold for 1100 steps.
