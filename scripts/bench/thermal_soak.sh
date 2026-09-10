@@ -18,10 +18,14 @@ echo "time,idx,temp_c,sm_mhz,power_w,fan_pct,throttle_hex" > "$OUT/thermals.csv"
       --format=csv,noheader,nounits | sed "s/^/$(date +%T),/" | tr -d ' ' >> "$OUT/thermals.csv"
     sleep 10
   done ) & SAMPLER=$!
-trap 'kill $SAMPLER 2>/dev/null' EXIT
+# Killing the launcher alone leaves the torchrun children and the multiprocessing
+# workers training at full power on every card (seen in 017 and 019), so the trap
+# takes the whole run down by id, not just the sampler.
+cleanup() { kill $SAMPLER 2>/dev/null; pkill -f "bench_train_step --id $ID" 2>/dev/null; }
+trap cleanup EXIT INT TERM
 .venv/bin/python -m scripts.bench.bench_train_step --id "$ID" --ddp --steps "$STEPS" --warmup 10 --rung L5:4 \
   2>&1 | grep -v -i warning | tee "$OUT/soak.log"
-kill $SAMPLER 2>/dev/null; trap - EXIT
+kill $SAMPLER 2>/dev/null; trap - EXIT INT TERM
 echo "--- summary (last 5 min per GPU: max temp, min clock, throttled samples)"
 python3 - "$OUT/thermals.csv" <<'PY'
 import csv, sys, collections
