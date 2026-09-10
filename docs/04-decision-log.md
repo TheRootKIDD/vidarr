@@ -230,3 +230,48 @@ Repo bootstrapped (`.venv` py3.12 / torch 2.13+cu130; faiss has no cp314 wheel),
 7. **Results.** Each rung's `results.md` states the H it bears on and the verdict against $L_{ref}$ = 3.336 nats (ADR-013 bands), with `100-l0-screen` as the dense comparator; the matched-FLOPs fine-grained MoE baseline (CLAUDE.md rule) is still owed for the ladder — L5-ne128 in `014` is the candidate config; open a queue entry for it once L1–L5d are in.
 
 **What not to do:** no power cap (015: the cards are thermally, not power, limited); no run > 1 node-day without a finished screen; no `git push` (the user pushes); no edits to numbers in existing `experiments/*` (new id + note).
+
+### 2026-09-10 — Re-slotting measured; the RAM upgrade did not take; two GPUs at x8
+
+**State.** Machine rebuilt and rebooted 19:16 (down 17:00–19:16). The riser, upright bracket and
+vertical kit are installed and the four cards are no longer back to back. Nothing is running; the
+machine is going down again for a BIOS memory investigation.
+
+**Checklist step 1 (layout), partly done.** Bus-ID → index map changed: bus 01/21/22/41 = GPU 0/1/2/3,
+the GA106 is now GPU 1 (was GPU 2 at bus 41). **GPUs 1 and 2 negotiate PCIe x8, not x16**, on two root
+ports under one host bridge — one x16 slot bifurcated x8/x8. Not expected to bind (collectives are
+host-bounced at 3.59 GB/s, `002-nccl`) but it needs the BIOS check the checklist asks for. No AER or
+PCIe errors in the boot journal. Table in `017/results.md`. **Still owed:** which slot or bracket
+physically holds which card — that needs eyes on the case, not a command.
+
+**Checklist step 2 (acceptance soak): passes on thermals, incomplete on duration.**
+`017-thermal-soak-riser-respaced`, cards cold at 40–41 °C, stopped by the user at 11.8 min of the
+requested 1100 steps. Every card held 1905–1950 MHz for the whole 11.6-minute load window with
+**0 throttled samples** and peaks of 78 / 70 / 70 / 66 °C, against 93 °C on three of four cards in
+both 015 and 016; the worst-card clock floor went 225 → 990 → **1905 MHz** across the three soaks and
+per-card power 84–104 → 120–132 → **135–142 W**. On every card the last-5-min clock minimum equals
+the mean to the MHz. **Spacing was the constraint and the re-slotting removes it.** But the run was
+killed before `bench_train_step` wrote `result.json`, so there is **no step time** for 017, and
+11.6 min is short of the 15 min the criterion asks for. **I23 stays open.** Rerun the full soak as
+`019-thermal-soak-…` after the BIOS work and record the verdict there; `018` stays reserved for the
+warm re-bench of checklist step 3. No training run may start before `019`.
+
+**The host-RAM upgrade did not take effect.** Kernel at boot: `DMI: Memory slots populated: 4/8`;
+`MemTotal` 125.6 GiB, unchanged from `06 §1`. `dmidecode -t 17`: channels A–D hold 32 GiB
+`HMA84GR7MFR4N-TF` (SK Hynix 2Rx4 registered ECC), channels E–H report `No Module Installed` — the
+BIOS could not read their SPD at all. The user reports all eight sticks are physically inserted.
+Configured speed is **2133 MT/s**, the JEDEC fallback, on a 2933 MT/s part; `06 §1` claims DDR4-3200
+and is wrong twice. With 4 DIMMs on an 8-channel controller the machine runs **4-channel**, about
+half the ≈ 205 GB/s `06 §1` assumes — and no host-memory bandwidth number in `06` has ever been
+measured. Ignore `amd64_edac`: it reports 192 GiB over 6 channels, contradicting both SMBIOS and
+`MemTotal`, and is a driver misreport. Leading hypothesis is stale cached memory training (Memory
+Context Restore / Fast Boot) surviving the DIMM change, which fits the unenumerated channels and the
+fallback speed together. Order of work: BIOS first (Memory Context Restore off, Fast Boot off, DRAM
+frequency Auto, interleaving and NPS Auto, then a CMOS clear), reseat second, and if both fail move a
+known-good stick from channel A to channel E — E reads 32 GiB ⇒ the new sticks are at fault, E still
+empty ⇒ the slot or the CPU socket is. **Before any CMOS clear, note the current PCIe settings**: a
+clear will also discard whatever produced the x8 links above.
+
+**Owed when the machine comes back:** (1) `019` full soak, cards cold, then I23's verdict; (2)
+checklist step 3, the warm re-bench as `018`; (3) `06 §1` corrections — RAM speed, channel count and
+the measured-vs-nominal memory bandwidth, plus the new bus map; (4) checklist steps 4–7 unchanged.
