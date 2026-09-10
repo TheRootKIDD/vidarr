@@ -594,3 +594,16 @@ checks above, and the fan count it leaves clear is the number to establish befor
 bottom fans moved the worst-card steady clock from 328 to 1518 MHz and the DDP step from 1277 to
 826 ms, but they never got a card under 93 °C. Their value in a *spaced* layout is unmeasured, and
 `023` on a Candidate-B layout would be the first run to measure it.
+
+**Candidate C, the user's own plan and the one to try first: both brackets at the bottom, cables
+swapped.** Mount the vertical kit under the PCIe slots and move the VG4 to the bottom-front, using the
+cable swap Q16 established — the 900 mm on the long run to the bottom-front, the short 200 mm on the
+one under the slots. **This costs nothing and needs no purchase**, since both brackets and both cables
+are already in the case. It frees the PCIe slots that force the side-by-side pair, which is the entire
+13.4 % on the table.
+
+What it does not do is bring the bottom intakes back: two frames on the floor keep the floor occupied,
+so C is a no-bottom-fans layout like `017`/`019`/`022`. That is very likely fine — spacing with no
+bottom fans already holds three cards at 63–66 °C — and it is the cheapest way to find out. **Try C
+first; keep B (the pedestal) as the fallback if `023` shows the fourth card still short of the bar.**
+Ordering hardware before `023` has run on C would be buying against an untested assumption.
