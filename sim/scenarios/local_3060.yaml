@@ -158,23 +158,32 @@ training_throughput:
     peak_mem_bytes_mb4: 8.58e9         # micro-batch 4 x 2048; 8 x 2048 does not fit
     source: experiments/009-train-step, experiments/010-train-step-ddp
   small_recurrent:
-    # L5 only. 014 measured every rung but its cards were already thermally saturated
-    # when each later rung began (erratum in experiments/014-train-step-rungs/results.md),
-    # so no other rung has a valid number yet -- 018 re-measures them one at a time
-    # from cold.
-    rung: L5
-    step_s_median: 0.7375              # 1100 steps, 0 thermal-slowdown samples
-    step_s_p90_over_median: 1.007      # flat over 13.7 min: the un-throttled signature
-    tokens_per_s_4gpu_ddp_no_accum: 44429
-    micro_batch_seqs: 4
-    peak_mem_bytes_mb4: 3.86e9
-    ddp_overhead_s_per_microstep: 0.086
-    ddp_overhead_note: >-
-      vs 014's 651 ms single-GPU L5, so BELOW the dense rung's ~0.25 s -- not the ~1.9 s
-      that 014 reported and that I21 was opened on. I21's premise is withdrawn but I21
-      is not closed: this is one rung, and 014 kept no thermal telemetry.
-    status: measured (L5); other rungs pending 018
-    source: experiments/024-thermal-soak-bracket-move
+    # Every rung, DDP, no accumulation, on the candidate-C spaced layout with thermal
+    # telemetry proving zero thermal-slowdown samples (018). 014's table is withdrawn:
+    # its cards heated through the sequence and the 014/018 ratio rises monotonically
+    # in run order (1.34, 1.79, 2.39, 3.09, 3.43, 3.68), L0 included.
+    rungs:                               # ms per micro-step, DDP / 1 GPU, and params
+      L0:       {ddp_s: 0.519, one_gpu_s: 0.454, params_m: 100.1, micro_batch: 4, tok_s_4gpu: 63176}
+      L1:       {ddp_s: 0.565, one_gpu_s: 0.334, params_m: 271.2, micro_batch: 2, tok_s_4gpu: 29007}
+      L2:       {ddp_s: 0.570, one_gpu_s: 0.329, params_m: 271.1, micro_batch: 2, tok_s_4gpu: 28727}
+      L3:       {ddp_s: 0.628, one_gpu_s: 0.384, params_m: 272.9, micro_batch: 2, tok_s_4gpu: 26094}
+      L5:       {ddp_s: 0.737, one_gpu_s: 0.671, params_m: 77.5,  micro_batch: 4, tok_s_4gpu: 44472}
+      L5d:      {ddp_s: 1.026, one_gpu_s: 0.924, params_m: 77.5,  micro_batch: 4, tok_s_4gpu: 31946}
+      L5-ne128: {ddp_s: 2.263, one_gpu_s: 2.052, params_m: 193.1, micro_batch: 4, tok_s_4gpu: 14480}
+      L5-ne1:   {ddp_s: 0.636, one_gpu_s: 0.579, params_m: 65.1,  micro_batch: 4, tok_s_4gpu: 51557}
+      L7b:      {ddp_s: 0.815, one_gpu_s: 0.744, params_m: 77.5,  micro_batch: 4, tok_s_4gpu: 40187}
+    ddp_overhead_model:
+      # I21, closed by 026: the overhead IS the ring all-reduce, no residual.
+      formula: 2*(N-1)/N * params * 2 bytes / lambda_link
+      lambda_link_bytes_per_s: 3.59e9    # 002-nccl, host-bounced
+      measured_ms_per_m_param: 0.85      # cluster over 6 of 9 rungs; L0 0.65, L5d 1.32
+      within_10pct_of_prediction: [L1, L2, L3, L5, L5-ne1, L7b]
+      note: >-
+        The recurrent rungs carry no distributed-training penalty beyond their parameter
+        count. L5 pays 66 ms on 77.5 M against L0's 65 ms on 100.1 M. 014's ~1.9 s figure,
+        which I21 was opened on, was thermal throttling in both the DDP and 1-GPU columns.
+    status: measured
+    source: experiments/018-train-step-rungs-recheck, experiments/026-train-step-rungs-1gpu
 
 provenance:
   driver: "595.80"

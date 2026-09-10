@@ -70,10 +70,18 @@ from its first step was measured on cards that were **already saturated when the
 measured the same day at 328 MHz steady. `014` recorded no thermal telemetry, so this is inference
 from the step-time distribution, not a direct reading.
 
-**What still stands:** the L0 row (first rung, cards cold, 694 ms against `024`'s 737.5 ms for the more
-expensive L5), the parameter counts, the peak-memory column and the micro-batch feasibility conclusion
-— memory is not the constraint. The single-GPU reference times are less exposed, one card at a time,
-but were taken in the same back-to-back session and are not clean either.
+**Correction to this erratum (same night, from `018`).** The claim above that the L0 row stands is
+**withdrawn**: `018-train-step-rungs-recheck` re-ran all nine rungs in this exact order on the spaced
+layout and measures L0 at **519 ms**, so even the first rung was 34 % slow. The cards were evidently
+not cold when this run began. The ratio `014`/`018` rises monotonically across the first six rungs in
+run order — **1.34, 1.79, 2.39, 3.09, 3.43, 3.68** — which is a property of *when* each rung ran, not
+of the rung.
+
+**What still stands:** the parameter counts, the peak-memory column and the micro-batch feasibility
+conclusion — memory is not the constraint, and `018` reproduces every peak-GiB figure exactly. Nothing
+in the timing columns survives. The single-GPU reference times are contaminated too: `018`'s DDP L3 at
+628 ms is *faster* than this file's single-GPU L3 at 673 ms, which is impossible unless the
+single-GPU figure was itself degraded. `026-train-step-rungs-1gpu` re-measures that column.
 
 **What does not stand:** the ms/micro-step and tokens/s columns for L1 through L7b, the `screen` hour
 estimates derived from them, and §Interpretation's central claim that DDP costs the recurrent rungs
@@ -81,5 +89,7 @@ estimates derived from them, and §Interpretation's central claim that DDP costs
 `024` puts the DDP overhead at **≈ 86 ms**, below the dense rung's. **I21 was opened on that claim and
 is reduced to an open question**; `docs/06 §4`'s variant column inherits the same fault.
 
-Superseded for L5 by `024`. The remaining rungs are re-measured by `018`, one rung at a time from cold
-with a cooldown between rungs. No number in this file is edited.
+**Superseded in full by `018`** for every timing number, and for L5 also by `024`. `018` ran the same
+nine rungs in the same order with thermal telemetry: 21.7 minutes of continuous load, zero
+thermal-slowdown samples, every rung's p90 within 1.5 % of its median. So the back-to-back sequence is
+not itself the fault — the old layout was. No number in this file is edited.

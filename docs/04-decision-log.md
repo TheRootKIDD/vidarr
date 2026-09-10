@@ -173,7 +173,7 @@ Decision: single-stream default; MTP heads read the single stream; $F_p$ predict
 - **I20** Priors from the literature refresh (`docs/05 §Headline`) expect four of the note's claims to *fail* ADR-013's thresholds at our scale: H4 (granularity law: $g$ = 1 ≈ 3 % worse than $g$ = 4 at `small`), H3 (2:4 at equal width costs 1.5–3.8 %; no precedent for the 2×-width claim), H13 (MTP hurts main quality below ≈ 1 B without a curriculum), H15b (1 % is below Landmark's +1.5 % at ≈ 100 M). Thresholds stay — they are the note's claims — but each of these steps gets its recovery variant scheduled beside it rather than after: L7b ($L_e$ = 2) with L7, a forward MTP curriculum as L3b, and for H15b the RULER/PG-19 subset at 8–32 k that ≈ 100 M models can resolve (HELMET and LongBench v2 cannot). Also from `docs/05`: `007-faiss-1m` recall must be re-measured on real *block keys* (attention queries are out-of-distribution for IVF; 30–50 % of lists scanned in RetrievalAttention) before H15b-S is scored — extends I14.
 - **I23** *(closes I22)* **Thermal throttling.** During `101-l1-screen` (14:46, after ≈ 19 h of continuous load) three cards read 91–93 °C with `sw_thermal_slowdown` active and SM clocks of 270 / 1320 / 1620 MHz against 2115 max; the fourth (GPU 2) sat at 58 °C and 1950 MHz. DDP runs at the slowest card, so the wall-clock gap of I22 is the 270 MHz card. The timed step missed it because the timer had no `cuda.synchronize` (fixed). Consequences per `06 §7`: **throughput numbers from `100-l0-screen` and the queued runs are invalid; loss numbers stand.** The trainer now logs min SM clock, max temperature and throttle count every 10 steps. `015-thermal-soak-170w` shows the three hot cards throttle within a minute while drawing only 85–105 W of their 170 W limit, so a power cap is not a remedy; the fix is airflow and spacing (`015` §Interpretation), verified by a 15-minute un-throttled soak before any run. The `014` bench ran cold and is unaffected. **2026-09-04, first cooling step** (`016-thermal-soak-bottom-fans`: three 140 mm bottom intakes plus top exhaust fans, cards not yet re-slotted): time to first throttle 50–70 s → 110–130 s, worst-card steady clock 328 → 1518 MHz, DDP step 1277 → 826 ms, but the three sandwiched cards still reach 93 °C with `sw_thermal_slowdown`; GPU 2 (free slot beside it) unchanged at 62 °C. Spacing is the remaining constraint; the acceptance soak waits for the bracket/riser and needs ≈ 1100 steps to last 15 min. **2026-09-10, after the rebuild and two re-slottings** (`017`, `019`, `021`, `022`): spacing is confirmed as the constraint — three cards now hold 1921–1958 MHz at 63–66 °C with zero throttled samples, while the fourth sits beside another card and throttles at 93 °C with its fan at 100 % and 113 W of a 170 W limit, costing the lockstep DDP step 13.4 %. No fan fault and no power fault: `019`'s 0 % fan reading was the bracket fouling the header and is retired (`021`). The remaining lever was the one slot position. **Closed 2026-09-10 by `024-thermal-soak-bracket-move`**: after the user's bracket and GPU work, 1100 steps from cold gave **zero thermal-slowdown samples on all four cards over a 13.7-minute load window**, peaks of 82 / 70 / 71 / 67 °C, every card's clock minimum within 20 MHz of its mean, and a `step_s_median` of **737.5 ms** — below the ≈ 760 ms cold floor the criterion asked it to approach. The starved card of `022` (`GPU-88074816`) runs at 70 °C and 1931 MHz. The DDP step falls 968 → 737.5 ms against `022`, **23.8 %**, which is ≈ 1.9 h per `screen` rung. One caveat carried forward: GPU 0 holds 82 °C with its fan at 97 % and has almost no margin, where the other three keep 15–20 points in reserve — a `screen` rung runs for hours, not fourteen minutes, so checklist step 6's watch on `106` stands. **The acceptance soak was `024`, not `023`**: ids are allocated in order and the env re-capture came first in the order of work.
 - **I22** *(closed by I23)* `100-l0-screen` took 18 h of wall-clock for 4.28 h of timed steps; the first checkpoint came on time (30 min), so the loss is later and outside the timed region — evaluation, checkpointing to `/home` (SATA, 31 GiB free, btrfs zstd), the per-step barrier, or the host. The trainer now records absolute time, `eval_s` and `ckpt_s` per step; `101-l1-screen` is watched with timestamps to locate it. Until closed, every `results.md` reports timed-step hours *and* wall-clock.
-- **I21** `014-train-step-rungs`: DDP's per-micro-step all-reduce costs the recurrent rungs ≈ 1.9–2.9 s against ≈ 0.25 s for the dense baseline, for a smaller gradient. Likely no bucket/compute overlap because the shared block's gradient completes only at the end of backward, plus many small expert matrices and checkpoint recompute; unverified. Gradient accumulation (16 micro-steps per step) hides it in training; measure the reducer timeline before any throughput statement about the recurrent design on this rig. **Premise withdrawn 2026-09-10 (`024`, and the erratum appended to `014`).** `024` measures the identical DDP L5 configuration at **737.5 ms** where `014` reported 2526 ms, so against `014`'s own 651 ms single-GPU figure the DDP overhead is **≈ 86 ms — below the dense rung's ≈ 250 ms**, not eight times above it. `014`'s minimum sits 1 % under its median, i.e. it never ran a fast step, which dates the loss to cards already saturated before the rung began rather than to the reducer. **I21 is not closed**: `024` measures one rung, and `014` kept no thermal telemetry, so the recurrent rungs' true all-reduce cost is simply unmeasured. `018` re-measures every rung one at a time from cold with a cooldown between rungs; until then no throughput statement about the recurrent design on this rig may cite `014`.
+- **I21** *(closed 2026-09-11 by `026-train-step-rungs-1gpu`)* `014-train-step-rungs`: DDP's per-micro-step all-reduce costs the recurrent rungs ≈ 1.9–2.9 s against ≈ 0.25 s for the dense baseline, for a smaller gradient. Likely no bucket/compute overlap because the shared block's gradient completes only at the end of backward, plus many small expert matrices and checkpoint recompute; unverified. Gradient accumulation (16 micro-steps per step) hides it in training; measure the reducer timeline before any throughput statement about the recurrent design on this rig. **Premise withdrawn 2026-09-10 (`024`, and the erratum appended to `014`).** `024` measures the identical DDP L5 configuration at **737.5 ms** where `014` reported 2526 ms, so against `014`'s own 651 ms single-GPU figure the DDP overhead is **≈ 86 ms — below the dense rung's ≈ 250 ms**, not eight times above it. `014`'s minimum sits 1 % under its median, i.e. it never ran a fast step, which dates the loss to cards already saturated before the rung began rather than to the reducer. **I21 is not closed**: `024` measures one rung, and `014` kept no thermal telemetry, so the recurrent rungs' true all-reduce cost is simply unmeasured. **Closed by `026`**, which re-measured the single-GPU column on the candidate-C layout and paired it with `018`'s DDP column. The DDP overhead is a ring all-reduce of the gradient and nothing else: at $N$ = 4 that is $2(N-1)/N$ = 1.5× the gradient, BF16 at 2 bytes per parameter, over the measured $\lambda_{link}$ = 3.59 GB/s (`002-nccl`). That parameter-free prediction matches measurement within 10 % on six of nine rungs, **including the recurrent L5 at ratio 1.02**. **L5 pays 66 ms on 77.5 M parameters against L0's 65 ms on 100.1 M** — the same cost per parameter, not eight times it, and cheaper per parameter than the 271 M layered rungs at 0.85–0.89 ms/M. There is nothing left to explain: the ≈ 1.9–2.9 s was thermal throttling on the old layout, in both columns. Two rungs sit above ratio 1.2 — L5d at 1.57 and L5-ne128 at 1.31, the latter plausibly many small expert buckets rather than a few large ones — and are second-order against a prediction that assumes a perfect ring. **Consequence for the design:** the recurrent rungs carry no distributed-training penalty beyond their parameter count, so accumulation is worth having for the 271 M layered rungs (all-reduce ≈ 40 % of a micro-step) and close to irrelevant for the 77.5 M recurrent ones (9–11 %).
 - **I17** `docs/07 §4.1`: the author's baseline unit is $U$ = 16 (even 4×4 torus + cheap routers), the note's is 64 (asymmetric 1:4:16:64). `note64.yaml` carries both; every S-experiment that depends on $U$ reports the pair until Q14 is answered.
 - **I18** `docs/07 §4.3`: the tile floor is a row floor and speculation multiplies rows per token (1 + $m$). Our `003-gemm` floor (512 tokens for 80 % of $\phi$) was measured without speculation rows; the roofline $b_{min}$, the tile-row floor and the empirical occupancy floor are three separate constraints and the scenario file must name which one the scheduler uses (extends I13).
 - **I19** `docs/07 §6`: the document gives ratios and structural constants only; absolute $\phi$, $\beta_C$, $\lambda_C$, $\nu_C$, \$/chip and W/chip for `note64` still need vendor sources (I4). Candidates: TPU v5p/v6 torus link bandwidth and NVLink 5 for `gpu_today`; GDDR7 / CXL vendor figures for the copper-trace and "other RAM" guesses.
@@ -688,3 +688,62 @@ minutes.
 
 **Still owed and not answerable from a command:** which slot or bracket physically holds which card,
 and whether the layout built is candidate C. Open since `017`; `024` is the accepted layout on record.
+
+### 2026-09-11 (small hours) — `018` and `026`: the whole per-rung table re-measured; I21 closes
+
+**State.** The user confirms the layout is **candidate C — all four cards spaced on the board**, the
+vertical kit under the PCIe slots and the VG4 moved to the bottom-front with the cables swapped. That
+answers the half of checklist step 1 open since `017`, and it is recorded in `06 §1`. Two benches ran
+after `024`: `018-train-step-rungs-recheck` (all nine rungs, 4-way DDP) and `026-train-step-rungs-1gpu`
+(the same nine on one card). **Nothing is training yet; the ladder is cleared to start.**
+
+**`018` replaces `014` outright.** Same nine rungs, same order, same command — and 21.7 minutes of
+continuous load with **zero thermal-slowdown samples**, max 79 / 69 / 71 / 67 °C, every rung's p90
+within 1.5 % of its median except L5d at 12 %. So a back-to-back sequence is fine on this layout; the
+old one was the fault. L5 lands at 737 ms against `024`'s 737.5 ms from an isolated 1100-step run, so
+the sequence costs nothing.
+
+| rung | `014` | `018` | ratio | `026` 1 GPU | DDP overhead |
+|---|---|---|---|---|---|
+| L0 | 694 ms | **519** | 1.34 | 454 | 65 ms |
+| L1 | 1013 | **565** | 1.79 | 334 | 230 |
+| L2 | 1363 | **570** | 2.39 | 329 | 241 |
+| L3 | 1938 | **628** | 3.09 | 384 | 244 |
+| L5 | 2526 | **737** | 3.43 | 671 | **66** |
+| L5d | 3779 | **1026** | 3.68 | 924 | 102 |
+| L5-ne128 | 5862 | **2263** | 2.59 | 2052 | 211 |
+| L5-ne1 | 2652 | **636** | 4.17 | 579 | 57 |
+| L7b | 2678 | **815** | 3.28 | 744 | 71 |
+
+The ratio column rises **monotonically across the first six rungs in run order** — 1.34, 1.79, 2.39,
+3.09, 3.43, 3.68. That is a property of *when* a rung ran, not of the rung. **The previous entry's
+erratum was itself too kind to `014`**: it said the L0 row stood, and L0 was 34 % slow. Corrected in
+place.
+
+**I21 is closed, and the answer is that there was never anything to explain.** The DDP overhead is a
+ring all-reduce of the gradient and nothing else. At $N$ = 4 that is $2(N-1)/N$ = 1.5× the gradient,
+BF16 at 2 bytes per parameter, over the measured $\lambda_{link}$ = 3.59 GB/s (`002-nccl`) — a
+prediction with nothing fitted. It lands within 10 % on six of nine rungs, **L5 at ratio 1.02**.
+**L5 pays 66 ms on 77.5 M parameters against L0's 65 ms on 100.1 M**: the same cost per parameter, not
+the 8× I21 was opened on, and cheaper per parameter than the 271 M layered rungs at 0.85–0.89 ms/M.
+The ≈ 1.9–2.9 s figure was thermal throttling, present in `014`'s single-GPU column as well as its DDP
+one — which is why `018`'s DDP L3 (628 ms) beat `014`'s *single-GPU* L3 (673 ms), an impossibility that
+was the first clue.
+
+**Consequence for the design, not just the rig:** the recurrent rungs carry **no distributed-training
+penalty beyond their parameter count**. Accumulation is worth having for the 271 M layered rungs, where
+the all-reduce is ≈ 40 % of a micro-step, and close to irrelevant for the 77.5 M recurrent ones at
+9–11 %. `06 §4` said the opposite until tonight.
+
+**One number to treat with care.** `026` ran entirely on GPU 0, the warmest card, and its L5-ne128
+(2052 ms) is *slower* than `014`'s (1544 ms) where every other rung is equal or faster. GPU 0 peaked at
+75 °C with zero thermal samples over `026`'s 17.3 min, so it was not throttled — but a single-card
+bench measures whichever card it lands on, and these four are not interchangeable. A per-card sweep
+would settle it. I21's closure does not rest on it.
+
+**`06 §4` and `sim/scenarios/local_3060.yaml` rewritten** from `018`/`026`: the full nine-rung table
+with DDP and single-GPU times, parameter counts and the all-reduce model. `screen` costs **4.4 h** dense
+(L0), **6.2 h** L5, **8.7 h** L5d, **19.2 h** L5-ne128; the five queued rungs 106–110 total **44.8 h**
+without accumulation.
+
+**Next: the ladder starts at L1, id 106.**
