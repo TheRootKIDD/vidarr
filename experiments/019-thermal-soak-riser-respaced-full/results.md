@@ -132,3 +132,11 @@ The useful outcome of this attempt is therefore not thermal. It is that the RAM 
 that one of the two x8 links cleared. **Next shutdown should close three things at once**: the GPU 0
 fan or riser cable, DRAM frequency to 2933 MT/s, and the x8 link on bus 21. Then run the full soak
 as `021` and let it write `result.json`.
+
+## Erratum, 2026-09-10 (late) — no bottom intakes were fitted for this run
+
+"No cooling hardware added since `017`" is accurate, but the `017` baseline it inherits is not: the
+three 140 mm bottom intake fans measured in `016` were **removed** to make room for the VG4 bottom
+bracket, and were not in the case for this run. Case configuration was top exhaust, 3 side intakes,
+1 rear exhaust, no bottom intakes. No number here changes. See `017` §Erratum for the corrected
+comparison and what it implies for the bracket decision.

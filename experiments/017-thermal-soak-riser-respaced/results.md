@@ -121,3 +121,35 @@ thermal picture is nevertheless unambiguous and there is no sign of a slow drift
 are flat. Expect the full soak to pass, but **no training run may start until `019` records it**,
 and the host-RAM and PCIe-width questions above should be settled in the same shutdown so that one
 reboot closes all three.
+
+## Erratum, 2026-09-10 (late) — the three bottom intakes were NOT in place for this soak
+
+The header of this file says "Bottom intakes, top exhaust, 3 side intakes and 1 rear exhaust
+unchanged from `016`". **That is wrong.** The user reports that the VG4 bottom bracket and the three
+140 mm bottom intake fans cannot both be fitted: the bracket takes the floor space the fans occupy.
+The fans came out when the bracket went in.
+
+So the correct case configuration for this soak, and for `019` and `022`, is: **top exhaust, 3 side
+intakes, 1 rear exhaust, and no bottom intakes.** `016` remains the only soak that measured the
+bottom fans, and it measured them with the cards still back to back.
+
+**No measured number in this file changes**, and the comparison table's direction is unaffected — but
+what the comparison *means* changes, and in the design's favour:
+
+| soak | bottom intakes | cards spaced | worst card |
+|---|---|---|---|
+| `015` | no | no | 93 °C, 328 MHz steady |
+| `016` | **yes** | no | 93 °C, 1518 MHz steady |
+| `017` | **no** | yes | 78 °C, 1912 MHz steady |
+| `022` | **no** | yes (three of four) | 93 °C on the unspaced card; 63–66 °C on the other three |
+
+Read down that table: **spacing alone, with the bottom intakes removed, beats bottom intakes without
+spacing by a wide margin.** The 63–66 °C the three healthy cards hold in `022` is achieved with less
+case airflow than `016` had, not more. It also means the starved card in `022` has never had bottom
+intake air at any point in its life on this rig.
+
+**Consequence for the bracket decision.** Any remedy that keeps a four-slot frame on the floor keeps
+the bottom fans out, wherever on the floor it sits — so moving the VG4 to the bottom-front on a longer
+cable does not recover them. A compact pedestal mount might. That would give this rig spacing and
+bottom intake **at the same time, for the first time**, which no soak here has yet measured. See
+`04`, session log 2026-09-10 (late night), candidate B.

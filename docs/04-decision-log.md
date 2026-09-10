@@ -551,9 +551,12 @@ which is fine, because length was never the constraint that mattered.
 
 1. **Hole pattern.** The pedestal is designed for be quiet! case mounting points. This case is a Lian
    Li O11D EVO XL. Compare the pedestal's footprint with the floor and bracket holes actually present.
-2. **Clearance over the bottom intakes.** Three 140 mm bottom intakes went in on 2026-09-04 and are
-   part of why three of four cards now hold 63–66 °C. A floor-mounted pedestal competes for that
-   space. It must not sit over a fan.
+2. **How much floor it leaves.** *(Corrected 2026-09-10 late night: the user reports the VG4 bracket
+   and the three 140 mm bottom intakes cannot both be fitted — the fans came out when the bracket went
+   in, so `017`, `019` and `022` all ran with no bottom intakes. See `017` §Erratum.)* This inverts the
+   check: the question is not whether the pedestal fouls the fans, it is **how many of the three fans
+   the pedestal lets back in**. A footprint that leaves two or three of them clear buys spacing and
+   bottom intake at once, which no soak on this rig has yet had.
 3. **Second anchor.** The kit brings no slot-cover bracket, so the card is held by the pedestal alone
    unless the case's vertical slots take its I/O plate. This rig runs multi-day jobs; a cantilevered
    card is not acceptable for that.
@@ -562,3 +565,32 @@ If Candidate B is taken, the "order a second `PW-PCIV-4-90X`" assumption above i
 answer stops mattering, because this unit's cable is not the part being replaced. Either way the
 sequence is unchanged: move, re-map by UUID, re-check links, check the fan of any card touched, then
 `023` cold for 1100 steps.
+
+**Correction that reframes the whole cooling story: the bracket and the bottom fans are mutually
+exclusive.** The user reports there was never room for the three 140 mm bottom intakes once the VG4
+bottom bracket was fitted. The fans measured in `016` came out when the bracket went in, so `017`,
+`019` and `022` all ran with **top exhaust, 3 side intakes, 1 rear exhaust and no bottom intakes**.
+Errata appended to all three results files. No measured number moves; the reading of them does.
+
+| soak | bottom intakes | cards spaced | worst card |
+|---|---|---|---|
+| `015` | no | no | 93 °C, 328 MHz steady |
+| `016` | **yes** | no | 93 °C, 1518 MHz steady |
+| `017` | no | yes | 78 °C, 1912 MHz steady |
+| `022` | no | yes for three of four | 93 °C on the unspaced card, 63–66 °C on the rest |
+
+**Spacing with no bottom fans beats bottom fans with no spacing, by a wide margin.** The 63–66 °C the
+three healthy cards hold in `022` is reached with *less* case airflow than `016` had. It also means
+the starved card has never had bottom intake air at any point on this rig, so its 93 °C is not the
+ceiling of what its position can do.
+
+**This settles the choice between the two candidates.** Candidate A moves the VG4 to the bottom-front
+on a longer cable, but a four-slot frame on the floor keeps the fans out wherever it sits, so A buys
+the freed slots and nothing else. Candidate B replaces the frame with a pedestal and can buy the freed
+slots **and** some or all of the bottom intakes. **B is the preferred route**, subject to its three
+checks above, and the fan count it leaves clear is the number to establish before ordering.
+
+`016`'s own contribution is now smaller than `04` has been claiming: with the cards back to back the
+bottom fans moved the worst-card steady clock from 328 to 1518 MHz and the DDP step from 1277 to
+826 ms, but they never got a card under 93 °C. Their value in a *spaced* layout is unmeasured, and
+`023` on a Candidate-B layout would be the first run to measure it.

@@ -106,3 +106,11 @@ rated and running, nothing to recover, and no BIOS change to make. `06 §1` corr
   held and no orphaned workers survived the run.
 - **I23 stays open.** Not attempted here; it needs cold cards, 1100 steps and a final layout.
 - Next acceptance soak takes id `023`. `018` stays reserved for the warm re-bench of checklist step 3.
+
+## Erratum, 2026-09-10 (late) — no bottom intakes were fitted for this run
+
+"No cooling hardware added since `017`" is accurate, but the `017` baseline it inherits is not: the
+three 140 mm bottom intake fans measured in `016` were **removed** to make room for the VG4 bottom
+bracket, and were not in the case for this run. Case configuration was top exhaust, 3 side intakes,
+1 rear exhaust, no bottom intakes. No number here changes. See `017` §Erratum for the corrected
+comparison and what it implies for the bracket decision.
