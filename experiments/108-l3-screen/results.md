@@ -90,3 +90,41 @@ carrying forward: it is decelerating, not budget-limited, which makes "more toke
 *less* likely of the two hypotheses `small` will separate — and that in turn favours the curriculum
 reading of L3b over the sequential-modules reading. Routing is healthy throughout and is not a
 confound.
+
+
+## Correction (same day) — acceptance was measured against the wrong reference
+
+**The acceptance numbers above are not the quantity H13's thresholds are written against.** ADR-013
+says *"greedy acceptance of heads 2/3/4 **against the main head** on held-out"*, and ADR-012 repeats
+it: *"measured greedily against head 1"*. `model/mtp.py` computes `logits.argmax(-1) == target` where
+`target` is the **ground-truth token** — that is top-1 accuracy, not acceptance. CLAUDE.md: where code
+and doc disagree, the doc wins. Recorded as **I27**.
+
+The two differ because a draft is accepted when it **agrees with the verifier**, not when it is
+**right**. Re-measured from this run's checkpoint with `scripts/analysis/probe_mtp_acceptance.py`
+(32 held-out sequences, CPU):
+
+| head | **acceptance vs head 1** | top-1 vs truth (what was logged) | H13 target |
+|---|---|---|---|
+| 2 | **38.5 %** | 21.1 % | 70 % |
+| 3 | **21.6 %** | 12.0 % | 55 % |
+| 4 | **15.0 %** | 8.4 % | 45 % |
+
+Main head's own top-1 vs truth: **40.0 %**.
+
+**H13 still misses, and the direction of the conclusion is unchanged** — 38.5 % against a 70 % target
+is not a near miss. But the margin is roughly half what the trainer reported, and the *shape* of the
+problem changes: head 2 is not failing to model the data, it is failing to anticipate a
+better-informed head 1. Head 1 predicts token $t+j$ from position $t+j-1$; head $j$ must predict the
+same token from position $t$, with $j-1$ fewer tokens of context. Acceptance measures how well head
+$j$ closes that information gap, and 38.5 % is real skill rather than noise.
+
+**What this does not license.** It is tempting to read head 1's 40 % top-1 as a ceiling on acceptance.
+It is not — head $j$ only has to guess what head 1 will *say*, not be correct, so the ceiling is
+100 % and the binding constraint is the context gap, not head 1's quality. That misreading was made
+once while interpreting this result and is recorded so it is not made again.
+
+**The subsampled auxiliary loss is now the leading suspect** (ADR-012): each position trains exactly
+one of heads 2–4, so head 2 sees ≈ 1/3 of positions — ≈ 0.33 B tokens of the 1 B budget — and head 4
+sees 1/3 of positions at 1/8 the loss weight. That was a deliberate speed choice (+25 % step instead
+of +75 %). **It may also be the whole result.** `L3-full` tests it directly; see `04` I27.

@@ -1,0 +1,22 @@
+{
+  "run_id": "108-l3-screen",
+  "step": 1907,
+  "main_head_top1_accuracy": 0.40045166015625,
+  "per_head": {
+    "h2": {
+      "acceptance_vs_head1": 0.3854574363992172,
+      "top1_accuracy_vs_truth": 0.21052470645792565,
+      "positions": 32704
+    },
+    "h3": {
+      "acceptance_vs_head1": 0.21560053816046967,
+      "top1_accuracy_vs_truth": 0.11992416829745597,
+      "positions": 32704
+    },
+    "h4": {
+      "acceptance_vs_head1": 0.15019569471624267,
+      "top1_accuracy_vs_truth": 0.08442392367906067,
+      "positions": 32704
+    }
+  }
+}
