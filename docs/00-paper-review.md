@@ -119,20 +119,25 @@ The latency point is fair for most workloads; data residency, blast radius, powe
 
 ## 5. Claim-status table
 
+**Status key**: *Established* = supported by evidence outside this project; *Measured here* = this project has a number; *Plausible* / *Unclear* / *Overstated* / *Opinion* as before. Rows carrying a measurement of ours cite the run id. Last swept 2026-09-11 after `107`; **several rows will move again when L5 lands** and the table should be re-swept then rather than row by row.
+
 | Claim (note) | Status | Handled in |
 |---|---|---|
-| Parallel attn/FF halves decode latency | Overstated (upper bound) | 01 §4.1, cost model |
+| Parallel attn/FF halves decode latency | Overstated (upper bound) for the *latency* claim, which is still untested and belongs to S1. **On quality, measured here and better than the note needed**: L2 vs L1 at matched FLOPs is **−1.73 % held-out loss** where H2 budgeted a *cost* of ≤ 1 % (`107`, one seed, no band — ADR-013 verdicts need `small`) | 01 §4.1, `107`, S1 |
 | Serial att-then-FF models are "silly" | Opinion | — |
 | Early-mask 2:4 sparsity matches dense | Unclear (author: weights only, fixed mask — Q7) | L10a |
 | Coarse 64-wide experts lose nothing | Unclear; conflicts with fine-grained scaling laws | L7 |
+| **All experts are one uniform width** (P4's organizing rule) | **Challenged** (added 2026-09-11, §P4): FlexMoRE beats a full-sized mixture at < 1/3 the params with *heterogeneous* rank, FlexMoE prunes 50 % of routed-expert params for ≈ 0.2 % post hoc. Decided by L7c **and** S11 together, not either alone | §P4, L7c, S11 |
+| MoE routing stays balanced without an aux loss | **Measured here**: aux-loss-free bias + small Switch backstop holds every router at **7.99–8.00 of 8 effective experts, 0 dead of 96** at convergence (`106/routing.json`); the startup transient reaches 35 dead of 96 and recovers by ≈ step 100 (`108`) | 01 §4.4, ADR-004 |
 | Fabric costs 1/64 per node "without MoE complications" | Established (cost) / Overstated (complications) | 02 §3–4 |
 | Repeated layer can simulate the layered model | Established for FF with depth conditioning; not for shared attention; author keeps one KV cache per iteration (Q2) | 01 §4.2 |
 | Variable depth cuts KV cache | Plausible; holds with the author's state-copy semantics (Q5) and shared attention weights. v2: the persistent cache is one final-vector entry per token regardless — ~$r_{max}$× smaller by construction | 01 §4.3, §4.7, §6.4 |
 | Two streams halve decode latency | Established as "halves the latency floor at full utilisation with half the tokens in flight, same throughput" (Q1); quality premise unclear; optional | L4 (last), S1 |
 | Two streams halve prefill FLOPs | Plausible (relative to two-stream decode cost) | 01 §10 |
-| MTP from the start is standard | Established | L3 |
+| MTP from the start is standard | Established *as a technique*; **its acceptance targets look out of reach at our budget** — `108` tracks head-2 acceptance to ≈ 21 % at 0.9 B tokens against H13's 70 %, with a ≈ 3 % main-loss regression vs L2, exactly as I20's prior predicted for < 1 B tokens. **Not a verdict**: ADR-030 moves H13's decision to `small` | L3, `108`, ADR-030 |
 | Disaggregation is "silly" | Overstated | 02 §6, S5 |
 | O(log n) attention with KV on SSD has enough bandwidth | Unclear; needs a locality model — more plausible after v2 (index over one entry per token) | S6 |
+| Drafted (unverified) tokens can attend globally | **Gap in the spec, not a claim of the note** (added 2026-09-11, I26): a token's $\mathcal{G}$ entry exists only after its *final* iteration, so within one speculative window a draft has no global view of its own predecessors. P13 and P7's v2 attention structure interact and neither says how | I26, `01 §4.3`, `01 §7` |
 | 4 GB HBM per chip suffices | Plausible (inference, this design only); strengthened by v2's final-vector-only global cache | S7 |
 | Nobody sells bespoke experts / multi-LoRA | Partly out of date | 02 §10 |
 
