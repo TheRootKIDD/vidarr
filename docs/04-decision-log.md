@@ -907,3 +907,39 @@ flagged" rule at step 10 and held it: GPU 0 brushes its limit continuously under
 recurrent load. The run was healthy — clock held 1890 MHz, throughput **rising** at 47.8 → 48.5 k
 tok/s, above `018`'s 44.5 k L5 baseline. **A flag is not harm.** The rule now reads sustained clock
 loss and the 90 °C ceiling rather than flag count; it had been tuned on L3's lighter load.
+
+### 2026-09-11 (night) — power outage kills `109` at step 170; I27's fix and probes land; `110`/`111` relaunched
+
+**A mains outage stopped `109-l5-screen` at ≈ 18:36**, step 170 of 1907 (0.089 B tokens, train loss
+4.99, 49.0 k tok/s, `n_thermal` = 0, 7.8 of 8 effective experts at the worst router). The host
+rebooted at 19:32 and 19:42; the queue did not restart itself. Last checkpoint at step 165.
+**Not resumed**: the trainer's `--resume` restores model, optimiser, step and the $r$ schedule and
+would be sound for loss numbers, but the ladder is append-only and `101` set the precedent. `109`
+keeps its partial `results.md`; **`110-l5-screen` started 20:22** from `/mnt/nvme/queue_screen_3.sh`,
+followed by `111-l5d-screen`. Cost of the choice: ≈ 30 min. Layout unchanged, cards idle at 35–44 °C
+before launch, so `024`'s acceptance soak still stands.
+
+**Done while the GPUs were idle, in the order I27 asked for:**
+- **I27's fix** (`1244811`): `model/mtp.py` logs `mtp_top1_h{j}` and `mtp_accept_h{j}`; `01 §7` states
+  the definition; the unit test checks both. Between rungs, and L5/L5d carry no MTP heads, so the
+  `screen` sweep's remaining numbers are unaffected by the hash change.
+- **I27 experiments 1 and 2** on `108`'s checkpoint (`108/mtp_speculative.json`): **1.51 tokens per
+  verify pass** (run length 0.51 joint vs 0.48 independent); head 2 accepted **56.4 %** where head 1
+  is near-certain (34 % of positions), 27–33 % elsewhere; heads 3–4 flat at 14–27 % in every bucket.
+  Acceptance concentrates on confident positions but misses 70 % even there, so `L3-full` (experiment
+  3, ≈ 10 h) stays worth running — **after `111`**, as the next queue entry.
+- **`107`'s routing endpoint** (`107/routing.json`): 7.99–8.00 of 8 effective experts on all 12
+  routers, 0 dead. The parallel form changes nothing about balance.
+
+**Source folder note.** `docs/source/FlexMo(r)e/` holds HRM (2506.21734) beside FlexMoRE and FlexMoE;
+the third file is not a Flex paper. This FlexMoE (Mo et al. 2026, nested intra-expert pruning) is
+unrelated to the 2023 FlexMoE systems paper (Nie et al., dynamic expert placement); cite by arXiv id.
+Two numbers from the deep read worth carrying: FlexMoE's naive path with heterogeneous expert widths
+runs at **0.85×** full-model throughput and its bucketing kernel recovers **1.47×** at 60 % pruning
+(a sourced cost for S11's non-uniform experts), and HRM's ACT halts at **2–3 mean segments against a
+fixed 8** at similar accuracy — sequence-level, not per-token, so not a precedent for `01 §4.7`'s
+mechanism, but the learned-vs-fixed-at-matched-mean shape I25 asks for.
+
+**Next in the queue after `111`:** `L3-full` (I27 #3), then the L5-r sweep (I25) and L5e (`08 §4`),
+the latter decided on `110`'s result. Watch `110`'s first eval (≈ 30 min in) per checklist step 6:
+`n_thermal`, not `n_throttled`.
