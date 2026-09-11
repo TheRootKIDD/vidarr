@@ -128,3 +128,38 @@ once while interpreting this result and is recorded so it is not made again.
 one of heads 2–4, so head 2 sees ≈ 1/3 of positions — ≈ 0.33 B tokens of the 1 B budget — and head 4
 sees 1/3 of positions at 1/8 the loss weight. That was a deliberate speed choice (+25 % step instead
 of +75 %). **It may also be the whole result.** `L3-full` tests it directly; see `04` I27.
+
+## Addendum (2026-09-11, night) — I27 experiments 1 and 2: run length and confidence buckets
+
+Same checkpoint, same 32 held-out sequences, `probe_mtp_acceptance.py` extended
+(`mtp_speculative.json`; the earlier `mtp_acceptance.json` is unchanged).
+
+**Expected accepted run length is 0.51 heads, i.e. 1.51 tokens per verify pass.** Acceptance in a
+run is sequential, stopping at the first rejection, so this is the joint over heads 2→3→4, not the
+marginals. Under independence the marginals give 0.48; the measured joint is *slightly higher*, so
+the heads succeed on the same positions rather than defeating each other — the correlation helps,
+a little. Histogram over 32 704 positions: 0 accepted 61.5 %, 1 accepted 28.1 %, 2 accepted 8.3 %,
+all 3 accepted 2.1 %. A decoder drafting 3 tokens per pass would commit 1.5 per pass; the note's
+"4× speculative decode" needs ≈ 3 of 3 accepted most of the time. This is the number H13 should
+arguably be written in, and by it the miss is larger than the per-head table makes it look.
+
+**Acceptance concentrates where head 1 is confident, but not enough.** Bucketed by the entropy of
+head 1's distribution at the draft position:
+
+| head-1 entropy (nats) | share of positions | accept h2 | h3 | h4 |
+|---|---|---|---|---|
+| ≤ 0.5 | 34.2 % | **56.4 %** | 26.9 % | 17.0 % |
+| 0.5–1 | 19.0 % | 32.5 % | 18.8 % | 13.9 % |
+| 1–2 | 30.5 % | 28.5 % | 17.8 % | 13.8 % |
+| 2–3 | 12.3 % | 27.0 % | 20.9 % | 14.4 % |
+| > 3 | 3.9 % | 27 % | 21 % | 15 % |
+
+On the third of positions where head 1 is near-certain, head 2 is accepted 56 % of the time — twice
+the rate everywhere else, and still short of H13's 70 % even on the easiest bucket. Heads 3 and 4
+barely move with confidence at all. So a confidence-gated drafter recovers some of the aggregate
+shortfall, but "MTP works exactly where speculative decode gets its speedup" is **not** what this
+model shows; the low aggregate is not an artefact of hard positions dragging an otherwise-good
+drafter down. That makes I27's experiment 3, `L3-full` without head subsampling, the remaining
+cheap way to separate "starved by our own optimisation" from "too hard at this scale" — and heads
+3 and 4, which see a third of positions at 1/4 and 1/8 weight, are where subsampling bites hardest
+and where acceptance is flattest here.

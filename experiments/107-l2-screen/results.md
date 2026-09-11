@@ -72,3 +72,11 @@ matched parameters and FLOPs, and takes the ladder to 5.59 % below the dense bas
 clause is satisfied with room to spare, its latency clause is untested and belongs to S1, and the
 banded verdict belongs at `small`. Nothing here bears on whether the same holds in the *shared* block,
 which is what H2 is ultimately about.
+
+## Addendum (2026-09-11, evening) — per-router expert load (`routing.json`)
+
+The routing endpoint owed above, measured with `scripts/analysis/probe_routing.py --id 107-l2-screen`
+(32 held-out sequences of 2048, CPU) while the ladder was idle after the power outage. **All 12
+routers at 7.99–8.00 of 8 effective experts, 0 dead of 96**; worst single expert 0.1335 against a
+uniform 0.1250, least-loaded 0.1102. Indistinguishable from `106`'s endpoint: the parallel form
+changes nothing about balance.

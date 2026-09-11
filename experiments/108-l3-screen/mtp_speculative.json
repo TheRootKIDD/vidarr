@@ -1,0 +1,78 @@
+{
+  "run_id": "108-l3-screen",
+  "step": 1907,
+  "main_head_top1_accuracy": 0.40045166015625,
+  "per_head": {
+    "h2": {
+      "acceptance_vs_head1": 0.3854574363992172,
+      "top1_accuracy_vs_truth": 0.21052470645792565,
+      "positions": 32704
+    },
+    "h3": {
+      "acceptance_vs_head1": 0.21560053816046967,
+      "top1_accuracy_vs_truth": 0.11992416829745597,
+      "positions": 32704
+    },
+    "h4": {
+      "acceptance_vs_head1": 0.15019569471624267,
+      "top1_accuracy_vs_truth": 0.08442392367906067,
+      "positions": 32704
+    }
+  },
+  "run_length": {
+    "expected_joint": 0.511252446183953,
+    "expected_if_independent": 0.4810442549099546,
+    "tokens_per_verify_pass": 1.5112524461839532,
+    "histogram": {
+      "0": 20098,
+      "1": 9194,
+      "2": 2710,
+      "3": 702
+    },
+    "positions": 32704
+  },
+  "by_head1_entropy": {
+    "H1_in_(0,0.5]": {
+      "positions": 11175,
+      "share": 0.34170132093933464,
+      "acceptance_h2": 0.5640268456375839,
+      "acceptance_h3": 0.26854586129753916,
+      "acceptance_h4": 0.17038031319910515
+    },
+    "H1_in_(0.5,1]": {
+      "positions": 6228,
+      "share": 0.19043542074363992,
+      "acceptance_h2": 0.3254656390494541,
+      "acceptance_h3": 0.18770070648683365,
+      "acceptance_h4": 0.13856775850995504
+    },
+    "H1_in_(1,2]": {
+      "positions": 9991,
+      "share": 0.30549779843444225,
+      "acceptance_h2": 0.2850565508958062,
+      "acceptance_h3": 0.17775998398558704,
+      "acceptance_h4": 0.1376238614753278
+    },
+    "H1_in_(2,3]": {
+      "positions": 4037,
+      "share": 0.1234405577299413,
+      "acceptance_h2": 0.26975476839237056,
+      "acceptance_h3": 0.20857072083230122,
+      "acceptance_h4": 0.14391875154817935
+    },
+    "H1_in_(3,4]": {
+      "positions": 1102,
+      "share": 0.03369618395303327,
+      "acceptance_h2": 0.2731397459165154,
+      "acceptance_h3": 0.2159709618874773,
+      "acceptance_h4": 0.14519056261343014
+    },
+    "H1_in_(4,inf]": {
+      "positions": 171,
+      "share": 0.00522871819960861,
+      "acceptance_h2": 0.2222222222222222,
+      "acceptance_h3": 0.14619883040935672,
+      "acceptance_h4": 0.1695906432748538
+    }
+  }
+}
