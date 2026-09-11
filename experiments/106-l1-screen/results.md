@@ -69,3 +69,51 @@ Throughput held at **50.2 k tokens/s** for the whole run with **zero thermal-slo
 only thermal flags were single samples on eval steps, where the held-out pass briefly pushes GPU 0 to
 83 °C, with no clock or throughput effect. This is the first `screen` rung on this rig whose
 throughput number is valid.
+
+## Addendum — per-router expert load (`routing.json`)
+
+Raised as a question by Annemette: how many experts does the MoE baseline have, does it collapse onto
+one, and is anything balancing it? Measured after the fact with
+`scripts/analysis/probe_routing.py --id 106-l1-screen`, which rebuilds the final checkpoint and runs 32
+held-out sequences of 2048 tokens through it on **CPU**, so the ladder's GPUs and its throughput
+numbers are untouched.
+
+**8 experts per router, top-2, 12 routers.** Effective expert count is exp(H) of the load distribution
+— 8.00 is perfectly uniform, 1.00 is total collapse.
+
+| router | eff. experts | H/H_max | max share | min share | dead |
+|---|---|---|---|---|---|
+| 0–7 | **8.00** | 1.000 | 0.129–0.131 | 0.117–0.122 | 0 |
+| 8–10 | **7.99** | 1.000 | 0.130–0.134 | 0.115–0.118 | 0 |
+| 11 | **8.00** | 1.000 | 0.130 | 0.118 | 0 |
+
+Uniform share is 0.1250. **No router is below 7.99 of 8 effective experts and no expert anywhere is
+dead** (below 10 % of its uniform share). The worst single expert in the whole model carries 0.1341,
+i.e. 7 % above uniform.
+
+**The balancing is DeepSeek-V3-style, two mechanisms.** The primary one is an *aux-loss-free* bias
+controller: each expert has a bias used **only for selection**, while the gates that weight the chosen
+experts are a softmax of the **bias-free** logits. After each step the controller moves each bias by
+`sign(load − target)` at rate 1e-3, so balancing never competes with the language-modelling gradient.
+Behind it sits a small Switch-style sequence-level auxiliary loss at coefficient 1e-3, which logs at
+0.0122–0.0159 across the run — present, gentle, not dominating.
+
+**Convergence from the trainer's own log**, worst-to-best expert ratio over all 12 routers at once:
+
+| step | load_min | load_max | ratio |
+|---|---|---|---|
+| 1 | 0.0201 | 0.2717 | 13.5 |
+| 477 | 0.0533 | 0.2196 | 4.1 |
+| 954 | 0.0884 | 0.1717 | 1.9 |
+| 1907 | 0.1154 | 0.1326 | **1.15** |
+
+The extremes in the raw log — one expert at 0.50, another at 0.00 — are confined to the **first 251 of
+1907 steps**, the startup transient before the controller has moved its biases. Over the last 500 steps
+the worst expert anywhere stays within 0.130–0.157 and the least-loaded within 0.101–0.121.
+
+**Instrumentation gap this exposed, now fixed.** `load_max`/`load_min` are extremes over *every* router
+at once, so they cannot distinguish one collapsed layer from mild spread everywhere: a model with 11
+uniform routers and 1 fully collapsed router has a mean normalised entropy of 0.92, which looks fine.
+The trainer now also logs `route_ent_min`, `route_eff_min`, `route_ent_mean` and `route_dead` per step,
+where the *minimum* over routers is the alarm. Added 2026-09-11, so **`106` and `107` do not have the
+trajectory** — only this endpoint, recovered from the checkpoint. `108` onward have both.

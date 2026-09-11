@@ -320,6 +320,22 @@ def worker(rank: int, world: int, a: TrainArgs, cfg: ModelCfg, out: Path) -> Non
                 ld = torch.stack([ls / accum for ls in load_sums])  # [n_moe, n_exp]
                 rec["load_max"] = float(ld.max())
                 rec["load_min"] = float(ld.min())
+                # `load_max`/`load_min` are extremes over *every* router at once, so they
+                # cannot tell one collapsed layer from mild spread everywhere. Per-router
+                # entropy can: exp(H) is the effective expert count, directly comparable
+                # to n_experts, and `route_eff_min` is the worst router in the model.
+                # Tiny tensor ops on already-detached loads, after the optimiser step —
+                # they cannot perturb training. Added 2026-09-11, so absent from 106/107;
+                # `scripts/analysis/probe_routing.py` recovers the endpoint from any
+                # checkpoint. n_exp = 1 (L5-ne1) has no entropy to speak of, hence the guard.
+                n_exp = ld.shape[-1]
+                if n_exp > 1:
+                    p = ld / ld.sum(-1, keepdim=True).clamp_min(1e-12)
+                    ent = -(p * p.clamp_min(1e-12).log()).sum(-1)  # [n_moe], nats
+                    rec["route_ent_mean"] = float(ent.mean() / math.log(n_exp))
+                    rec["route_ent_min"] = float(ent.min() / math.log(n_exp))
+                    rec["route_eff_min"] = float(ent.min().exp())
+                    rec["route_dead"] = float((p < 0.1 / n_exp).sum())
             if step % 10 == 0 or step == total_steps or step <= 3:
                 print(
                     f"step {step:5d}/{total_steps} tok {tokens_seen / 1e9:6.3f}B "
