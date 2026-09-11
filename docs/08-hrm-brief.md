@@ -6,8 +6,8 @@ what the literature actually says — several of the brief's claims are already 
 the brief omits**, and those caveats change the answers.
 
 **Summary in one paragraph.** Two of the brief's ten questions are already closed by decisions on
-record and should not be reopened without an ADR (Q6 objective, Q8 split latent). Two rest on sources
-this project has not verified (Q7, and the FlexMoE half of Q1 #3). The remaining six are live, and one
+record and should not be reopened without an ADR (Q6 objective, Q8 split latent). Two rested on unverified sources (Q7, and the FlexMoE half of Q1 #3) and were **verified the same day**
+once the PDFs arrived. The remaining six are live, and one
 of them — Q2's H/L split — is the most interesting idea in the brief and **fits the existing FLOPs
 budget without trading anything**, which I did not expect before doing the arithmetic. The brief's
 own framing of its strongest evidence is, however, wrong in a way that matters: HRM-Text cannot
@@ -30,15 +30,14 @@ that:
 | Engram (arXiv:2601.07372) | **Verified**, `05` line 256 |
 | Ouro / Huginn | **Verified**, in `05` |
 | ARC Prize HRM ablation | **Verified**, `05` line 419 |
-| **FlexMoRE (arXiv:2602.08818)** | **NOT in `05`. Unverified.** |
-| **FlexMoE (arXiv:2606.27866)** | **NOT in `05`. Unverified**, and dated after my knowledge cutoff |
+| FlexMoRE (arXiv:2602.08818) | **Verified 2026-09-11** against the PDF the user placed in `docs/source/FlexMo(r)e/`; now in `05 §P18`. Brief's numbers hold, except the rank sweep is $2^0$–$2^{14}$, not $2^0$–$2^{11}$. **A team member is the first author** — recorded in `05` |
+| FlexMoE (arXiv:2606.27866) | **Verified 2026-09-11** against the PDF; now in `05 §P3`. Brief's claim checks out verbatim — ≈ 99.8 % at 50 % routed-expert pruning **without** fine-tuning, on Qwen2-57B-A14B |
 | **HRM-MoE (HF `Xiaoye08/HRM-MoE`)** | A community checkpoint, not a paper. The brief says so. **Unverified and not peer-reviewed.** |
 
-I am not treating the bottom three as established. Q7 rests entirely on FlexMoRE and the FlexMoE half
-of Q1 #3 rests entirely on FlexMoE, so both answers below are conditional. **Verifying them is a
-`docs/05` task and should happen before anything is built on them** — the reading list's own format
-requires a quantitative takeaway per entry, which is exactly the discipline that would catch a
-number that does not survive contact with the paper.
+**Update 2026-09-11, same day:** the user supplied both PDFs and they are now verified into `05`, so
+Q7 and the FlexMoE half of Q1 #3 are no longer conditional. The brief's numbers survived contact with
+the papers, with one correction (FlexMoRE's rank sweep runs to $2^{14}$). HRM-MoE remains a community
+checkpoint with no paper and is still not treated as established.
 
 ### The caveat that changes the brief's conclusion
 
@@ -68,7 +67,7 @@ open one, which is a better reason to run it.
 |---|---|---|
 | 1 | Systolic arrays not LPUs | Out of scope (Tier S/O, `02 §1`) |
 | 2 | Parallel attention + FF | **In spec**, `01 §4.1`; **measured** at L2: −1.73 % vs L1, where H2 budgeted ≤ +1 % (`107`) |
-| 3 | 2:4 from the start, FP4 | **In spec**, `01 §8`, ADR-019 (weight-only, fixed early mask); L10a/L10b. FlexMoE half **unverified** |
+| 3 | 2:4 from the start, FP4 | **In spec**, `01 §8`, ADR-019 (weight-only, fixed early mask); L10a/L10b. FlexMoE (verified) shows the redundancy is real *post hoc*; the note's claim that it can be had *from the start* is still untested |
 | 4 | Expert = one hardware unit | **In spec** as the organizing rule; ADR-018, `02 §2`. DC-scale for its systems half |
 | 5 | N × U fabric | Out of scope locally; `02 §3`, S3 |
 | 6 | One repeated middle layer | **In spec and being built**: L5, H6. **Q2 proposes a change to it — see below** |
@@ -83,7 +82,7 @@ open one, which is a better reason to run it.
 | 15 | Indexed attention | **In spec**, `01 §6`, L9, H15b |
 | 16 | ~4 GB HBM per chip | Out of scope; S/O |
 | 17 | Per-iteration retrieval | **In spec with a local adaptation**: CLAUDE.md says per-iteration external retrieval is not feasible here, so L8 = GPU product-key memory and L8b = offline-precomputed neighbours |
-| 18 | Per-vector QLoRA, bespoke experts | **In spec**, L11, H18. Q7's FlexMoRE framing **unverified** |
+| 18 | Per-vector QLoRA, bespoke experts | **In spec**, L11, H18. FlexMoRE (verified) puts it in a stronger form — the adapter *is* the expert — which **conflicts with P4**, see Q7 |
 | 19 | One giant DC | Out of scope; O |
 
 **Contradictions with the spec, flagged explicitly as Q1 asks:**
@@ -267,10 +266,12 @@ Mostly already decided, and the brief's framing of one part is backwards:
 
 ---
 
-## 8. Q7 — rank-heterogeneous experts. **Conditional on verifying FlexMoRE.**
+## 8. Q7 — rank-heterogeneous experts. **Verified; and it is a direct challenge to P4.**
 
-If FlexMoRE's result holds, then as Q7 suggests it is two things at once: a memory-fitting device, and
-an implementation of P18.
+FlexMoRE is verified (`05 §P18`): 47.18 avg vs 45.46 at under a third the parameters, with optimal
+rank **substantially higher for reasoning-heavy than knowledge-heavy** benchmarks. As Q7 suggests it
+is two things at once: a memory-fitting device, and an implementation of P18 in a stronger form than
+the note proposes — there the adapter decorates an expert, here **the adapter *is* the expert**.
 
 **Where it conflicts with the note**, which Q7 asks directly: P4 is the note's *organizing rule* —
 expert size = the smallest FF that fills one hardware unit, so all experts are the same width, so

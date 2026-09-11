@@ -16,6 +16,8 @@ Status: DRAFT, 2026-09-02. Fixes what the local rig can measure, what it can onl
 | Storage | WD_BLACK SN850X **4 TB NVMe** at `/mnt/nvme` (corpus, cold KV tier, indexes); 1 TB HDD at `/mnt/hdd` (bulk: archives, provenance checkpoints); Samsung 850 PRO 256 GB SATA for the OS. **Measured $\beta_{cold}$ = 7.3 GB/s from 256 KiB at queue depth ≥ 16; a 16 KiB block costs 70 µs and 0.23 GB/s from one reader, 114 µs and 2.1 GB/s at QD 16** (`012`/`013-tiers-nvme-qd`; I10/I12/I16 closed) | cold is 10× warm in latency per block; the fetch rule is the warm tier's: aggregate to ≥ 64 KiB, keep ≥ 8 in flight; ≤ 16 KiB is capped at ≈ 1.3 × 10⁵ IOPS by a single-process reader; HDD is never a KV tier |
 | Power | ≈ 1 kW under load (4 × 170 W + 280 W + rest) | multi-day runs: checkpoint ≤ 30 min apart |
 
+**Per-GPU ceiling — what actually binds.** Optimiser states are 18 B/param in mixed precision (bf16 param + fp32 master + fp32 grad + Adam m,v), sharded by 4 under FSDP. That arithmetic alone gives ≈ 1.2 B parameters inside the 10 GB rule — **but it is not the limit**: at `small` dense those states are 1.68 GiB of a *measured* 7.6–8.0 GiB (`009`), so ≈ 6 GiB is activations and logits. **Activations bind, and they trade against micro-batch rather than model size.** That trade is cheaper since I21 closed: the all-reduce costs ≈ 66 ms on a recurrent rung, not the ≈ 1.9 s `014` reported, so more accumulation at a smaller micro-batch is close to free. The real ceiling is a measurement, not a calculation — Phase 3.5.
+
 Derived per card, BF16 weights: roofline $b_{min} = (\phi/\beta_C)(b_w/2)$ = **79** tokens at measured $\phi$, $\beta_C$; **the empirical batch floor for ≥ 80 % of $\phi$ is 512, seven times that** (`003-gemm`), and the simulator's queue must use the larger (I13). Tile floor **$s_{min}$ = 256** on every card (`003-gemm`), so $U s_{min}$ = 1024 at $U$ = 4, not 512. Odd $d_{ff}$ costs 12–27 % — derived widths are rounded to a multiple of 64 (`004-gemm-alignment`, ADR-025). All values in `sim/scenarios/local_3060.yaml` with result ids.
 
 ## 2. What the rig can and cannot do
@@ -73,7 +75,7 @@ Parallelism:
 |---|---|---|---|
 | `screen` (1 B tok × 0.6 GFLOP) | 6 × 10¹⁷ | **4.4 h** (measured, `018`) | **6.2 h** L5, **8.7 h** L5d, **19.2 h** L5-ne128 (measured, `018`) |
 | `small` (2.5 B × 0.6 GFLOP) | 1.5 × 10¹⁸ | **11 h** (scaled from `018`) | ≈ 16 h L5, ≈ 22 h L5d (scaled from `018`) |
-| `medium` (7 B × 2 GFLOP) | 1.4 × 10¹⁹ | ≈ 3.5 d (scaled from `small`; FSDP unmeasured) | ≈ 8 d (assumed) |
+| `medium` (7 B × 2 GFLOP) | 1.4 × 10¹⁹ | ≈ 3.5 d (scaled from `small`) | ≈ 8 d (assumed) |  ⚠ **both columns are projections: FSDP has never been run on this rig.** Phase 3.5 measures it before any `medium` run commits (`03 §5`); FSDP gathers parameters per layer per step over a 3.59 GB/s host-bounced link, which is a different traffic pattern from DDP's one gradient reduce |
 
 Programme estimate: `screen` for every ladder variant (≈ 20 × 8 h ≈ 7 days); `small` for the decisive steps L0, L1, L2, L4, L5, L6, L7, L9 at 2 seeds (≈ 16–18 days incl. baselines); `medium` for L0, L1 and the two best recurrent variants (≈ 4 weeks). **≈ 2 months of continuous GPU time; plan 3–4 calendar months with debugging and reruns.** Baselines are trained once per size and seed and reused by every ladder step.
 
