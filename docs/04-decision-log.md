@@ -841,3 +841,42 @@ says where it lands.
 **Owed:** routing endpoints for `106` *(done)* and `107` *(deferred)* via
 `scripts/analysis/probe_routing.py` — it saturates ~10 of 12 cores, so it waits for an idle ladder rather
 than denting a running rung's throughput. Each run keeps its own checkpoint, so nothing expires.
+
+### 2026-09-11 (evening) — `108-l3-screen`: H13 misses both clauses, exactly as I20 predicted
+
+**`108-l3-screen` completed, exit 0**, 1.000 B tokens, **final held-out 3.2486 nats**, 6.51 h,
+43.3 k tok/s, 0.06 % unaccounted.
+
+| H13 clause | required | measured |
+|---|---|---|
+| acceptance h2 / h3 / h4 | ≥ 70 / 55 / 45 % | **21.5 / 12.6 / 8.9 %** |
+| main-loss regression vs L2 | $\Delta \le 2\sigma$ | **+0.0991 nats, +3.15 %** |
+
+**Both clauses miss by a wide margin, and I20 said so in advance.** The Phase-0 refresh recorded *"MTP
+hurts main quality below ≈ 1 B without a curriculum; expect a regression at 80 M"* as one of four
+claims expected to fail at our scale. It failed in the predicted direction, at the predicted budget.
+**No verdict is recorded** — ADR-030, taken while this run was mid-flight and before its outcome was
+known, moves H13's decision to `small`.
+
+**The acceptance curve's *shape* is the finding, not its value.** 16.1 % at step 500 → 18.4 → 19.9 →
+20.7 → **21.5 %** at 1907, with the increment per 100 steps decaying from ≈ 0.8 to ≈ 0.2. That is not a
+budget-limited shape; extrapolating it does not reach 70 % at any budget this rig can afford. **So of
+the two hypotheses ADR-030's `small` run is meant to separate — "budget-starved" vs "the
+independent-head design is wrong" — this run's own trajectory favours the second.** That bears
+directly on which L3b gets built: it argues for I20's *curriculum* reading over ADR-012's *sequential
+modules* reading, and it strengthens I26's relevance, since a sequential L3b is the case where drafts
+being mutually invisible to global attention stops being vacuous.
+
+**L3 gives back more than L1 gained.** On the cumulative ladder: L0 3.3360, L1 3.2048 (−3.93 %), L2
+**3.1495** (−5.59 %), L3 3.2486 (−2.62 %). MTP is not meant to pay for itself in main-head loss — it
+buys speculative decode, a latency property `screen` cannot measure — but at 21.5 % acceptance it is
+not buying much of that either.
+
+**Routing, first rung with the trajectory** (the trainer gained it the morning this run started, so
+`106`/`107` have only endpoints). L3 dives to **35 dead of 96** and one router at **2.2 of 8 effective
+experts** by step 19, recovers to 1 dead by step 101, ends at **7.99 of 8, 0 dead**. Self-reinforcing
+starvation pulled back by the aux-loss-free controller, watched rather than inferred. Not a confound
+for the H13 result.
+
+**`109-l5-screen` started 18:03** — the shared middle block, H6, the rung the note is actually built
+on.
