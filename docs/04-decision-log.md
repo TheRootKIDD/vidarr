@@ -945,3 +945,13 @@ mechanism, but the learned-vs-fixed-at-matched-mean shape I25 asks for.
 **Next in the queue after `111`:** `L3-full` (I27 #3), then the L5-r sweep (I25) and L5e (`08 §4`),
 the latter decided on `110`'s result. Watch `110`'s first eval (≈ 30 min in) per checklist step 6:
 `n_thermal`, not `n_throttled`.
+
+**`110` thermal note (22:40).** GPU 0 runs the whole rung at 83–84 °C, fan 100 %, 1815–1875 MHz against
+1920–1942 on the other three, with `n_thermal` > 0 on 29 of 30 consecutive records — sustained, not the
+single eval-step samples of `106`–`108`. Opening a second window at 21:54 changed nothing in 45 minutes:
+GPU 0 stayed at 84 °C and the other cards held 68–74 °C throughout, so ambient is not the limiter; it is
+GPU 0's own position and cooling margin (the caveat I23 carried forward). Aggregate throughput held at
+48.5–49.0 k tok/s and the loss curve is normal, so the run continues under the widened rule; `110`'s
+throughput number is a lower bound carrying a ≈ 4 % clock trim on one card, loss numbers unaffected
+(`06 §7`). A per-card lever for GPU 0 (fan curve, repaste, or a slot swap with the coolest card) is a
+rig question for between rungs.
