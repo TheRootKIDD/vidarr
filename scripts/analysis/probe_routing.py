@@ -107,6 +107,15 @@ def main() -> None:
         "--device", default="cpu", help="cpu by default so a running ladder is untouched"
     )
     ap.add_argument(
+        "--threads",
+        type=int,
+        default=0,
+        help="torch CPU threads; 0 = all. The probe saturated ~10 of 12 cores on 106, "
+        "which would dent a running ladder's throughput (the trainer needs cores for "
+        "memmap loading and host-staged NCCL). Cap it, or better, wait for a gap — "
+        "each run keeps its own final checkpoint, so the endpoint never expires.",
+    )
+    ap.add_argument(
         "--dead-frac",
         type=float,
         default=0.1,
@@ -114,6 +123,8 @@ def main() -> None:
     )
     args = ap.parse_args()
 
+    if args.threads:
+        torch.set_num_threads(args.threads)
     run_dir = RESULTS_DIR / args.id
     device = torch.device(args.device)
     model, cfg, step = load_run(run_dir, device)
