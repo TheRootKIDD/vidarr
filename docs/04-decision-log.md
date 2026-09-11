@@ -777,3 +777,45 @@ throughput. Accumulation is worth **1.7×** here — 5.62 h against the 9.6 h `0
 which is what I21's closure predicts for a 271 M rung whose all-reduce is ≈ 40 % of a micro-step.
 
 **`107-l2-screen` started automatically** at 05:59 and is running. The queue continues to 108, 109, 110.
+
+### 2026-09-11 (midday) — `107-l2-screen`: the parallel form gains where H2 budgeted a loss
+
+**`107-l2-screen` completed, exit 0**, 1.000 B tokens in 1907 steps, **final held-out 3.1495 nats**.
+Against `106`'s 3.2048 that is **−0.0553 nats, −1.73 %**, at unchanged parameters (271.1 M vs 271.2 M;
+the parallel form drops one norm) and matched FLOPs. Against $L_{ref}$ = 3.3360 the ladder now stands at
+**−5.59 %**.
+
+**H2's quality clause budgeted a cost of ≤ 1 % and we measured a 1.73 % gain.** H2 is phrased as a
+tolerance — the parallel form is wanted for the critical path, and ≤ 1 % is what we were willing to pay
+— so the direction is favourable and the trade may not be a trade at all here. Two limits on what that
+means. **H2 is stated for the shared block**, and L2 applies the parallel form to the *layered* stack,
+so this tests the form and not yet the setting the hypothesis is finally about; that arrives with L5.
+And **the latency clause is untouched** — it is Tier S and belongs to S1 in `sim/`.
+
+**No verdict, same reason as `106`.** ADR-013's bands need σ from the L0 seed pair, which exists only at
+`small`. 1.73 % is 5–11× the 0.005–0.01 nats of seed spread `06 §4` records there, so a seed artefact is
+unlikely, but that is not the banded test. L2 is on the `small` list (`03 §2`) and gets the real verdict
+at 2 seeds.
+
+**Worth flagging in the interpretation, not just the number:** a parallel block is not a reordering. With
+attention and FF reading the same input, gradients reach both directly from the residual, and at
+$d$ = 768 over 12 layers that optimisation effect may be worth more than the representational loss costs.
+Plausible story, not a measured mechanism, and the kind of thing that can shrink or invert with depth
+and width — `medium` is where it would show.
+
+**Run health.** 50.9 k tok/s, 5.56 h wall, **0.07 % unaccounted**, matching the clean accounting `106`
+established when I22 closed. Thermal flags were single samples, mostly on eval steps, minimum clock never
+below 1845 MHz, no throughput effect. Ambient rose through the morning and GPU 0 tracked it; the user
+opened windows around 10:00 and it settled.
+
+**`108-l3-screen` started 11:32** and is the first run with the **routing trajectory** the trainer gained
+this morning. It is already earning its place: L3 dives to **35 dead experts of 96** and one router at
+**2.2 of 8 effective experts** around step 19, then recovers to **1 dead by step 101** and keeps climbing.
+That is the classic self-reinforcing MoE starvation being pulled back by the aux-loss-free bias
+controller at its 1e-3 step, and it is the first time on this project we have *watched* it rather than
+inferred it from a converged checkpoint. `106`'s endpoint (7.99–8.00 of 8 effective experts, 0 dead)
+says where it lands.
+
+**Owed:** routing endpoints for `106` *(done)* and `107` *(deferred)* via
+`scripts/analysis/probe_routing.py` — it saturates ~10 of 12 cores, so it waits for an idle ladder rather
+than denting a running rung's throughput. Each run keeps its own checkpoint, so nothing expires.
