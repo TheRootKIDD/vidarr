@@ -159,7 +159,7 @@ def evaluate(
         tot[1] += n
         tot[2] += out.metrics.get("r_mean", float("nan")) * n
         for k, v in out.metrics.items():
-            if k.startswith("mtp_acc"):
+            if k.startswith(("mtp_accept", "mtp_top1")):
                 mtp_sums[k] = mtp_sums.get(k, 0.0) + v * n
     if world > 1:
         dist.all_reduce(tot)
@@ -448,7 +448,7 @@ def _write_results_md(out: Path, a: TrainArgs, cfg: ModelCfg, s: dict[str, Any])
         f"| seed | {a.seed} |",
     ]
     for k in sorted(f):
-        if k.startswith("val_mtp_acc") or k == "val_r_mean":
+        if k.startswith(("val_mtp_accept", "val_mtp_top1")) or k == "val_r_mean":
             lines.append(f"| {k} | {f[k]:.4f} |")
     lines += [
         "",

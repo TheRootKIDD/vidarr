@@ -271,7 +271,15 @@ def test_mtp_subsampling_covers_every_position_once() -> None:
         logits.reshape(-1, cfg.vocab).float(), toks[:, 2 : 2 + valid].reshape(-1)
     )
     assert torch.allclose(aux, cfg.mtp.lambdas[1] * ref, atol=1e-5)
-    assert "mtp_acc_h2" in metrics
+    # I27: both metrics logged under names that cannot be confused, and acceptance is
+    # agreement with head 1's prediction of the same token from position t+1.
+    assert "mtp_acc_h2" not in metrics
+    draft = logits.argmax(-1)  # head 2's draft of x_{t+2}, made at t
+    top1 = (draft == toks[:, 2 : 2 + valid]).float().mean()
+    pred1 = (h @ m.emb.weight.t()).argmax(-1)  # head 1 at position s predicts x_{s+1}
+    accept = (draft == pred1[:, 1 : 1 + valid]).float().mean()
+    assert abs(metrics["mtp_top1_h2"] - float(top1)) < 1e-6
+    assert abs(metrics["mtp_accept_h2"] - float(accept)) < 1e-6
 
 
 # ---- router and MoE ---------------------------------------------------------------------
