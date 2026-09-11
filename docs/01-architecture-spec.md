@@ -126,6 +126,8 @@ $$q_m = W_m [u; e_j], \qquad \mathcal{N} = \text{top-}k_m\ \text{of}\ q_m^\top \
 ### 4.7 Iteration count $r_t$ (note P7)
 Halting head on the context stream at each iteration:
 $$h_t^{(j)} = \sigma\big(w_h^\top [u; e_j]\big), \qquad r_t = \min\Big\{ j : \sum_{j' \le j} h_t^{(j')} \ge 1-\epsilon \Big\}\ \text{clipped to}\ [r_{min}, r_{max}] .$$
+**Open — I24: this is a *token-choice* rule.** Each token decides for itself, locally, which is what lets it compose with P11's continuous non-lockstep inference (`02 §5`). Mixture-of-Recursions, which `docs/05` records as the strongest prior for H6 *and* H7, instead uses an **expert-choice** depth router and measures it 2.6 points better than token-choice. L6c tests the swap; the systems half is that an expert-choice capacity rule is a synchronisation point, so the comparison is a trade, not a fix. Nothing below changes until I24 resolves.
+
 Training regimes, in order:
 1. **Fixed** $r$, sampled per batch from a schedule — establishes the recurrent model.
 2. **ACT-style**: ponder cost $\lambda_p \sum_t r_t$; output = the last computed state (ADR-010, accepted; author's Q5).
