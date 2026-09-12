@@ -955,3 +955,47 @@ GPU 0's own position and cooling margin (the caveat I23 carried forward). Aggreg
 throughput number is a lower bound carrying a ≈ 4 % clock trim on one card, loss numbers unaffected
 (`06 §7`). A per-card lever for GPU 0 (fan curve, repaste, or a slot swap with the coolest card) is a
 rig question for between rungs.
+
+### 2026-09-12 (morning) — `110-l5-screen`: the shared block lands on the dense baseline; H6 sharpens to `L5-ne128`
+
+**`110-l5-screen` completed, exit 0** at 02:09, 1.000 B tokens, **final held-out 3.3328 nats**, 5.79 h,
+48.6 k tok/s median, 0.05 % unaccounted. `111-l5d-screen` started at 02:09 automatically and is at
+step ≈ 1400 at 33.6 k tok/s (ETA ≈ 10:25).
+
+| | val loss | Δ vs `110` | non-emb params |
+|---|---|---|---|
+| L0 dense ($L_{ref}$) | 3.3360 | −0.10 % | 75.5 M |
+| L1 layered MoE | 3.2048 | +3.99 % | 246.6 M |
+| L2 + parallel | 3.1495 | +5.82 % | 246.6 M |
+| **L5 shared block, $N_e$ = 8** | **3.3328** | — | **52.9 M** |
+
+**Reading.** At matched FLOPs the recurrent design with the author's default pool of 8 experts is
+indistinguishable from dense at one seed (−0.0032 nats is inside the `small` seed spread) using 30 %
+fewer non-embedding parameters, and trails the layered MoE by 4 % using a fifth of its parameters.
+**H6 is not decided**: this is not its parameter-matched arm ($N_e$ = 128, `06 §3`) and σ is unmeasured.
+But the run turns H6 into one question — does a pool of 128 in the shared block recover the 4 % against
+L1 — and **`L5-ne128` (19.2 h at `screen`, `018`) is now the most informative run on the ladder**, ahead
+of anything built on L5. P6's claim holds against dense here and is open against the MoE.
+
+**Ladder bookkeeping, now written down.** L5 branches from **L2**, not L3: the recurrent preset keeps
+the parallel form (`model/middle.py` and the skeleton blocks in `model/model.py` are parallel by
+construction — the `block_form: sequential` line in the recurrent configs is an unused default) and
+has no MTP heads (ADR-030 parks H13). `03 §2` says so now.
+
+**Routing.** One shared depth-conditioned router; worst point 4.17 of 8 effective experts at step 20,
+one dead expert at step 9 recovered by step 16, endpoint **8.00 of 8** with loads 0.118–0.129 — the
+most uniform of any rung. The controller holds a router shared across eight iterations as well as
+twelve separate ones.
+
+**Thermal, sustained for the first time.** GPU 0 flagged on 180 of 190 records from step 120 to the
+end, 83–85 °C, fan 100 %, 1807–1875 MHz against 1920–1942 elsewhere; aggregate throughput unmoved at
+48.6 k, above `018`'s 44.5 k projection. Loss numbers stand, throughput is a lower bound (`06 §7`).
+This morning under L5d's lighter per-card load GPU 0 sits at 77 °C, 1890 MHz, no flags in the last 30
+records. The per-card lever (fan curve, repaste, or a slot swap with GPU 3 at 65 °C) is for between
+rungs; `111` is not to be interrupted for it.
+
+**Reproducibility.** `109` and `110`, same seed and config, differ by 0.04 nats at step 100. DDP over
+host-bounced NCCL is not bit-reproducible on this rig; recorded so nobody chases it.
+
+**Queue after `111`, proposed order:** `112-l5-ne128-screen` (H6's arm, 19 h), then `L3-full` (I27 #3,
+10 h), then the L5-r sweep (I25) and L5e (`08 §4`). Not yet launched — `111` finishes ≈ 10:25.
