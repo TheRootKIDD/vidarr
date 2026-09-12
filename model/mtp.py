@@ -3,7 +3,8 @@
 Head 1 is the main next-token head (tied embedding). Heads 2..m are independent:
 RMSNorm -> linear d->d adapter -> tied embedding, predicting x_{t+j}. Each
 position contributes to exactly one auxiliary head per step (subsampling), so
-m = 4 costs one extra logits pass instead of three. Each head's loss is the mean
+m = 4 costs one extra logits pass instead of three. `subsample: 1.0` switches
+that off and trains every head on every position (L3-full, I27 #3). Each head's loss is the mean
 over its own positions — an unbiased estimate of that head's full-position
 loss — so no rescaling is applied (ADR-012 as corrected).
 """
@@ -36,9 +37,14 @@ class MTPHeads(nn.Module):
             return h.new_zeros(()), {}
         b, t, _ = h.shape
         n_aux = m - 1
-        # each position t < T - m gets exactly one auxiliary head j in 2..m
         valid_t = t - m
-        assign = torch.randint(0, n_aux, (b, valid_t), device=h.device, generator=generator)
+        full = self.cfg.subsample == 1.0
+        if full:
+            # L3-full (I27 #3): every position trains every auxiliary head.
+            assign = None
+        else:
+            # ADR-012 default: each position t < T - m trains exactly one head j in 2..m
+            assign = torch.randint(0, n_aux, (b, valid_t), device=h.device, generator=generator)
         # Head 1's greedy prediction at every position, for the acceptance metric below.
         # Forward-only and chunked, so it costs one extra logits pass with no backward
         # and never holds [B*T, V] at once.
@@ -47,7 +53,12 @@ class MTPHeads(nn.Module):
         metrics: dict[str, float] = {}
         for i, adapter in enumerate(self.adapters):
             j = i + 2  # predicts x_{t+j}
-            sel = (assign == i).nonzero(as_tuple=True)
+            if assign is None:
+                sel = torch.ones(b, valid_t, dtype=torch.bool, device=h.device).nonzero(
+                    as_tuple=True
+                )
+            else:
+                sel = (assign == i).nonzero(as_tuple=True)
             if sel[0].numel() == 0:
                 continue
             hs = adapter(h[sel[0], sel[1]])  # [n, d]

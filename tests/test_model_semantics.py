@@ -282,6 +282,26 @@ def test_mtp_subsampling_covers_every_position_once() -> None:
     assert abs(metrics["mtp_accept_h2"] - float(accept)) < 1e-6
 
 
+def test_mtp_full_trains_every_head_on_every_position() -> None:
+    """L3-full (I27 #3): subsample = 1.0 gives each head the full-position loss."""
+    torch.manual_seed(0)
+    cfg = tiny("L3", mtp=dc.replace(tiny("L3").mtp, m=3, subsample=1.0))
+    m = BigMoE(cfg).eval()
+    toks = torch.randint(0, cfg.vocab, (2, cfg.context + 1))
+    h, _ = m.forward_hidden(toks[:, :-1])
+    aux, metrics = m.mtp.aux_losses(h, toks, m.emb.weight, None)
+    valid = cfg.context - 3
+    ref = 0.0
+    for j in (2, 3):
+        logits = m.mtp.adapters[j - 2](h[:, :valid]) @ m.emb.weight.t()
+        loss = torch.nn.functional.cross_entropy(
+            logits.reshape(-1, cfg.vocab).float(), toks[:, j : j + valid].reshape(-1)
+        )
+        assert abs(metrics[f"mtp_loss_h{j}"] - float(loss)) < 1e-5
+        ref = ref + cfg.mtp.lambdas[j - 1] * loss
+    assert torch.allclose(aux, ref, atol=1e-5)
+
+
 # ---- router and MoE ---------------------------------------------------------------------
 def test_router_gates_loads_and_bias_controller() -> None:
     torch.manual_seed(0)
