@@ -999,3 +999,16 @@ host-bounced NCCL is not bit-reproducible on this rig; recorded so nobody chases
 
 **Queue after `111`, proposed order:** `112-l5-ne128-screen` (H6's arm, 19 h), then `L3-full` (I27 #3,
 10 h), then the L5-r sweep (I25) and L5e (`08 §4`). Not yet launched — `111` finishes ≈ 10:25.
+
+### 2026-09-12 (late morning) — `111-l5d-screen`: final-vector global attention costs 0.45 % against a 2 % allowance
+
+**`111-l5d-screen` completed, exit 0** at 10:28, **final held-out 3.3477 nats**, 8.31 h, 33.8 k tok/s,
+0.05 % unaccounted, **zero thermal flags** (max 81 °C, min clock 1882 MHz — the cleanest run so far).
+Against `110`'s 3.3328 that is **+0.0149 nats, +0.45 %**, the only change being the global range
+moving to $\mathcal{G}$ (ADR-021/022/023). **H15a budgets ≤ 2 %; no verdict** (σ unmeasured; L5d is on
+the `small` list). L5d was *ahead* of `110` until ≈ step 500 (5.5506 vs 5.6159 at step 100) and
+settled into a constant ≈ 0.015-nat gap from step 700 on — the simpler cache learns faster, the lost
+intermediate iterations cost a little at convergence. The 8 k end of H15a's range is still owed as an
+evaluation. Routing endpoint identical to `110` (8.00 of 8).
+
+**`112-l5-ne128-screen` started 10:28** from queue 4 — H6's parameter-matched arm, ≈ 19 h.
