@@ -78,3 +78,23 @@ optimisation, and the acceptance ceiling at this budget is the task. **No verdic
 but the question `small` must answer narrows to budget alone, and the L3b decision tilts further toward
 a method change over a schedule change: neither more positions (this run) nor, on `108`'s curve shape,
 more tokens looks likely to reach 70 % with independent heads.
+
+## Addendum (same day) — like-for-like against `108`, the gain is smaller still
+
+The table above compares `113`'s **in-trainer, full held-out** acceptance (5606 windows) with `108`'s
+**offline probe on 32 sequences**, because `108` predates the in-trainer metric. Same probe, same 32
+sequences, on `113`'s checkpoint (`mtp_speculative.json`):
+
+| 32-sequence probe | `108` | `113` | Δ |
+|---|---|---|---|
+| acceptance h2 / h3 / h4 | 38.5 / 21.6 / 15.0 % | 38.6 / 21.9 / 15.2 % | **+0.1 / +0.3 / +0.2 pt** |
+| expected run length (joint) | 0.511 | 0.518 | +0.007 |
+| tokens per verify pass | 1.511 | 1.518 | |
+| acceptance h2 where head 1 is near-certain (≤ 0.5 nats, 34 % of positions) | 56.4 % | 57.2 % | +0.8 pt |
+
+And on the full held-out set the one metric both runs logged, head-2 top-1 vs truth, is 21.49 % vs
+21.83 %: **+0.3 pt**. The "+1.2 pt" above is mostly the difference between a 32-sequence subset and
+the full set, not between the runs. **The conclusion sharpens rather than changes**: full-position
+training moves acceptance by a few tenths of a point, the run length by 0.007 tokens, and the
+confidence profile not at all. Subsampling was not the cause, and the 0.014-nat main-loss gain is the
+only thing the extra 46 % of step time bought.
