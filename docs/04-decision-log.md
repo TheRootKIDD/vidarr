@@ -1072,3 +1072,24 @@ less likely rescue — L3b's identity tilts toward a method change (I20's curric
 the one that keeps single-pass drafting; the sequential reading also has I26 to answer).
 
 **Probe run the same afternoon, and it corrects the table above:** the +1.2-point figure compared `113`'s full held-out metric with `108`'s 32-sequence probe. Like for like on the same 32 sequences, acceptance is **38.6 / 21.9 / 15.2 % vs 38.5 / 21.6 / 15.0 %** — +0.1 to +0.3 pt — run length 1.518 vs 1.511 tokens per pass, and the confidence profile is unchanged (57.2 % vs 56.4 % on near-certain positions). Full-position training bought a few tenths of a point and 0.014 nats of main loss. The conclusion stands, sharper.
+
+### 2026-09-13 (evening) — `114-l5-r4-screen`: halving the depth costs 0.72 %, which is H7's threshold met by a fixed schedule
+
+**`114-l5-r4-screen` completed, exit 0** at 16:59, **3.3567 nats**, 4.08 h at 69 k tok/s. `110` with
+$r$ = 4 instead of 8 and $d_{ff}$ pinned at 896 (the solver would have widened it to 2496): forward
+FLOPs 128.3 vs 181.0 MFLOP/token (−29 %), middle-block FLOPs halved. **+0.0239 nats, +0.72 % vs
+`110`**; +0.62 % vs L0 at 64 % of its training compute. **`115-l5-r12-screen` started 16:59**
+(36.7 k tok/s, ≈ 7.6 h, ETA ≈ 00:40).
+
+**I25 demonstrated in numbers.** H7 asks for ≥ 30 % middle-block FLOPs at ≤ 1 % loss *vs fixed
+$r_{max}$*; the trivial fixed policy $r_t$ = 4 delivers 50 % at 0.72 %. So the threshold as written is
+not a test of learned depth. **L6 and L6c are to be scored against the fixed-$r$ curve at the matched
+mean depth** — `03 §1` already says so; the curve now exists with two points (0.024 nats per halving
+between 4 and 8) and `115` adds the third. Curve crosses again: $r$ = 4 leads until step ≈ 700, then is
+overtaken; fewer iterations learn faster and plateau lower.
+
+**Thermal.** GPU 0 flagged on 185 of 190 records at up to 86 °C under this rung's fast step — the
+sustained-trim pattern of `110`, one degree hotter. Loss numbers stand; throughput is a lower bound.
+The per-card fix for GPU 0 is now overdue and should happen **after queue 4 ends** (≈ 00:40), before
+anything else is queued: swap GPU 0's slot with GPU 3's (the coolest card at 65–68 °C) is the cheapest
+candidate, then a soak under its own id.
