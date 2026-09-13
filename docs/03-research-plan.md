@@ -10,7 +10,7 @@ Numbered after the note's points. Tier A = small-scale training experiment; S = 
 | H3 | A weight-only 2:4 mask fixed at 1% of tokens (author, Q7), at 2× dense-equivalent width, matches dense within 1% loss; FP4 weights add ≤ 0.5% | A | L10a, L10b |
 | H4 | Coarse TP experts sized to the unit ($g$ = 1) are within 1% loss of $g$ = $U$ sub-experts at matched FLOPs and unit count | A | L7 |
 | H5 | Rail clos with unit = node keeps per-port bandwidth at $1/U$ with ≤ 5% utilisation loss at scale | S | S3 |
-| H6 | One depth-conditioned shared middle block with $r_{max} n$ experts matches $r_{max}$ stacked MoE layers with $n$ experts each, at matched params and FLOPs | A | L5 |
+| H6 | One depth-conditioned shared middle block with $r_{max} n$ experts matches $r_{max}$ stacked MoE layers with $n$ experts each, at matched params and FLOPs | A | L5 — `screen` (`112`): −0.57 % vs L1 at 68 % of its params, **silent** (inside 4σ); the curve crosses at ≈ step 1300, so `small` decides it |
 | H7 | Learned $r_t$ saves ≥ 30% middle-block FLOPs at ≤ 1% loss vs fixed $r_{max}$ | A | L6 — **but $r_{max}$ is the wrong control** (I25): score against fixed $r$ at the *matched mean depth* from the L5-r sweep, else adaptive depth is credited for simply being shallower |
 | H8 | $L_e$ = 2 halves fabric bytes per FLOP at ≤ 0.5% loss | A + S | L7b, S3 |
 | H9 | Co-activation placement + multicast + in-network reduction cut upper-tier bytes ≥ 3× vs random placement | S | S3 |

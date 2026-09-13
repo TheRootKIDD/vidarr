@@ -1012,3 +1012,39 @@ intermediate iterations cost a little at convergence. The 8 k end of H15a's rang
 evaluation. Routing endpoint identical to `110` (8.00 of 8).
 
 **`112-l5-ne128-screen` started 10:28** from queue 4 — H6's parameter-matched arm, ≈ 19 h.
+
+### 2026-09-13 (early) — `112-l5-ne128-screen`: the shared block with 128 experts comes within 0.57 % of the layered MoE
+
+**`112-l5-ne128-screen` completed, exit 0** at 03:26, **final held-out 3.2232 nats**, 16.95 h (against
+a 19.2 h projection), 16.5 k tok/s, 0.0 % unaccounted, zero thermal flags. **`113-l3-full-screen`
+started 03:26** at micro-batch 1 — **peak 9.54 GiB**, so the mb-1 call was necessary and the cap holds
+with 0.4 GiB to spare.
+
+| | val loss | Δ vs `112` | non-emb params |
+|---|---|---|---|
+| L5 $N_e$ = 8 (`110`) | 3.3328 | +3.29 % | 52.9 M |
+| **L5 $N_e$ = 128 (`112`)** | **3.2232** | — | **168.5 M** |
+| L1 layered MoE (`106`, H6's comparator) | 3.2048 | **−0.57 %** | 246.6 M |
+| L2 + parallel (`107`) | 3.1495 | −2.34 % | 246.6 M |
+
+**H6 is silent at `screen`, by the rule and only just**: ADR-013 wants $|\Delta| \le 2\sigma$ for
+"matches" and calls `screen` silent unless $|\Delta| > 4\sigma$; 0.018 nats sits inside 4σ of the
+expected 0.005–0.01 spread. The parameters are not matched — this arm carries 68 % of L1's — so the
+reading is conservative for P6. Going from 8 to 128 experts recovered **86 % of the gap** to L1.
+**The curve crosses**: L5-ne128 leads L1 by 0.68 nats at step 100 and 0.18 at step 500, ties at ≈ 1300,
+and trails by 0.018 at the end — the shared block learns faster, the layered stack's extra 78 M
+parameters win the last third. That is a budget-dependent outcome and it is the reason `small` decides
+H6, in either direction. The recurrent branch's real deficit is 2.3 % against L2.
+
+**Routing at 128.** 90 of 128 experts dead at step 23, 15 effective at step 25; fully recovered by step
+400; endpoint 127.7 of 128, busiest expert 1.18× uniform — the same endpoint as 8-expert routers, with
+the 1e-3 bias rate untouched. Recorded: the transient costs the first ≈ 100 steps at 15–95 effective
+experts, and a warm-start is a cheap ablation if that ever matters.
+
+**`113` early signal, for what it is worth at step 500:** main-head held-out 3.8869 vs `108`'s 3.8898
+at the same step — training every head on every position has **not** hurt the main head further, and
+head-2 top-1 vs truth is **0.163 in both runs** at step ≈ 500. If that holds to the end, subsampling
+was not what starved head 2, and I27's experiment 3 will have separated the two hypotheses the cheap
+way: the task, not our optimisation.
+
+**Owed from this run:** `05`'s claim-status re-sweep now that `111` and `112` are both in.
