@@ -1,0 +1,13 @@
+cff-version: 1.2.0
+message: "If you use this project or build on its results, please cite it and credit the authors."
+title: "bigmoe: a big-DC MoE LLM design tested at research scale"
+type: software
+authors:
+  - family-names: Christensen
+    given-names: Rasmus Søe Holt
+    email: contact@rootkidd.com
+  - family-names: Pirchert
+    given-names: Annemette Brok
+date-released: 2026-09-13
+license: "Apache-2.0 AND CC-BY-4.0"
+repository-code: "https://gitlab.com/rootkidd/vidarr"

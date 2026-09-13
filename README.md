@@ -3,6 +3,8 @@
 **Status:** DRAFT v0.3 — 2026-09-02 (author's answers to Q1–Q10 and v2 of the note incorporated; see `docs/04 §Author's answers` and `§v2 diff`). Working title `bigmoe`; rename freely.
 **Source:** "The big-DC MoE LLM design" (19-point design note), v1 and v2 in `docs/source/` (with extracted text `v1.txt`, `v2.txt`); v2 is current. The author's linked in-depth document, "Designing AI Chip Hardware and Software" (2026, 154 pp., a public Google Doc), is beside it as `Designing_AI_chip_software_and_hardware.{pdf,txt}`; its summary against P1–P19 is in `docs/05`.
 **Tooling:** Claude Code. `CLAUDE.md` holds the session rules.
+**Authors:** Rasmus Søe Holt Christensen and Annemette Brok Pirchert.
+**Licence:** free to use, **credit required**. Code under [Apache-2.0](LICENSE); documentation, specifications and experiment records under [CC BY 4.0](LICENSE-docs). Any derived work — code, models, specs, results or writing — must credit both authors: Apache §4(d) carries the [`NOTICE`](NOTICE) file into every redistribution, and CC BY §3(a) requires attribution outright. Cite via [`CITATION.cff`](CITATION.cff).
 
 ## Goal
 

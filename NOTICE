@@ -1,0 +1,14 @@
+bigmoe — a research project deriving an LLM architecture from
+"The big-DC MoE LLM design" and testing it on consumer hardware.
+
+Copyright 2026 Rasmus Søe Holt Christensen and Annemette Brok Pirchert.
+
+Licensed under the Apache License, Version 2.0 (code) and the Creative Commons
+Attribution 4.0 International License (documentation, specifications and
+experiment records). See LICENSE and LICENSE-docs.
+
+Any work derived from this project — code, models, specifications, results,
+or writing — must credit its authors, Rasmus Søe Holt Christensen and
+Annemette Brok Pirchert, as required by section 4(d) of the Apache License
+(this NOTICE file must be carried in redistributions) and by section 3(a) of
+CC BY 4.0. A suggested citation is in CITATION.cff.
