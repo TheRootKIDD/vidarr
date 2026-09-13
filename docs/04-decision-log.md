@@ -1093,3 +1093,39 @@ sustained-trim pattern of `110`, one degree hotter. Loss numbers stand; throughp
 The per-card fix for GPU 0 is now overdue and should happen **after queue 4 ends** (≈ 00:40), before
 anything else is queued: swap GPU 0's slot with GPU 3's (the coolest card at 65–68 °C) is the cheapest
 candidate, then a soak under its own id.
+
+### 2026-09-14 (small hours) — `115-l5-r12-screen`: the depth curve is flat past $r$ = 8; queue 4 done
+
+**`115-l5-r12-screen` completed, exit 0** at 00:36, **3.3370 nats**, 7.61 h at 37 k tok/s. `110` with
+$r$ = 12, width pinned: **+0.0042 nats vs $r$ = 8** (inside the expected seed spread) for +29 % forward
+FLOPs. **Queue 4 is done; the GPUs are idle**, and nothing is queued behind it on purpose (GPU 0's
+per-card thermal fix comes first — 188 of 190 records flagged again, max 85 °C).
+
+| $r$ | loss | fwd MFLOP/token |
+|---|---|---|
+| 4 (`114`) | 3.3567 | 128.3 |
+| 8 (`110`) | **3.3328** | 181.0 |
+| 12 (`115`) | 3.3370 | 233.8 |
+
+**Reading.** 4 → 8 buys 0.024 nats; 8 → 12 buys nothing. At 1 B tokens, $d$ = 768 and a 16.5 M
+expert pool, eight applications is where the shared block saturates. For H7 that fixes the control:
+L6 / L6c are scored against the line between `114` and `110` at their own mean depth (a policy at mean
+5–6 must land below ≈ 3.345), and the value of adaptive depth at this scale is entirely on the cheap
+side — stopping easy tokens at 4 — not on running hard tokens past 8. Whether the knee moves with scale
+is a `medium` question ($r$ = 16 by `06 §3`).
+
+**Queue 4 in one table** (all one seed, 1 B tokens):
+
+| id | run | loss | the one number |
+|---|---|---|---|
+| 112 | L5-ne128 | 3.2232 | −0.57 % vs L1 at 68 % of its params; H6 silent, curve crosses at ≈ 1300 |
+| 113 | L3-full | 3.2342 | +0.1–0.3 pt acceptance vs `108`; subsampling was not the cause |
+| 114 | L5 $r$ = 4 | 3.3567 | +0.72 % for −50 % middle-block FLOPs; H7's threshold met by a fixed schedule |
+| 115 | L5 $r$ = 12 | 3.3370 | +0.13 % for +50 % middle-block FLOPs; the curve is flat past 8 |
+
+**Next, in order:** (1) GPU 0 slot swap with GPU 3 + env capture + 15-min soak under ids `027`/`028`
+(the rig series), which decides card vs position; (2) then the next queue — L5e needs a model change
+and an ADR first, L6c likewise; the `small` programme (L0, L1, L2, L3, L5, L5d at 2 seeds, 2.5 B) is
+the ladder's own next step and needs no new code. The choice between "more `screen` variants" and
+"start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
+want of σ, and the L0 pair at `small` is what supplies it.
