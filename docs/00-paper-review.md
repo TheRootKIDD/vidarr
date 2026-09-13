@@ -1,6 +1,6 @@
 # Review: "The big-DC MoE LLM design"
 
-Reviewed 2026-09-02 against the 19-point note. Purpose: decide what to build, what to simulate, and what to push back on.
+The note is by **Bjarke Hammersholt Roune**; every "P" number below is one of his 19 points, and "the author" throughout these documents means him. Reviewed 2026-09-02 against the 19-point note. Purpose: decide what to build, what to simulate, and what to push back on.
 
 Status labels:
 - **Established** — validated in published work at meaningful scale.

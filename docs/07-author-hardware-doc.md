@@ -1,6 +1,6 @@
 # bigmoe — The author's hardware document, read against the note
 
-**What this is.** A summary, in our words, of B. H. Roune, *Designing AI Chip Hardware and Software* (2026, 154 pp.) — the "in-depth post" linked at the end of the design note (`docs/source/Designing_AI_chip_software_and_hardware.{pdf,txt}`; a public Google Doc). Compiled 2026-09-02 by reading the whole text. It settles *intent* for the hardware side of the note the way `docs/04 §Author's answers` does for the model side; every number in it remains a scenario input, not a constant (CLAUDE.md).
+**What this is.** A summary, in our words, of Bjarke Hammersholt Roune, *Designing AI Chip Hardware and Software* (2026, 154 pp.) — the "in-depth post" linked at the end of the design note (`docs/source/Designing_AI_chip_software_and_hardware.{pdf,txt}`; a public Google Doc). Compiled 2026-09-02 by reading the whole text. It settles *intent* for the hardware side of the note the way `docs/04 §Author's answers` does for the model side; every number in it remains a scenario input, not a constant (CLAUDE.md).
 
 **How to use it.** §2.7 and §6 are the source lines for `sim/scenarios/note64.yaml`; §3 is the per-point reading; §4 lists what disagrees with `docs/02` — each item there is either an open question (I17–I19) or part of the proposed ADR-028 in `docs/04`.
 

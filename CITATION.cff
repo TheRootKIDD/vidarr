@@ -11,3 +11,18 @@ authors:
 date-released: 2026-09-13
 license: "Apache-2.0 AND CC-BY-4.0"
 repository-code: "https://gitlab.com/rootkidd/vidarr"
+references:
+  - type: generic
+    title: "The big-DC MoE LLM design"
+    authors:
+      - family-names: Roune
+        given-names: Bjarke Hammersholt
+    year: 2026
+    notes: "The 19-point design note this project tests; v1 and v2 in docs/source/."
+  - type: generic
+    title: "Designing AI Chip Hardware and Software"
+    authors:
+      - family-names: Roune
+        given-names: Bjarke Hammersholt
+    year: 2026
+    notes: "The author's linked in-depth document; summarised in docs/07."

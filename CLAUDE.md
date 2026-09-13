@@ -1,6 +1,6 @@
 # CLAUDE.md — bigmoe
 
-Research project: an LLM architecture derived from the 19-point note "The big-DC MoE LLM design" (`docs/source/`). Everything from the note is a hypothesis until measured.
+Research project: an LLM architecture derived from Bjarke Hammersholt Roune's 19-point note "The big-DC MoE LLM design" (`docs/source/`). Everything from the note is a hypothesis until measured.
 
 ## Start of every session
 1. Read `README.md` (map of the project), then the doc relevant to the task.

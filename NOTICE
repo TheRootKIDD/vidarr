@@ -1,5 +1,9 @@
 bigmoe — a research project deriving an LLM architecture from
-"The big-DC MoE LLM design" and testing it on consumer hardware.
+"The big-DC MoE LLM design", a design note by Bjarke Hammersholt Roune,
+and testing it on consumer hardware. The note and the linked document
+"Designing AI Chip Hardware and Software" are his work, reproduced in
+docs/source/ for reference; the hypotheses, specification, code and
+measurements here are ours.
 
 Copyright 2026 Rasmus Søe Holt Christensen and Annemette Brok Pirchert.
 

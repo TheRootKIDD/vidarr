@@ -4,7 +4,7 @@ Written for Annemette. Everything here is measured at `screen`: 1 B tokens, one 
 
 ## 1. What we are testing, and how
 
-The project takes the 19 points of "The big-DC MoE LLM design" as hypotheses H1–H19 and switches the model's features on one at a time (the *ablation ladder*, `docs/03 §2`). Every run is trained the same way and scored the same way, so the only thing that differs between two adjacent rungs is the feature.
+The project takes the 19 points of Bjarke Hammersholt Roune's note "The big-DC MoE LLM design" as hypotheses H1–H19 and switches the model's features on one at a time (the *ablation ladder*, `docs/03 §2`). Every run is trained the same way and scored the same way, so the only thing that differs between two adjacent rungs is the feature.
 
 **Training recipe, identical for every run**
 
