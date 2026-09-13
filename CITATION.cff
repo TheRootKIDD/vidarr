@@ -10,7 +10,8 @@ authors:
     given-names: Annemette Brok
 date-released: 2026-09-13
 license: "Apache-2.0 AND CC-BY-4.0"
-repository-code: "https://gitlab.com/rootkidd/vidarr"
+repository-code: "https://github.com/TheRootKIDD/vidarr"
+url: "https://gitlab.com/rootkidd/vidarr"
 references:
   - type: generic
     title: "The big-DC MoE LLM design"
