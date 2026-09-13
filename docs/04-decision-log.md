@@ -190,7 +190,7 @@ Bears on H13, L3, L3b; touches I20.
   2. **Acceptance vs head-1 confidence, offline.** Bucket positions by head 1's entropy. If acceptance is high where head 1 is confident and near zero where it is not, then MTP works exactly where speculative decode gets its speedup and the aggregate figure understates it. Same probe, same cost, and it decides whether a low aggregate is fatal or irrelevant.
   3. **`L3-full`: no subsampling** (one `screen` run, ≈ 10 h at +75 % step instead of +25 %). ADR-012 subsamples so each position trains exactly *one* of heads 2–4: head 2 sees ≈ 1/3 of positions, ≈ 0.33 B tokens of a 1 B budget, and head 4 sees 1/3 at 1/8 the loss weight. **That was a speed decision, and it may be the whole result.** L3-full separates "the heads are starved by our own optimisation" from "the task is too hard at this scale" — which is a *different* axis from ADR-030's budget question, and cheaper than it. Run 1 and 2 first: if acceptance is already high on confident positions, 3 may not be worth the 10 h.
 
-  **Experiments 1 and 2 done 2026-09-11 (night)** (`108/mtp_speculative.json`, addendum in `108/results.md`): expected accepted run length **0.51 heads = 1.51 tokens per verify pass** (joint; 0.48 under independence, so the heads succeed on the same positions rather than defeating each other). By head-1 entropy at the draft position: head 2 is accepted **56.4 %** on the 34 % of positions where head 1 is near-certain (≤ 0.5 nats) and 27–33 % everywhere else; heads 3 and 4 sit at 18–27 % and 14–17 % in every bucket. Acceptance concentrates where head 1 is confident, but even the easiest bucket misses 70 %, and heads 3–4 do not respond to confidence at all. **Experiment 2's favourable reading ("works exactly where decode gets its speedup") is not what the model shows**, so experiment 3, `L3-full`, is still worth its ≈ 10 h; it goes after L5/L5d in the queue. *Implemented 2026-09-12:* `mtp.subsample: 1.0` trains every head on every position (`model/mtp.py`, unit-tested); queued as `113-l3-full-screen` at micro-batch 1, since three full logits passes at micro-batch 2 would push L3's 8.8 GiB past the 10 GB cap.
+  **Experiments 1 and 2 done 2026-09-11 (night)** (`108/mtp_speculative.json`, addendum in `108/results.md`): expected accepted run length **0.51 heads = 1.51 tokens per verify pass** (joint; 0.48 under independence, so the heads succeed on the same positions rather than defeating each other). By head-1 entropy at the draft position: head 2 is accepted **56.4 %** on the 34 % of positions where head 1 is near-certain (≤ 0.5 nats) and 27–33 % everywhere else; heads 3 and 4 sit at 18–27 % and 14–17 % in every bucket. Acceptance concentrates where head 1 is confident, but even the easiest bucket misses 70 %, and heads 3–4 do not respond to confidence at all. **Experiment 2's favourable reading ("works exactly where decode gets its speedup") is not what the model shows**, so experiment 3, `L3-full`, is still worth its ≈ 10 h; it goes after L5/L5d in the queue. *Implemented 2026-09-12:* `mtp.subsample: 1.0` trains every head on every position (`model/mtp.py`, unit-tested); queued as `113-l3-full-screen` at micro-batch 1, since three full logits passes at micro-batch 2 would push L3's 8.8 GiB past the 10 GB cap. **Run 2026-09-13, closes experiment 3:** +1.2 / +1.4 / +1.1 points of acceptance for heads 2/3/4 (39.7 / 23.0 / 16.1 %) and −0.014 nats of main loss at +46 % step cost — subsampling was worth ≈ 1 point, not the 30-point shortfall; the ceiling is the task at this budget. ADR-012's subsampling stands.
 
   Bears on H13, L3, L3b; touches ADR-012, ADR-013, `01 §7`.
 
@@ -1048,3 +1048,28 @@ was not what starved head 2, and I27's experiment 3 will have separated the two 
 way: the task, not our optimisation.
 
 **Owed from this run:** `05`'s claim-status re-sweep now that `111` and `112` are both in.
+
+### 2026-09-13 (afternoon) — `113-l3-full-screen`: subsampling was not what starved the MTP heads; I27 #3 closes
+
+**`113-l3-full-screen` completed, exit 0** at 12:54, **3.2342 nats**, 9.48 h at micro-batch 1 (peak
+9.54 GiB, 0.4 GiB under the cap), 0.05 % unaccounted, 7 single-sample thermal flags. Same model and seed
+as `108` with every head trained on every position. **`114-l5-r4-screen` started 12:54** (69 k tok/s
+at $r$ = 4 — the depth sweep's cheap arm, ≈ 3 h), then `115` at $r$ = 12.
+
+| | `108` subsampled | `113` full | Δ |
+|---|---|---|---|
+| main loss | 3.2486 | **3.2342** | −0.44 % |
+| acceptance h2 / h3 / h4 | 38.5 / 21.6 / 15.0 % | **39.7 / 23.0 / 16.1 %** | +1.2 / +1.4 / +1.1 pt |
+| step cost vs L2 | +25 % | +46 % | |
+
+**I27 experiment 3 is closed: the task, not our optimisation.** Three times the positions per head
+buys ≈ 1 point of acceptance per head against a 30-point shortfall, and 0.014 nats of main loss.
+ADR-012's subsampling stands as a speed choice. The main head improved rather than worsened with the
+extra auxiliary signal, so the remaining 2.7 % regression against L2 is the price of independent heads
+sharing the final state, which a curriculum or sequential modules would have to beat. Consequence for
+ADR-030's `small` run: it now tests budget alone, and `108`'s decelerating curve says budget is the
+less likely rescue — L3b's identity tilts toward a method change (I20's curriculum reading first, being
+the one that keeps single-pass drafting; the sequential reading also has I26 to answer).
+
+**Owed:** the offline run-length and confidence-bucket probe on `113`'s checkpoint, for the same table
+as `108/mtp_speculative.json` — run at 4 threads while `114` trains.
