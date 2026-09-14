@@ -1129,3 +1129,47 @@ and an ADR first, L6c likewise; the `small` programme (L0, L1, L2, L3, L5, L5d a
 the ladder's own next step and needs no new code. The choice between "more `screen` variants" and
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
+
+### 2026-09-14 (small hours) — shutdown for the GPU 0 slot swap; pick-up checklist
+
+**State at shutdown.** Nothing running; queue 4 finished 00:36; every run through `115` has its
+`results.md` and is committed and pushed to both remotes (GitLab `rootkidd/vidarr`, GitHub mirror
+`TheRootKIDD/vidarr`; `origin` pushes to both). Working tree clean. Licence in place (Apache-2.0 code,
+CC BY 4.0 docs, NOTICE names Rasmus Søe Holt Christensen, Annemette Brok Pirchert; the note's author
+Bjarke Hammersholt Roune is credited in README, NOTICE, CITATION, `00`, `07`, `09`). Findings summary
+for Annemette: `docs/09` and the artifact
+https://claude.ai/code/artifact/dbc6d50c-53fe-4404-a89c-17dfb7b3c128 (republish the same scratch file
+path to update it, or pass that URL as `url`).
+
+**Why the machine goes down.** GPU 0 (`GPU-4673cc7d`, bus 01:00.0, the top slot) runs every heavy rung
+at 84–86 °C with its fan at 100 % and a ≈ 4–5 % clock trim, flagged on ≈ 185 of 190 records in `110`,
+`114`, `115`; the other three cards sit at 65–75 °C with fan headroom. Opening windows changed nothing
+(`110` note), so ambient is not the limiter. The user swaps GPU 0's slot with GPU 3's (`GPU-8cb4f7cc`,
+bus 42:00.0, the coolest card) to learn whether the heat follows the **slot** (position/airflow) or
+the **card** (cooler, paste, pads). Loss numbers from the trimmed runs stand (`06 §7`); their
+throughput figures are lower bounds.
+
+**Pick-up checklist, in order, after the swap and reboot:**
+1. `nvidia-smi --query-gpu=index,pci.bus_id,uuid,name --format=csv` — indices may move; **track
+   cards by UUID**, never by index (`021`). Record the new bus → UUID map and the slot each card is in
+   under `06 §1` (the "Physical layout" cell) and note it in this log.
+2. `python -m scripts.bench.bench_env --id 027-env-post-slot-swap` — env capture; check each card's
+   PCIe link width and generation as `023` did (x8 is immaterial for throughput, but record it).
+3. `scripts/bench/thermal_soak.sh 028-thermal-soak-slot-swap 1100` from cold (≈ 15 min). Pass = every
+   card < 85 °C with 0 `n_thermal` samples in the last-5-min summary and `step_s_median` ≈ 737 ms
+   (`024`). Read **`n_thermal`**, not `n_throttled`. Write `results.md` for both ids (bear on no
+   hypothesis; extend I23's caveat). The decisive comparison: which UUID is hot now. If the top slot
+   is still the hot one → position; if `GPU-4673cc7d` is hot in slot 42 → the card, and a repaste is
+   the next lever.
+4. Then choose the next queue (the user's call):
+   - **`small` programme** (ladder's own next step, no new code): L0, L1, L2, L3, L5, L5d at 2.5 B
+     tokens × 2 seeds. Start with the **L0 pair** — it supplies σ, which every `screen` verdict so far
+     is waiting on. `--tokens 2.5e9 --seed 0/1`; ids continue at 116; checkpoints on `/mnt/nvme/ckpt`;
+     ≈ 21 h per run at the `018` rates with accumulation. Model the queue script on
+     `/mnt/nvme/queue_screen_4.sh` (independent runs, skip on failure) — call it `queue_small_1.sh`.
+   - **or more `screen` variants**: L5e (H/L split, `08 §4`) and L6c (expert-choice depth, I24) both
+     need a model change and an ADR first; E-Q2 (`L5-noej`, router without $e_j$) and L7b
+     (`L7b` preset, $L_e$ = 2) exist as presets and could run immediately.
+5. Owed and cheap, any time the ladder is idle: nothing at present — every probe is done.
+
+**Do not resume any checkpoint; ids are append-only; next ladder id is 116, next rig id 027.**
