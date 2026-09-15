@@ -1130,6 +1130,21 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-09-15 (evening) — `116-l0-small-s0`: $L_{ref}$(small, s0) = 2.9971 nats; ten hours at full clock
+
+**`116-l0-small-s0` completed, exit 0** at 21:03: **2.9971 nats** on the full held-out set at 2.5 B
+tokens, 9.82 h at **71.7 k tok/s**, 6.25 GiB per GPU, 0.1 % of wall-clock unaccounted. `117` (seed 1)
+started at 21:03 and is due ≈ 06:50. No verdict — L0 is the comparator; σ and every `small`
+threshold wait on the pair.
+
+**Two readings.** (1) The token budget alone moves the dense baseline **0.339 nats (10.2 %)** between
+1 B and 2.5 B, five to fifteen times any architecture delta on the `screen` ladder — the reason the
+programme is at `small`. (2) **GPU 0 held 75–80 °C at 1860–1897 MHz for 9.8 h with zero
+`n_thermal` rows** (476 telemetry rows; 124 power-cap rows are the 170 W limit working as configured).
+The `110`/`114`/`115` regime — 84–86 °C, `n_thermal` on ≈ 97 % of rows, a 4–5 % trim — is gone, and
+it was the riser cable under the slot. **The slot-vs-card question of 2026-09-14 closes as moot.**
+Throughput numbers from `116` onward are valid without the `06 §7` caveat.
+
 ### 2026-09-15 — back up: the slot swap did not happen, GPU 0's intake was cleared instead; `027`/`028` pass
 
 **What the user did** (their account): the GPU 0 card was taken out on its riser, and so was a second
