@@ -1152,8 +1152,16 @@ first eval of the next ladder run reads `n_thermal` on GPU 0 (index 0 is still `
 indices 2 and 3 exchanged UUIDs, see `027`). If it does trim, the deferred swap or a repaste is the
 next lever; if it does not, the question is moot and closes.
 
-**Next:** step 4 of the 2026-09-14 checklist, the user's call — the `small` programme starting with
-the L0 pair (ids from 116, `queue_small_1.sh`), or `screen` variants. Next rig id 029.
+**Step 4 decided: the `small` programme, launched 11:14 as `/mnt/nvme/queue_small_1.sh`** (log
+`queue_small_1.log`), on the user's decision after the recommendation that every verdict so far waits
+on σ, which ADR-013 takes from the L0 pair at `small`. Same model shapes as `screen`, `--tokens 2.5e9`,
+seeds 0 and 1 back to back per config, ladder order, independent runs with skip-on-failure:
+**116/117 L0, 118/119 L1, 120/121 L2, 122/123 L3, 124/125 L5, 126/127 L5d** (ids `<n>-<rung>-small-s<seed>`),
+then the two `screen` presets that need no code or ADR, **128 `L5-noej`** (E-Q2) and **129 `L7b`**,
+both smoke-tested at 3.86 GiB at micro-batch 4. Micro-batches as at `screen`. `116` runs at 72 k
+tok/s and 6.25 GiB, so the L0 pair is ≈ 19 h and the twelve `small` runs ≈ 8 days at the `screen`
+rates × 2.5. **The first long-load reading on GPU 0 is `116`'s `n_thermal`**; a trim there reopens
+the slot swap. Next ladder id 130, next rig id 029.
 
 ### 2026-09-14 (small hours) — shutdown for the GPU 0 slot swap; pick-up checklist
 
