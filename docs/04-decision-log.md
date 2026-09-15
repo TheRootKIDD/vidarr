@@ -1130,6 +1130,31 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-09-15 — back up: the slot swap did not happen, GPU 0's intake was cleared instead; `027`/`028` pass
+
+**What the user did** (their account): the GPU 0 card was taken out on its riser, and so was a second
+card; by chance `GPU-4673cc7d` went back into the same slot at the same physical position. The riser
+cable that ran directly under the GPU 0 slot and part-blocked that card's fan intake was moved; the
+cost is that two cards now sit on one bifurcated x16 root complex at **x8 each** (`20:03.1` /
+`20:03.3`). **Checklist steps 1–3 done**: `027-env-post-slot-swap` (bus map by UUID, all gen 4 under
+load, BF16 intact, two cards at x8, `06 §1` corrected) and `028-thermal-soak-slot-swap` (1100 steps
+from cold, **pass**: 76 / 66 / 64 / 71 °C, **0 `n_thermal` on every card**, `step_s_median`
+**737.2 ms** vs `024`'s 737.5). Both ids keep the "slot-swap" name they were reserved under; their
+`results.md` says what was actually tested.
+
+**Readings.** (1) `GPU-4673cc7d` drops **82 → 76 °C and 97 → 91 % fan** at the same clock and power
+cap: the blocked intake was real. It is still the hottest card and the only one at the power cap, so
+it still sets the DDP step, but it has margin now. (2) x8 on two cards is confirmed immaterial:
+`GPU-8cb4f7cc` went x16 → x8 and its step time is unchanged to 0.3 ms, as expected with collectives
+host-bounced at 3.59 GB/s (`002-nccl`). (3) **Slot-vs-card is still open** — nothing was swapped.
+It matters only if GPU 0 trims again over an 8-hour rung, which a 15-minute soak cannot show; the
+first eval of the next ladder run reads `n_thermal` on GPU 0 (index 0 is still `GPU-4673cc7d`;
+indices 2 and 3 exchanged UUIDs, see `027`). If it does trim, the deferred swap or a repaste is the
+next lever; if it does not, the question is moot and closes.
+
+**Next:** step 4 of the 2026-09-14 checklist, the user's call — the `small` programme starting with
+the L0 pair (ids from 116, `queue_small_1.sh`), or `screen` variants. Next rig id 029.
+
 ### 2026-09-14 (small hours) — shutdown for the GPU 0 slot swap; pick-up checklist
 
 **State at shutdown.** Nothing running; queue 4 finished 00:36; every run through `115` has its
