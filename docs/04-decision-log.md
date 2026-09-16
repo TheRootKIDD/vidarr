@@ -1131,6 +1131,21 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-09-16 (morning) — stopped for a planned power outage; `118` burnt, queue continues as `queue_small_2.sh`
+
+The user announced a mains outage 20 minutes ahead at ≈ 08:00. **`queue_small_1.sh` was stopped
+before it could start `119`, and `118-l1-small-s0` was killed at step 390** (1.2 h of ≈ 13.8 h). The
+trainer's four DDP workers survived the parent's death and had to be killed by PID (the `017`/`019`
+failure mode; the queue scripts call the trainer directly, not through `thermal_soak.sh`'s trap). GPUs
+idle, 88/13/13/13 MiB, before shutdown. `118` stays as a partial record (`results.md` says so); ids
+are append-only and checkpoints are not resumed, so **L1 seed 0 reruns as `130-l1-small-s0`**.
+
+**Pick-up after power returns:** (1) `nvidia-smi --query-gpu=index,pci.bus_id,uuid` — confirm the
+`027` map (index 0 = `GPU-4673cc7d`); (2) no soak needed unless the map changed — the rig has two
+clean 9.8 h runs on this layout; (3) `nohup /mnt/nvme/queue_small_2.sh > /mnt/nvme/queue_small_2.nohup 2>&1 &`
+— the remaining programme in the same order (130, 119–129), ≈ 7.5 days; (4) re-arm the hourly
+results loop on `queue_small_2.log`. Next ladder id **131**, next rig id 029.
+
 ### 2026-09-16 — `117-l0-small-s1`: the L0 pair gives $L_{ref}$(small) = 2.9958 nats and **σ = 0.0018 nats**
 
 **`117-l0-small-s1` completed, exit 0** at 06:53: **2.9945 nats**, 9.82 h at 71.7 k tok/s, zero
