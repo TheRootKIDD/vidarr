@@ -249,6 +249,7 @@ Cost units from `docs/06 §4`: one `screen` run ≈ 8 h (1 B tokens, 1 seed); on
 | I4 | vendor data for `note64` / `gpu_today` | hours–days |
 | I5 | `bench_nccl` on all four cards | ≈ 1 h, run first |
 | I6 | train a 32 k BPE on a 1 B-token subset; decide by convention, no A/B | ≈ 1 h CPU |
+- **I29** *(2026-09-16)* **H6 lacks a parameter-matched arm.** `112` (L5-ne128, 193 M params) sits at +0.018 nats vs L1 (246.6 M), which reads *weakens* under ADR-013 at `screen` now that σ = 0.0018, but the arm is 68 % of L1's parameters and its curve crossed L1's at ≈ 1300 steps. Needed: L5-ne128 at `small` (two seeds; not in `queue_small_1`) or a preset at exactly L1's non-embedding count. Until then H6's `screen` verdict is provisional.
 
 ## Session log
 
@@ -1129,6 +1130,48 @@ and an ADR first, L6c likewise; the `small` programme (L0, L1, L2, L3, L5, L5d a
 the ladder's own next step and needs no new code. The choice between "more `screen` variants" and
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
+
+### 2026-09-16 — `117-l0-small-s1`: the L0 pair gives $L_{ref}$(small) = 2.9958 nats and **σ = 0.0018 nats**
+
+**`117-l0-small-s1` completed, exit 0** at 06:53: **2.9945 nats**, 9.82 h at 71.7 k tok/s, zero
+`n_thermal` rows, GPU 0 ≤ 81 °C. With `116` (2.9971): **$L_{ref}$(small) = 2.9958**,
+$|Δ_{seed}|$ = 0.0026, **σ = 0.0018 nats** (ADR-013: pooled seed spread of the L0 pair; one pair →
+sample sd). Corroborated along the trajectory: the seed-0 − seed-1 gap over the last 20 paired evals
+is +0.0023 ± 0.0006, a stable offset, not eval noise. σ is under the 0.005–0.01 `06 §4` assumed and
+under ADR-013's 0.01 third-seed trigger, so **the `small` programme stays at two seeds**. Bands at
+`small`: 2σ = 0.0037, 4σ = 0.0073, 1 % = 0.030, 2 % = 0.060 nats (table in `117/results.md`). σ is
+re-pooled over every `small` pair as they land; a materially larger spread in a later pair triggers a
+recomputation, logged. `118-l1-small-s0` started 06:53.
+
+### 2026-09-16 — the `screen` ladder re-scored under ADR-013 with σ = 0.0018 nats
+
+ADR-013: a one-seed `screen` run is *silent* unless $|Δ|$ > 4σ = **0.0073 nats**; outside that band the
+ordinary rule applies (*supports* if $Δ \le T$, *weakens* if $Δ$ > $T$ + 2σ, "matches" = $|Δ| \le$ 2σ),
+with $T$ as a fraction of the `screen` $L_{ref}$ = 3.3358 (1 % = 0.0334, 2 % = 0.0667). σ was
+measured at 2.5 B tokens; the pair's own 1 B-token gap (0.0005) says the band is conservative at
+`screen`. **Verdicts recorded here, not by editing the runs' `results.md` (append-only); each
+remains one seed at 1 B tokens and every verdict below is a `screen` verdict, to be confirmed at
+`small` where the run is in `queue_small_1`.**
+
+| run | comparator | Δ (nats) | $|Δ|$ vs 4σ | H, clause, $T$ | **verdict at `screen`** |
+|---|---|---|---|---|---|
+| `106` L1 | `100` L0 | -0.1310 | 18× | H4's baseline arm, no threshold | resolvable, no H tested: MoE beats dense at matched FLOPs by 3.9 % |
+| `107` L2 | `106` L1 | -0.0553 | 7.6× | H2 quality: parallel form $Δ \le$ 1 % | **supports** (improves, −1.7 %) |
+| `108` L3 | `107` L2 | +0.0991 | 14× | H13 main-head $Δ \le$ 2σ | would read **weakens** (+3.1 %, 27× 2σ); **ADR-030 defers H13's verdict to `small`** — recorded as evidence |
+| `113` L3-full | `107` L2 | +0.0847 | 12× | same | same as `108`; subsampling was not the cause (I27 #3) |
+| `110` L5 | `100` L0 | -0.0030 | 0.4× | H6 (not the matched-params arm) | **silent** — L5 at $N_e$ = 8 is indistinguishable from dense at a fifth of its params |
+| `112` L5-ne128 | `106` L1 | +0.0184 | 2.5× | H6 "matches" $|Δ| \le$ 2σ | **weakens**, narrowly and with a caveat: outside the silent band and 5× 2σ, but the arm has 68 % of L1's params, not matched; the curve crossed at ≈ 1300 steps. Open: an exactly matched arm, or L5-ne128 at `small` (not in `queue_small_1`) |
+| `111` L5d | `110` L5 | +0.0149 | 2.0× | H15a $Δ \le$ 2 % at 2 k | **supports** (+0.45 %, 4.5× under $T$) |
+| `114` L5 $r$ = 4 | `110` L5 | +0.0239 | 3.3× | H7 control: fixed schedule, $Δ \le$ 1 % | resolvable: a fixed $r$ = 4 costs +0.72 % for half the middle-block FLOPs, inside H7's 1 % — L6/L6c must beat this line, not L5 |
+| `115` L5 $r$ = 12 | `110` L5 | +0.0042 | 0.6× | H7 control | **silent** — the depth curve is flat past 8 within seed noise |
+
+**Reading.** Four `screen` results now carry verdicts: H2's quality clause and H15a *supported*,
+H6's matched arm *weakened* (with the caveat above), and the depth control resolved. H13 stays
+deferred by ADR-030 and is the one clause the `small` L3 pair (`122`/`123`) decides. Two results are
+genuinely inside seed noise and stay silent: L5 vs dense, and $r$ = 12 vs 8 — both are now
+statements ("no difference at this scale") rather than gaps in the data. **Open question added:**
+I29 — H6 needs a parameter-matched arm; L5-ne128 at `small` (2 seeds, ≈ 2 × 42 h at `112`'s rate) or
+a preset at exactly L1's 246.6 M non-embedding params.
 
 ### 2026-09-15 (evening) — `116-l0-small-s0`: $L_{ref}$(small, s0) = 2.9971 nats; ten hours at full clock
 
