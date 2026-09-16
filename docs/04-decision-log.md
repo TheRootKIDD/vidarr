@@ -1131,6 +1131,20 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-09-16 (night) — `130-l1-small-s0`: L1 at `small`, seed 0 = 2.8808 nats, −3.84 % vs $L_{ref}$(small)
+
+Power returned; the pick-up checklist held (UUID map unchanged, index 0 = `GPU-4673cc7d`, no soak
+needed) and `queue_small_2.sh` started 09:33. **`130-l1-small-s0` completed, exit 0** at 23:33:
+**2.8808 nats**, 14.00 h at 50.3 k tok/s (0.1 % unaccounted), **zero `n_thermal` rows over 14 h**,
+GPU 0 ≤ 79 °C at ≥ 1890 MHz — the longest single load yet, and the intake fix holds under the 271 M
+rungs' higher draw. Against $L_{ref}$(small) = 2.9958: **Δ = −0.1150 nats, −3.84 %**, 16× the 4σ band,
+against −3.93 % at `screen` (`106`/`100`) — the MoE-over-dense gap does not shrink from 1 B to 2.5 B
+tokens. As at `screen`, L1 is H4's baseline arm and no threshold names it, so no verdict is recorded;
+it is the L1 comparator for L2's H2 clause (`120`/`121`) and I29's H6 arm at `small`. σ is re-pooled
+over the L0 and L1 pairs when `119-l1-small-s1` lands (started 23:33, ≈ 14 h). Routing healthy at
+the end: load 0.116–0.131 across 8 experts, entropy 0.9998, no dead experts. The hourly results
+loop is re-armed on `queue_small_2.log` for this session. Next ladder id **131**, rig id 029.
+
 ### 2026-09-16 (morning) — stopped for a planned power outage; `118` burnt, queue continues as `queue_small_2.sh`
 
 The user announced a mains outage 20 minutes ahead at ≈ 08:00. **`queue_small_1.sh` was stopped
