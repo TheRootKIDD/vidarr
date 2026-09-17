@@ -1131,6 +1131,34 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-09-17 — `119-l1-small-s1`: the L1 pair = 2.8839 nats (−3.74 % vs dense); **σ re-pooled to 0.0033 nats**, `screen` verdicts hold
+
+**`119-l1-small-s1` completed, exit 0** at 13:33: **2.8869 nats**, 14.00 h at 50.3 k tok/s (0.06 %
+unaccounted), zero `n_thermal` rows, GPU 0 ≤ 78 °C. With `130` (2.8808): **L1 pair mean 2.8839**,
+$|Δ_{seed}|$ = 0.0061 — 2.3× the L0 pair's 0.0026, and a stable offset along the trajectory
+(seed 0 − seed 1 over the last 20 paired evals −0.0076 ± 0.0006). Pair against pair: **Δ(L1 − L0) =
+−0.1119 nats, −3.74 %** (34σ); `screen` had −3.93 % at one seed. No threshold names L1 against L0,
+so no verdict — L1 is H4's baseline arm and the comparator for H2 (`120`/`121`) and I29's H6 arm.
+
+**σ re-pooled** as `117/results.md` committed to: pooled sample sd over the L0 and L1 pairs,
+$\sqrt{(0.00184^2 + 0.00431^2)/2}$ = **0.0033 nats** (was 0.0018). Below ADR-013's 0.01 third-seed
+trigger, so **two seeds stand**. Bands at `small`: 2σ = **0.0066**, 4σ = **0.0133**, 1 % = 0.030
+(weakens above 0.0366), 2 % = 0.060 (weakens above 0.0665). The 2026-09-16 `screen` re-scoring
+recomputed against the wider bands, using the `screen` $L_{ref}$ = 3.3358 for $T$ as before:
+
+| run | Δ (nats) | $|Δ|$ vs new 4σ (0.0133) | verdict at `screen` | change |
+|---|---|---|---|---|
+| `107` L2 vs L1 | −0.0553 | 4.2× | **supports** H2 (improves) | none |
+| `108`/`113` L3 vs L2 | +0.0991 / +0.0847 | 7.5× / 6.4× | evidence against H13, deferred to `small` by ADR-030 | none |
+| `110` L5 vs L0 | −0.0030 | 0.2× | silent | none |
+| `112` L5-ne128 vs L1 | +0.0184 | **1.4×** | **weakens** H6 (Δ > 2σ + 2σ = 0.0132, by 0.005) | holds, now marginal; I29's matched arm decides |
+| `111` L5d vs L5 | +0.0149 | **1.1×** | **supports** H15a (+0.45 % under 2 %) | holds, barely resolvable |
+| `114` L5 $r$ = 4 vs L5 | +0.0239 | 1.8× | resolvable, +0.72 % under H7's 1 % | none |
+| `115` L5 $r$ = 12 vs L5 | +0.0042 | 0.3× | silent | none |
+
+No verdict flips; `112` and `111` are the two to watch, and both are one seed at `screen`. σ is
+re-pooled again after the L2 pair. `120-l2-small-s0` started 13:33 (≈ 14 h). Next ladder id **131**.
+
 ### 2026-09-16 (night) — `130-l1-small-s0`: L1 at `small`, seed 0 = 2.8808 nats, −3.84 % vs $L_{ref}$(small)
 
 Power returned; the pick-up checklist held (UUID map unchanged, index 0 = `GPU-4673cc7d`, no soak
