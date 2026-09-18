@@ -1131,6 +1131,26 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-09-18 (evening) — `121-l2-small-s1`: the L2 pair = 2.8851 nats, +0.04 % vs the L1 pair — **H2 (quality) supported at two seeds**; σ re-pooled to 0.0035
+
+**`121-l2-small-s1` completed, exit 0** at 17:13: **2.8824 nats**, 13.82 h at 50.9 k tok/s (0.07 %
+unaccounted), zero `n_thermal` rows, GPU 0 ≤ 78 °C. With `120` (2.8878): **L2 pair 2.8851**,
+$|Δ_{seed}|$ = 0.0054 with seed 1 the better one this time (L1 had seed 0 ahead), so the spread is a
+run property, ≈ 0.005–0.006 nats for the 271 M MoE rungs. **Pair against pair, Δ(L2 − L1) =
++0.0012 nats, +0.04 %** against $T$ = 0.030 and 2σ = 0.0070 → **supports H2's quality clause**,
+two seeds each side, and meets the stricter no-detectable-regression reading; per seed the
+differences are +0.0070 and −0.0045, opposite signs. The parallel form is a free rearrangement at
+this scale: no loss, no gain (`screen`'s −1.7 % was a schedule effect, `120`), 1.2 % faster per step.
+H2's critical-path clause stays for S1 in `sim/`.
+
+**σ re-pooled over three pairs** (rms of $s$ = 0.00184 / 0.00431 / 0.00382): **0.0035 nats**. Two
+seeds stand. Bands: 2σ = **0.0070**, 4σ = **0.0140**, 1 % weakens above 0.037, 2 % above 0.067.
+`screen` re-scoring against 4σ = 0.0140: no flip; `112` (H6, +0.0184) still *weakens* by 0.0044
+over the line, `111` (H15a, +0.0149) sits at 1.07× the silent band. **`122-l3-small-s0` started
+17:13** — the L3 pair is ADR-030's deferred H13 test (main-head $Δ \le$ 2σ against the L2 pair
+2.8851; `108`/`113` read +3.1 % / +2.6 % at `screen`); ≈ 16 h per seed at `108`'s rate. Next ladder
+id **131**.
+
 ### 2026-09-18 — `120-l2-small-s0`: L2 at `small`, seed 0 = 2.8878 nats, +0.13 % vs the L1 pair — **supports H2 (quality), provisional**; the `screen` "improves" was a budget artefact
 
 **`120-l2-small-s0` completed, exit 0** at 03:23: **2.8878 nats**, 13.83 h at 50.9 k tok/s (0.07 %
