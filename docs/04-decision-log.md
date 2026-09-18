@@ -1131,6 +1131,19 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-09-18 — `120-l2-small-s0`: L2 at `small`, seed 0 = 2.8878 nats, +0.13 % vs the L1 pair — **supports H2 (quality), provisional**; the `screen` "improves" was a budget artefact
+
+**`120-l2-small-s0` completed, exit 0** at 03:23: **2.8878 nats**, 13.83 h at 50.9 k tok/s (0.07 %
+unaccounted, 1.2 % faster than L1), zero `n_thermal` rows, GPU 0 ≤ 79 °C. Against the L1 pair
+(2.8839): **Δ = +0.0039 nats, +0.13 %**, under $T$ = 0.030 (1 %) and inside 2σ = 0.0066 →
+**supports H2's quality clause** at one seed (against L1 seed 0 alone, +0.0070, just outside 2σ;
+the pair mean is ADR-013's comparator). **The `screen` advantage of the parallel form (−1.7 %,
+`107`) is gone at 2.5 B tokens**: L2 − L1 over the last 20 paired evals is +0.0054 ± 0.0017, a
+stable small deficit, and at this schedule's 1 B-token eval L2 leads by only 0.0065. The `screen`
+"supports (improves)" reading is downgraded to *non-inferiority*, which is what H2 claims. Routing
+healthy (load 0.110–0.141, entropy 0.9997, no dead experts). H2's critical-path clause stays for
+S1. `121-l2-small-s1` started 03:23 (≈ 14 h); the L2 pair re-pools σ. Next ladder id **131**.
+
 ### 2026-09-17 — `119-l1-small-s1`: the L1 pair = 2.8839 nats (−3.74 % vs dense); **σ re-pooled to 0.0033 nats**, `screen` verdicts hold
 
 **`119-l1-small-s1` completed, exit 0** at 13:33: **2.8869 nats**, 14.00 h at 50.3 k tok/s (0.06 %
