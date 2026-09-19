@@ -110,6 +110,7 @@ Noise floor: at `small`, seed-to-seed spread in eval loss is typically 0.005–0
 - `screen` before `small`, `small` before `medium`. No run longer than one node-day without a completed `screen` of the same config.
 - Resumable checkpoints every ≤ 30 min; every run records `nvidia-smi -q` power/thermal summaries; a throttled card invalidates throughput numbers, not loss numbers.
 - NCCL: expect host-bounced transfers; if collectives hang or crawl, set `NCCL_P2P_DISABLE=1` and re-measure. Keep the four cards on x16 slots.
+- Hold the NVIDIA driver while a queue is running: `sudo dnf upgrade --exclude='*nvidia*,akmod*'`, or `excludepkgs=*nvidia*,akmod*` in `/etc/dnf/dnf.conf`. A driver upgrade under a live queue leaves the old kernel module loaded, and every run that has not yet initialised dies with `nvmlInit_v2() failed: Driver/library version mismatch` until a reboot (2026-09-19: `123`–`129` burnt, `docs/04`). After any driver change: env capture and a soak before queueing (`029`/`030`).
 - The CPU is shared: FAISS builds, tokenisation and simulator sweeps (parallelised across the 12 cores with multiprocessing) should not overlap with a `medium` run's data loading.
 - Tokenised corpus as `uint16` memmap on the NVMe, `/mnt/nvme/corpus/fineweb-edu/tok-mistral32k/` (11.01 B tokens, 22.0 GB, 111 train shards + `val.bin`; ADR-014, `scripts/data/tokenize_fineweb.py`); never re-tokenise inside a run.
 

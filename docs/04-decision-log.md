@@ -1131,6 +1131,35 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-09-19 (midday) — back up on driver 615.71: `029`/`030` pass, `queue_small_3` launched
+
+Rebooted ≈ 11:10; `nvidia-smi` works, **driver 615.71.09** (open kernel module) on kernel 7.2.5, and
+the `027` UUID map is unchanged (index 0 = `GPU-4673cc7d`, x16/x8/x8/x16, all idle at 13–25 MiB,
+170 W). The 2026-09-19 entry below named the soak "rig id 029"; the env capture took **`029`** and
+the soak **`030`**.
+
+- **`029-env-post-driver-615`**: field-by-field identical to `027` except driver (610.57.04 →
+  615.71.09), kernel (7.2.4 → 7.2.5) and ≈ 55 MiB more reported memory per card (12 543 590 400 B on
+  all four). Gen 4 under load, BF16 error unchanged, no Xid or PCIe errors in the boot journal.
+- **`030-thermal-soak-driver-615`**: **pass** — 75 / 65 / 64 / 70 °C, **0 `n_thermal` of 82 samples
+  per card**, `step_s_median` **738.4 ms** against `028`'s 737.2 (+0.16 %, one soak each side, not
+  resolvable). The `018`/`026` table stands; throughput from `131` on is comparable with `116`–`122`.
+- **New telemetry bit.** 615.71 reports clocks-event reason **`0x400` = "Reliability"** on every
+  loaded sample of every card (610.57 read `0x0`); clocks and step time equal `028`'s, so it is the
+  card at its voltage-reliability ceiling, now reported, not a slowdown. `n_thermal` (mask `0x60`)
+  is unaffected, but the legacy **`n_throttled` will read 4 on every telemetry row from `131` on**
+  (`train.py` counts any reason other than 0/1) — one more reason the field to read is `n_thermal`.
+  Nothing aborts on `n_throttled`; the code is left as is so records stay comparable.
+- `06 §7` gains the rule: hold `*nvidia*`/`akmod*` in dnf while a queue runs; env capture and soak
+  after any driver change. **The hold itself is the user's to apply** (`/etc/dnf/dnf.conf` has no
+  `excludepkgs` line as of this entry).
+
+**`queue_small_3.sh` launched** after the commit of this entry (start time in
+`/mnt/nvme/queue_small_3.log`): `131` L3 s1, `132`/`133` L5 s0/s1, `134`/`135` L5d s0/s1, `136`
+L5-noej `screen`, `137` L7b `screen`, ≈ 4.3 days. `122` (610.57) and `131` (615.71) straddle the
+driver change — read the L3 seed gap with that in mind. Hourly results loop re-armed on
+`queue_small_3.log`. Next ladder id **138**, next rig id **031**.
+
 ### 2026-09-19 — `122-l3-small-s0`: H13 **weakened** at `small` (main head +2.85 %, acceptance 42 / 25 / 17 %); then a driver upgrade under the queue burnt `123`–`129`
 
 **`122-l3-small-s0` completed, exit 0** at 09:51: main head **2.9674 nats**, 16.65 h at 42.3 k tok/s
