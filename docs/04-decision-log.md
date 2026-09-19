@@ -1131,6 +1131,41 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-09-19 — `122-l3-small-s0`: H13 **weakened** at `small` (main head +2.85 %, acceptance 42 / 25 / 17 %); then a driver upgrade under the queue burnt `123`–`129`
+
+**`122-l3-small-s0` completed, exit 0** at 09:51: main head **2.9674 nats**, 16.65 h at 42.3 k tok/s
+(0.07 % unaccounted), zero `n_thermal` rows over the longest load yet, GPU 0 ≤ 79 °C. Against the L2
+pair (2.8851): **Δ_main = +0.0823 nats, +2.85 %**, against $T$ = 2σ = 0.0070 (weakens above 0.0140)
+→ **weakens H13's main-head clause** by 5.9× the line. In-trainer acceptance vs head 1 on the full
+held-out set **41.9 / 25.2 / 16.8 %** for heads 2/3/4 against 70 / 55 / 45 → **weakens the acceptance
+clause**. Versus `screen` (`113`: +2.69 %, 39.7 / 23.0 / 16.1 %) the extra 1.5 B tokens bought ≈ 2
+points of acceptance and nothing on the main head, so **ADR-030's deferral is discharged: the
+`screen` miss was not a budget artefact**, and I20's recovery variant L3b (forward curriculum) is
+the only route left to H13 at this scale. Striking side result: L3's main head sits **only 0.95 %
+below the dense L0 pair** — four MTP heads give back nearly all of the MoE's 3.7 % gain over dense,
+at 17 % more wall-clock per step. One seed: `123` did not run (below); `131` completes the pair and
+re-pools σ but cannot flip a miss at 11.8× the margin.
+
+**Queue casualty.** At 09:39–09:40, while `122` was on its last 60 steps, the NVIDIA packages were
+upgraded to **615.71.09** (`akmod-nvidia`, `xorg-x11-drv-nvidia*`, `kmod-nvidia` for the running
+kernel 7.2.5-200; `rpm -qa --last`). No `dnf-automatic` timer exists on the box, so this was a
+hand-run or desktop-updater upgrade. The loaded kernel module stayed at **610.57.04**, so every
+process started afterwards dies in `init_process_group` with `nvmlInit_v2() failed: Driver/library
+version mismatch`; `nvidia-smi` fails the same way. `122` was already initialised and finished
+cleanly; **`123`–`129` each exited 1 within 5 s** and `queue_small_2.sh` logged QUEUE DONE at 09:52.
+Nothing was restarted. The seven ids are burnt (append-only, as `101`/`118`) and each carries a
+one-paragraph `results.md` saying so.
+
+**Pick-up:** (1) reboot (the 615.71 kmod is built for the running kernel; `nvidia-smi` must work and
+show the `027` UUID map, index 0 = `GPU-4673cc7d`); (2) a short soak is prudent after a driver
+change — `bench_train_step --ddp --rung L5` for 15 min under rig id `029`, compare against `028`'s
+737 ms; (3) `nohup /mnt/nvme/queue_small_3.sh > /mnt/nvme/queue_small_3.nohup 2>&1 &` — **`131`–`137`**
+= L3 s1, L5 s0/s1, L5d s0/s1, L5-noej `screen`, L7b `screen`, ≈ 4.3 days; the script refuses to start
+if `nvidia-smi` fails; (4) re-arm the hourly results loop on `queue_small_3.log`. **Next ladder id
+138, rig id 029.** Lesson for `06 §7`: hold `nvidia*`/`akmod*` with `dnf --exclude` (or
+`excludepkgs` in `/etc/dnf/dnf.conf`) while a queue is running; a driver upgrade kills every run
+that has not yet initialised.
+
 ### 2026-09-18 (evening) — `121-l2-small-s1`: the L2 pair = 2.8851 nats, +0.04 % vs the L1 pair — **H2 (quality) supported at two seeds**; σ re-pooled to 0.0035
 
 **`121-l2-small-s1` completed, exit 0** at 17:13: **2.8824 nats**, 13.82 h at 50.9 k tok/s (0.07 %
