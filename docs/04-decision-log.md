@@ -1131,6 +1131,36 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-09-20 (small hours) — `131-l3-small-s1`: the L3 pair = 2.9682 nats, +2.88 % vs the L2 pair, acceptance 42.5 / 25.6 / 17.6 % — **H13 weakened on both clauses at two seeds**; σ re-pooled to 0.0031
+
+**`131-l3-small-s1` completed, exit 0** at 04:07: **2.9691 nats**, 16.63 h at 42.35 k tok/s (0.06 %
+unaccounted; `122` 42.32 k), zero `n_thermal` of 476 rows, GPU 0 ≤ 77 °C at ≥ 1897 MHz — the first
+long load on driver 615.71, and indistinguishable from 610.57 in throughput. `n_throttled` reads 4
+on every row, as `030` predicted (the `0x400` "Reliability" bit); ignore it. With `122` (2.9674):
+**L3 pair 2.9682**, $|Δ_{seed}|$ = 0.0018, the tightest pair yet, so the driver change across the
+pair is invisible in the loss. **Pair against pair, Δ(L3 − L2) = +0.0831 nats, +2.88 %** against
+2σ = 0.0070 (weakens above 0.0140) → **weakens H13's main-head clause** at 5.9× the line; held-out
+acceptance **42.5 / 25.6 / 17.6 %** against 70 / 55 / 45 → **weakens the acceptance clause**; the
+seeds agree to 0.3 points per head. ADR-030's deferral is fully discharged; L3b (forward curriculum,
+I20) is the only route left to H13 at this scale and needs its ADR. The pair sits −0.92 % vs the L0
+pair where L2 has −3.70 %.
+
+**Correction to `122` (recorded in `131/results.md`, ids being append-only):** `122/results.md` and
+the 2026-09-19 entry below quote acceptance 41.9 / 25.2 / 16.8 % as "full held-out"; those are the
+last *training batch's* figures. `122`'s held-out values are **42.5 / 25.5 / 17.4 %** (top-1 24.5 /
+14.9 / 10.1 %). ≤ 0.6 points, no reading changes; the `screen` → `small` gain on head 2 is ≈ 3
+points, not 2.
+
+**σ re-pooled over four pairs** (rms of $s$ = 0.00184 / 0.00431 / 0.00382 / 0.00125): **0.0031
+nats**. Two seeds stand. Bands: 2σ = **0.0062**, 4σ = **0.0123**, 1 % weakens above 0.0362, 2 %
+above 0.0662. No verdict flips: H2 still inside 2σ; `112` (H6, +0.0184) weakens by 0.0061 over the
+line, `111` (H15a, +0.0149) is 1.2× the silent band and still supports, `110`/`115` silent.
+
+Housekeeping: the dnf driver hold **is applied** as of 2026-09-19 afternoon (`excludepkgs=*nvidia*,akmod*`
+in `/etc/dnf/dnf.conf`; on this dnf5 box the deliberate override is `--setopt=excludepkgs=`, not
+`--disableexcludes`). **`132-l5-small-s0` started 04:07** (48.2 k tok/s, 3.86 GiB, ≈ 14.5 h). Next
+ladder id **138**, rig id **031**.
+
 ### 2026-09-19 (midday) — back up on driver 615.71: `029`/`030` pass, `queue_small_3` launched
 
 Rebooted ≈ 11:10; `nvidia-smi` works, **driver 615.71.09** (open kernel module) on kernel 7.2.5, and

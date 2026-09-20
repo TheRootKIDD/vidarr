@@ -1,0 +1,136 @@
+model:
+  arch: layered
+  d: 768
+  vocab: 32000
+  context: 2048
+  layers: 12
+  block_form: parallel
+  ff: moe
+  dense_d_ff: 2048
+  early_blocks: 2
+  final_blocks: 2
+  pred_only_final: 1
+  skeleton_d_ff: null
+  budget_flops_per_token: 600000000.0
+  attention:
+    heads: 12
+    kv_heads: 4
+    head_dim: 64
+    window: 512
+    global_source: per_iteration
+    segment_memory_grad: stop
+    prev_segment_local: false
+    kv_share_every: 1
+    index_enabled: false
+    rope_theta: 10000.0
+  router:
+    k: 2
+    n_experts: 8
+    d_r: 128
+    product_keys: false
+    hierarchical: false
+    balance: aux_free
+    bias_update_rate: 0.001
+    aux_loss_coef: 0.001
+    use_depth_embed: false
+  experts:
+    unit_width: 1
+    tile_min: 256
+    d_ff: null
+    layers: 1
+    granularity: 1
+  middle:
+    r_min: 2
+    r_max: 8
+    depth_embed: 64
+    per_iter_lora_rank: 0
+  streams:
+    two_stream: false
+    p_sees_own_context: true
+  halting:
+    mode: fixed
+    ponder_cost: 0.0
+    epsilon: 0.01
+    output: last
+    halted_kv: once
+  mtp:
+    m: 4
+    style: independent
+    subsample: auto
+    lambdas:
+    - 1.0
+    - 0.5
+    - 0.25
+    - 0.125
+  numerics:
+    dtype: bf16
+    sparsity_2_4: false
+  memory_enabled: false
+  tenant_lora_rank: 0
+  checkpoint_iterations: true
+  ce_chunk_tokens: 2048
+  derived:
+    expert_width: 1024
+    sub_expert_width: 1024
+    n_sub_experts: 8
+    skeleton_width: 3072
+    tile_floor: 256
+    n_streams: 1
+train:
+  rung: L3
+  id: 131-l3-small-s1
+  tokens: 2500000000.0
+  batch_tokens: 524288
+  micro_batch: 2
+  lr: 0.0006
+  min_lr_frac: 0.1
+  warmup_frac: 0.02
+  weight_decay: 0.1
+  betas:
+  - 0.9
+  - 0.95
+  clip: 1.0
+  seed: 1
+  r_schedule: fixed
+  eval_every: 100
+  eval_tokens: 2000000
+  ckpt_minutes: 30.0
+  corpus: /mnt/nvme/corpus/fineweb-edu/tok-mistral32k
+  out_dir: null
+  gpus: 0
+  resume: false
+  smoke_steps: 0
+provenance:
+  date_utc: '2026-09-19T09:28:55+00:00'
+  git_hash: 8f7ad981181d31bcddaf33a8f5b43242f857ee80
+  git_dirty: true
+  driver_version: 615.71.09
+  torch_version: 2.13.0+cu130
+  torch_cuda_version: '13.0'
+  python_version: 3.12.13
+  platform: Linux-7.2.5-200.fc44.x86_64-x86_64-with-glibc2.43
+  gpus:
+  - index: 0
+    name: NVIDIA GeForce RTX 3060
+    uuid: GPU-4673cc7d-9e44-4578-a9ca-48215bc5ddc8
+    sm: '8.6'
+    multi_processor_count: 28
+    total_memory_bytes: 12543590400
+  - index: 1
+    name: NVIDIA GeForce RTX 3060
+    uuid: GPU-88074816-a56d-dc95-d744-6096efc59bfc
+    sm: '8.6'
+    multi_processor_count: 28
+    total_memory_bytes: 12543590400
+  - index: 2
+    name: NVIDIA GeForce RTX 3060
+    uuid: GPU-8cb4f7cc-d2a2-fb38-c9ee-14dc7f1515ab
+    sm: '8.6'
+    multi_processor_count: 28
+    total_memory_bytes: 12543590400
+  - index: 3
+    name: NVIDIA GeForce RTX 3060
+    uuid: GPU-56c7aa62-b07a-0d35-3792-44b0a78ef58d
+    sm: '8.6'
+    multi_processor_count: 28
+    total_memory_bytes: 12543590400
