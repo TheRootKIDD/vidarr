@@ -1131,6 +1131,21 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-09-20 (evening) — `132-l5-small-s0`: L5 at `small`, seed 0 = 3.0778 nats, **+2.74 % vs dense** — the `screen` tie was a budget effect
+
+**`132-l5-small-s0` completed, exit 0** at 18:22: **3.0778 nats**, 14.25 h at 49.2 k tok/s (0.07 %
+unaccounted), zero `n_thermal` of 476 rows, GPU 0 ≤ 80 °C at ≥ 1890 MHz. Against $L_{ref}$(small) =
+2.9958: **Δ = +0.0820 nats, +2.74 %**, 6.7× the 4σ band (0.0123); against the L1 pair +6.72 %. At
+`screen` the same arm tied dense (`110`: −0.10 %). Along the trajectory against the L0 pair the
+shared block leads by 0.13 nats at 0.26 B tokens, crosses at ≈ 0.5 B, is +0.056 at 1 B and flattens
+at ≈ +0.08 — so the tie at `screen` was the 1 B budget and schedule, as with L2's "improves"
+(`120`). **No H6 verdict**: this is the $N_e$ = 8 arm (52.9 M non-embedding params, 70 % of L0's,
+21 % of L1's), not the matched arm; no threshold names it. It does sharpen I29: the $N_e$ = 8 arm
+cannot carry H6 at `small`, so L5-ne128 at `small` (two seeds, not queued) is the run H6 waits on.
+Routing healthy (load 0.119–0.129, entropy 0.9999, no dead experts). One seed; **`133-l5-small-s1`
+started 18:22** (≈ 14.3 h) and completes the pair that H15a's L5d pair (`134`/`135`) is scored
+against. Next ladder id **138**, rig id **031**.
+
 ### 2026-09-20 (small hours) — `131-l3-small-s1`: the L3 pair = 2.9682 nats, +2.88 % vs the L2 pair, acceptance 42.5 / 25.6 / 17.6 % — **H13 weakened on both clauses at two seeds**; σ re-pooled to 0.0031
 
 **`131-l3-small-s1` completed, exit 0** at 04:07: **2.9691 nats**, 16.63 h at 42.35 k tok/s (0.06 %
