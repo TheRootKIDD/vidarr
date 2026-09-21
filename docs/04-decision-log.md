@@ -1131,6 +1131,22 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-09-21 (09:30) — `133-l5-small-s1`: the L5 pair = 3.0748 nats, **+2.64 % vs dense** at two seeds; σ re-pooled over five pairs to 0.0034
+
+**`133-l5-small-s1` completed, exit 0** at 08:37: **3.0717 nats**, 14.26 h at 49.2 k tok/s (0.07 %
+unaccounted), zero `n_thermal` of 476 rows, GPU 0 ≤ 79 °C at ≥ 1890 MHz. With `132` (3.0778): **L5
+pair 3.0748**, $|Δ_{seed}|$ = 0.0061 (stable offset, +0.0061 ± 0.0006 over the last 20 paired
+evals). **Pair against pair, Δ(L5 − L0) = +0.0790 nats, +2.64 %** (5.9× the 4σ band); +6.62 % vs the
+L1 pair. Both seeds cross the dense curve at ≈ 0.5 B tokens and flatten near +0.08, so the `screen`
+tie (`110`) was the 1 B budget, confirmed. **No H6 verdict** — $N_e$ = 8 is not the matched arm and
+no threshold names it; `138`/`139` (L5-ne128 at `small`, armed in `queue_small_4`) separate capacity
+from recurrence. **σ re-pooled over five pairs** (rms of $s$ = 0.00184 / 0.00431 / 0.00382 / 0.00125
+/ 0.00429): **0.0034 nats**; two seeds stand. Bands: 2σ = **0.0067**, 4σ = **0.0134**, 1 % weakens
+above 0.0367, 2 % above 0.0667; no verdict flips (`112` weakens H6 by 0.0050 over the line, `111` at
+1.1× the silent band). H15a's lines against this pair: L5d pair ≤ 3.1348 supports, > 3.1415
+weakens. **`134-l5d-small-s0` started 08:37** at 33.6 k tok/s, 3.89 GiB (≈ 20.7 h). Next ladder id
+**140**, rig id **031**.
+
 ### 2026-09-21 (morning) — `queue_small_4.sh` armed behind queue 3: L5-ne128 at `small`, two seeds (`138`/`139`) — I29's H6 arm
 
 On the user's decision (the recommendation followed `132`: the $N_e$ = 8 arm sits +2.74 % above dense
