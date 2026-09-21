@@ -1131,6 +1131,21 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-09-21 (morning) — `queue_small_4.sh` armed behind queue 3: L5-ne128 at `small`, two seeds (`138`/`139`) — I29's H6 arm
+
+On the user's decision (the recommendation followed `132`: the $N_e$ = 8 arm sits +2.74 % above dense
+at `small`, so it cannot carry H6, and I29 names L5-ne128 at `small` as the run H6 waits on; no new
+code or ADR needed, preset `L5-ne128` = $N_e$ 128, $k$ 4). **`138-l5-ne128-small-s0` and
+`139-l5-ne128-small-s1`**, `--tokens 2.5e9 --micro-batch 4`, same settings as `112` (its finished
+`screen`: 16.95 h, 16.5 k tok/s, 6.01 GiB — so the `06 §7` one-node-day rule is met), ≈ 42 h per
+seed, ≈ 3.5 days. The script was launched 07:38 and **waits for queue 3's `QUEUE DONE` line and idle
+GPUs** before starting `138` (expected ≈ Wed 2026-09-23 14:30); if queue 3 is aborted it never
+starts and must be relaunched by hand. Comparator: the L1 pair 2.8839, H6 "matches" = $|Δ| \le$ 2σ
+(ADR-013), σ as pooled when the pair lands; also read against the L5 $N_e$ = 8 pair. **Caveat carried
+from I29:** the arm has 168.5 M non-embedding params, 68 % of L1's 246.6 M — closer than $N_e$ = 8's
+21 %, not exactly matched; a verdict is read with that stated. The hourly results loop now covers
+both queue logs. Next ladder id **140**, rig id **031**.
+
 ### 2026-09-20 (evening) — `132-l5-small-s0`: L5 at `small`, seed 0 = 3.0778 nats, **+2.74 % vs dense** — the `screen` tie was a budget effect
 
 **`132-l5-small-s0` completed, exit 0** at 18:22: **3.0778 nats**, 14.25 h at 49.2 k tok/s (0.07 %
