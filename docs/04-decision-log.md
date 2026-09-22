@@ -1131,6 +1131,18 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-09-22 (early) — `134-l5d-small-s0`: L5d at `small`, seed 0 = 3.0896 nats, +0.48 % vs the L5 pair — **supports H15a** (one seed), same absolute cost as at `screen`
+
+**`134-l5d-small-s0` completed, exit 0** at 05:23: **3.0896 nats**, 20.77 h at 33.8 k tok/s (0.05 %
+unaccounted; 31 % below L5, the segment loop in the reference implementation, not FLOPs), zero
+`n_thermal` of 476 rows, GPU 0 ≤ 76 °C. Against the L5 pair (3.0748): **Δ = +0.0148 nats, +0.48 %**
+against $T$ = 2 % = 0.060 (weakens above 0.0667) → **supports H15a** at one seed, 2.2× the 2σ band so
+resolvable, at a quarter of the allowance. `111` read +0.0149 at `screen`: **the cost of
+final-vector global attention is flat in the token budget**, and flat along the trajectory from
+1 B tokens (+0.013 → +0.015). Routing healthy. The 8 k end of H15a's range is still owed (eval on the
+checkpoint). **`135-l5d-small-s1` started 05:23** (≈ 20.8 h) and completes the pair; then `136`/`137`
+(`screen`, ≈ 13 h) and queue 4 (`138`/`139`). Next ladder id **140**, rig id **031**.
+
 ### 2026-09-21 (09:30) — `133-l5-small-s1`: the L5 pair = 3.0748 nats, **+2.64 % vs dense** at two seeds; σ re-pooled over five pairs to 0.0034
 
 **`133-l5-small-s1` completed, exit 0** at 08:37: **3.0717 nats**, 14.26 h at 49.2 k tok/s (0.07 %
