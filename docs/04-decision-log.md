@@ -1131,6 +1131,21 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-09-23 (afternoon) — `137-l7b-screen` (H8, $L_e$ = 2): 3.3519 nats, +0.57 % vs `110` — resolvable, 0.07 points over H8's 0.5 %, **inconclusive at one seed**; queue 3 done, queue 4 started `138`
+
+**`137-l7b-screen` completed, exit 0** at 14:05: **3.3519 nats**, 6.28 h at 44.9 k tok/s (0.06 %
+unaccounted; 9 % below L5 at equal FLOPs — two half-width matmuls per expert), zero `n_thermal` of
+190 rows, GPU 0 ≤ 79 °C. Two-layer experts at $d_{ff}$ = 448 per layer against L5's one layer at 896:
+same FLOPs, params (77.49 M) and bytes. Against `110` (3.3328): **Δ = +0.0191 nats, +0.57 %**, 1.5×
+the 4σ band so resolvable at one seed, against H8's $T$ = 0.5 % = 0.0167 → **0.0024 over the
+allowance and inside $T$ + 2σ = 0.0229: inconclusive, leaning against**. The gap was still closing
+at 1 B tokens (+0.026 → +0.019 over the second half), so a `small` pair (≈ 32 h, no new code)
+could cross the line either way; until then S3 takes "≈ 0.6 % at 1 B tokens" as the quality cost
+of halving fabric bytes per FLOP. **Queue 3 logged QUEUE DONE at 14:05:15** — all seven reruns
+(`131`–`137`) done, zero failures, ≈ 4.1 days. **`queue_small_4.sh` started `138-l5-ne128-small-s0`
+at 14:05:18** (16.0 k tok/s, 6.01 GiB, ≈ 43 h; `139` follows, pair due ≈ Sun 2026-09-27 early).
+Next ladder id **140**, rig id **031**.
+
 ### 2026-09-23 (morning) — `136-l5-noej-screen` (E-Q2): 3.3394 nats, +0.20 % vs `110` — **silent**; the router does not partition experts by iteration, with or without $e_j$
 
 **`136-l5-noej-screen` completed, exit 0** at 07:48: **3.3394 nats**, 5.69 h at 49.3 k tok/s (0.07 %
