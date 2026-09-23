@@ -1131,6 +1131,16 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-09-23 (14:40) — `queue_small_5.sh` armed behind queue 4: L7b at `small`, two seeds (`140`/`141`) — H8's quality clause
+
+On the user's decision ("if this is not planned yet it should be"), following `137`'s inconclusive
+reading. **`140-l7b-small-s0` and `141-l7b-small-s1`**, `--tokens 2.5e9 --micro-batch 4`, same
+settings as `137` (44.9 k tok/s, 3.86 GiB → ≈ 15.7 h per seed, ≈ 1.3 days). Launched 14:40; waits
+for queue 4's `QUEUE DONE` and idle GPUs, so `140` starts ≈ Sun 2026-09-27 03:00 and the pair lands
+≈ Mon 2026-09-28 11:00. Comparator: the L5 pair 3.0748; H8 *supports* if $Δ \le$ 0.5 % = 0.0154,
+*weakens* above $T$ + 2σ = 0.0215 (σ = 0.0031 as of six pairs; re-pooled when `139` lands). The
+hourly loop now covers queues 4 and 5 and expires 2026-09-30. Next ladder id **142**, rig id **031**.
+
 ### 2026-09-23 (afternoon) — `137-l7b-screen` (H8, $L_e$ = 2): 3.3519 nats, +0.57 % vs `110` — resolvable, 0.07 points over H8's 0.5 %, **inconclusive at one seed**; queue 3 done, queue 4 started `138`
 
 **`137-l7b-screen` completed, exit 0** at 14:05: **3.3519 nats**, 6.28 h at 44.9 k tok/s (0.06 %
