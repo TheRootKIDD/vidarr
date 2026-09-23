@@ -1131,6 +1131,24 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-09-23 (small hours) — `135-l5d-small-s1`: the L5d pair = 3.0896 nats, +0.48 % vs the L5 pair — **H15a supported at two seeds**; σ re-pooled over six pairs to 0.0031
+
+**`135-l5d-small-s1` completed, exit 0** at 02:06: **3.0896 nats**, 20.71 h at 33.9 k tok/s (0.05 %
+unaccounted), zero `n_thermal` of 476 rows, GPU 0 ≤ 77 °C. With `134` (3.0896): **L5d pair 3.0896**;
+the two seeds land 0.00002 apart at the final eval — a coincidence (they differ by ≈ 0.001 along
+the whole trajectory), recorded as such. **Pair against pair, Δ(L5d − L5) = +0.0148 nats, +0.48 %**
+against $T$ = 2 % = 0.060 (weakens above 0.0661) → **supports H15a, two seeds each side**, at a
+quarter of the allowance and 2.4× the 2σ band. Same absolute cost as `111` at `screen` (+0.0149) and
+flat from 1 B tokens on: at 2 k context, final-vector global attention is a ≈ 0.015-nat tax that
+does not grow with budget. **Owed:** the 8 k end of H15a's range — an eval of `/mnt/nvme/ckpt/134`
+or `135` at 8 k context, no training needed. **σ re-pooled over six pairs**: **0.0031 nats** (the
+L5d coincidence pulls it from 0.0034; with L5d's trajectory spread instead it would be 0.0032, so
+nothing hangs on it). Bands: 2σ = **0.0061**, 4σ = **0.0123**, 1 % weakens above 0.0361, 2 % above
+0.0661; no verdict flips. **The `small` pair programme is complete** (L0, L1, L2, L3, L5, L5d):
+H2 and H15a supported, H13 weakened, H6 waiting on `138`/`139`. **`136-l5-noej-screen` started
+02:06** (≈ 6 h, then `137` ≈ 7 h, then queue 4 starts `138`). Next ladder id **140**, rig id
+**031**.
+
 ### 2026-09-22 (early) — `134-l5d-small-s0`: L5d at `small`, seed 0 = 3.0896 nats, +0.48 % vs the L5 pair — **supports H15a** (one seed), same absolute cost as at `screen`
 
 **`134-l5d-small-s0` completed, exit 0** at 05:23: **3.0896 nats**, 20.77 h at 33.8 k tok/s (0.05 %
