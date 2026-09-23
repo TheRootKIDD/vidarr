@@ -1131,6 +1131,23 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-09-23 (morning) — `136-l5-noej-screen` (E-Q2): 3.3394 nats, +0.20 % vs `110` — **silent**; the router does not partition experts by iteration, with or without $e_j$
+
+**`136-l5-noej-screen` completed, exit 0** at 07:48: **3.3394 nats**, 5.69 h at 49.3 k tok/s (0.07 %
+unaccounted, `110`'s rate to 0.2 %), zero `n_thermal` of 190 rows, GPU 0 ≤ 79 °C. Against `110`
+(3.3328): **Δ = +0.0066 nats, +0.20 %**, 0.54× the 4σ band → **silent** at one seed (one sign along
+the whole trajectory, ≈ 1σ). The depth embedding is worth at most a few tenths of a percent at
+$N_e$ = 8, as the author expected (Q2). **The `01 §4.4` diagnostic**, `probe_routing` on both final
+checkpoints (`routing.json` in `136` and, new, in `110`): the per-iteration expert histograms are
+near-uniform at every $j$ (7.3–8.0 effective experts of 8) and correlated across iterations
+(0.82 without $e_j$, 0.71 with), same favourite experts at every depth; **the early-experts-at-small-$j$
+pattern of `00 §3.2` is absent in both runs**. With $e_j$ the router leans harder on one expert at
+the last iterations (max share 0.27 vs 0.20); it does not partition. So at this scale the shared
+block is not imitating a layered model through depth-specific routing — it behaves more like one
+wide MoE applied eight times — which makes `138`/`139` (matched params, $N_e$ = 128) the decisive
+H6 run and the histogram probe on those checkpoints the natural follow-up (owed, cheap, CPU).
+**`137-l7b-screen` started 07:48** (≈ 7 h), then queue 4. Next ladder id **140**, rig id **031**.
+
 ### 2026-09-23 (small hours) — `135-l5d-small-s1`: the L5d pair = 3.0896 nats, +0.48 % vs the L5 pair — **H15a supported at two seeds**; σ re-pooled over six pairs to 0.0031
 
 **`135-l5d-small-s1` completed, exit 0** at 02:06: **3.0896 nats**, 20.71 h at 33.9 k tok/s (0.05 %
