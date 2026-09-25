@@ -1131,6 +1131,25 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-09-25 (morning) — `138-l5-ne128-small-s0`: H6's matched arm at `small`, seed 0 = 2.9588 nats, **+2.60 % vs the L1 pair** (12× the "matches" band) — provisional *weakens*; the 128-expert router partitions by depth
+
+**`138-l5-ne128-small-s0` completed, exit 0** at 08:47: **2.9588 nats**, 42.70 h at 16.4 k tok/s
+(0.02 % unaccounted), zero `n_thermal` of 476 rows, GPU 0 ≤ 67 °C (the expert loop under-occupies
+the cards). Against the L1 pair (2.8839): **Δ = +0.0749 nats, +2.60 %**, 12× 2σ and 6× 4σ, so
+outside "matches" by a margin no seed-1 value can close → **provisional *weakens* H6**, with I29's
+caveat (168.5 M non-embedding params, 68 % of L1's; the refuted form is H6 at matched FLOPs, an
+exactly parameter-matched arm at ≈ 1.45× FLOPs remains untested and is a different preset). `112`
+read +0.57 % at `screen`; the trajectory against the L1 pair crosses at ≈ 0.4 B tokens and flattens
+at +0.075 — the same shape as L5 vs dense (`132`). Against dense the arm **leads by 1.24 %** at 2.2×
+L0's params; against the L5 pair, 16× the experts are worth −3.77 %. **Routing probe
+(`routing.json`)**: at $N_e$ = 128 the router *does* partition experts by iteration — histogram
+correlation between iterations 0.35 (0.71–0.82 at $N_e$ = 8), 77 of 128 experts vary > 3× across
+depth, 29 > 10×, effective experts 128 → 87 from $j$ = 0 to 7, 14 experts dead at some depths and
+none at all — the `00 §3.2` signature, partial, present here and absent at 8 experts. It partitions
+and still trails. **`139-l5-ne128-small-s1` started 08:47** (≈ 43 h, due ≈ Sun 2026-09-27 04:00;
+the pair verdict and σ re-pool then), after which queue 5 starts `140`. Next ladder id **142**, rig
+id **031**.
+
 ### 2026-09-23 (14:40) — `queue_small_5.sh` armed behind queue 4: L7b at `small`, two seeds (`140`/`141`) — H8's quality clause
 
 On the user's decision ("if this is not planned yet it should be"), following `137`'s inconclusive
