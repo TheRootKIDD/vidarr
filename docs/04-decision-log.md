@@ -1131,6 +1131,33 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-09-25 (16:30) — paused on the user's request: `139` killed at step 850 and burnt; pick-up = `queue_small_6.sh` (`142` L5-ne128 s1 rerun, `143`/`144` L7b pair)
+
+**State at the pause.** Everything through `138` is written up, committed and pushed (both remotes).
+The user asked to pause now rather than after `139`; **`139-l5-ne128-small-s1` was killed at step
+850 of 4768** (7.7 h in; its last 976-window eval, 3.4884 at step 800, sat 0.001 below `138`'s), its
+four DDP workers killed by PID, `queue_small_4.sh` and the armed `queue_small_5.sh` stopped. GPUs
+idle at 13–25 MiB. `139` is burnt (append-only; no checkpoint resume) with a one-paragraph
+`results.md`; ids `140`/`141` were reserved by queue 5 and never started, left unused. The hourly
+results loop is stopped.
+
+**Standing at the pause** (all `small`, 2.5 B tokens, two seeds unless noted; σ = 0.0031 over six
+pairs): $L_{ref}$ 2.9958; L1 2.8839; L2 2.8851 (**H2 supported**); L3 2.9682 (**H13 weakened**, both
+clauses); L5 3.0748 (+2.64 % vs dense, no H6 verdict — $N_e$ = 8 arm); L5d 3.0896 (**H15a
+supported**, +0.48 %); L5-ne128 seed 0 2.9588 (**provisional *weakens* H6**, +2.60 % vs L1, 68 %
+params caveat; beats dense by 1.24 %; router partitions by depth at 128 experts). `screen`
+one-seed: E-Q2 silent (+0.20 %), L7b +0.57 % vs L5 (inconclusive on H8). Owed and cheap: 8 k-context
+eval of an L5d checkpoint (H15a's range end); routing probe on the next L5-ne128 seed.
+
+**Pick-up, in order:** (1) `nvidia-smi` works and the `027` UUID map holds (index 0 =
+`GPU-4673cc7d`); if the machine was rebooted, driver and kernel as in `029`, else no soak needed
+(the rig has 4 clean weeks on this layout); (2) `nohup /mnt/nvme/queue_small_6.sh >
+/mnt/nvme/queue_small_6.nohup 2>&1 &` — **`142-l5-ne128-small-s1`** (≈ 43 h; completes the H6 pair
+with `138`, then σ re-pool over seven pairs and `probe_routing` on it), **`143`/`144` L7b** (≈ 16 h
+each; H8 vs the L5 pair, $T$ = 0.0154); ≈ 3.1 days; the script refuses to start on busy GPUs;
+(3) re-arm the hourly results loop on `queue_small_6.log`, push after every write-up. Next ladder
+id **145**, rig id **031**.
+
 ### 2026-09-25 (morning) — `138-l5-ne128-small-s0`: H6's matched arm at `small`, seed 0 = 2.9588 nats, **+2.60 % vs the L1 pair** (12× the "matches" band) — provisional *weakens*; the 128-expert router partitions by depth
 
 **`138-l5-ne128-small-s0` completed, exit 0** at 08:47: **2.9588 nats**, 42.70 h at 16.4 k tok/s
