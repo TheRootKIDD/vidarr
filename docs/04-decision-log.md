@@ -1131,6 +1131,32 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-09-30 — resumed: `queue_small_6` running (`142` from 13:45); the owed CPU probes cannot share the machine with DDP, so they wait for the queue
+
+**Pick-up.** Machine rebooted; driver 615.71.09 and kernel 7.2.5 as in `029`, `027` UUID map holds,
+no soak. `queue_small_6.sh` launched 13:45: **`142-l5-ne128-small-s1`** at 16.6 k tok/s, 6.01 GiB,
+31.7 s/step, zero `n_thermal`; then `143`/`144` L7b (≈ 3.1 days in all). Hourly results loop re-armed.
+
+**Concurrent CPU work costs the queue 3–12 %.** Tried the owed 8 k-context eval on CPU beside `142`
+(nice 19): at 8 threads `step_s` 31.7 → 33.25 s (−4.7 %); 4 threads pinned to CPUs 0–3, 32.5–33.4 s;
+2 threads pinned, 32.5–35.6 s; back to 31.6 s within one step of stopping. Fewer threads do not help,
+so it is not core count — most likely host-memory bandwidth, which the host-staged NCCL all-reduce
+shares (no P2P, `06 §1`). This contradicts the "safe to run on CPU while the ladder trains" note in
+`probe_routing`'s docstring for the DDP layout; it held for single-GPU `screen` runs. **Rule from now
+on: no CPU probes while a DDP run is live.** On the user's decision the probes run after the queue:
+`/mnt/nvme/post_queue6/run.sh` waits for `QUEUE DONE`, then (≈ 3 h, CPU, 12 threads)
+(1) `eval_context` at 8 k on `134`/`135` (L5d) and `132`/`133` (L5), 2 M val tokens each;
+(2) `probe_routing` on `132`/`133`, `134`/`135` (the N_e = 8 comparator for `138`/`142`'s depth
+partitioning at the same budget — so far it was only compared against `screen`) and `112`.
+
+**The 8 k eval cannot give H15a's 8 k verdict.** New `scripts/analysis/eval_context.py` reports loss
+per position bucket. The rungs train at 2 k with RoPE θ = 10 k; a two-window test of `134` at 8 k
+read **4.53 nats** vs 3.09 at 2 k — neither design extrapolates, so positions ≥ 2048 measure length
+extrapolation (L5: unseen RoPE offsets over per-iteration caches; L5d: an over-long $\mathcal{G}$),
+not the cost of final-vector global attention at a *trained* 8 k. Positions < 2048 are the
+in-distribution control. H15a's 8 k end stays **silent** until something trains at 8 k (context
+8192 at `screen` for the L5/L5d pair, ≈ 4× attention memory — a sizing question for `06`, open).
+
 ### 2026-09-25 (16:30) — paused on the user's request: `139` killed at step 850 and burnt; pick-up = `queue_small_6.sh` (`142` L5-ne128 s1 rerun, `143`/`144` L7b pair)
 
 **State at the pause.** Everything through `138` is written up, committed and pushed (both remotes).

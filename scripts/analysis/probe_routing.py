@@ -13,7 +13,10 @@ against `n_experts` without doing arithmetic.
 This reads a checkpoint and never touches the training path, so it is safe to
 run against a rung while later rungs are still training. Default device is CPU
 for exactly that reason -- a GPU run would contend with the ladder and perturb
-its throughput numbers. `latest.pt` is overwritten every `ckpt_minutes`, so this
+its throughput numbers. Under four-GPU DDP even the CPU is not free: host-staged
+NCCL shares memory bandwidth, and a CPU probe cost `142` 3–12 % per step at 2–8
+threads (`docs/04` 2026-09-30) -- run it in a gap, not beside a DDP run.
+`latest.pt` is overwritten every `ckpt_minutes`, so this
 measures the *converged* routing of a finished run; the trajectory needs the
 trainer's own `route_ent_*` fields, added 2026-09-11 and therefore absent from
 `106` and `107`.
