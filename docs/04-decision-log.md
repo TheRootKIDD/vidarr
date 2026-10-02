@@ -1131,6 +1131,22 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-10-02 (08:30) — `142-l5-ne128-small-s1`: the L5-ne128 pair = 2.9587 nats, +2.60 % vs the L1 pair — **H6 weakened at two seeds**; σ re-pooled over seven pairs to 0.0028
+
+**`142-l5-ne128-small-s1` completed, exit 0** at 08:03: **2.9586 nats**, 42.29 h at 16.5 k tok/s
+(0.02 % unaccounted), zero `n_thermal` of 476 rows, ≤ 67 °C. With `138` (2.9588): **L5-ne128 pair
+2.9587**, seeds 0.00014 apart and ≤ 0.0022 apart along the whole trajectory from step 1000 — a
+genuinely tight pair, not a final-eval coincidence. **Pair against pair, Δ(L5-ne128 − L1) = +0.0748
+nats, +2.60 %** against "matches" = 2σ → **weakens H6**, two seeds each side, 13× the 2σ band and
+6.6× the 4σ line. I29's caveat travels with it: the arm has 68 % of L1's non-embedding parameters,
+so the refuted claim is H6 at matched FLOPs as the ladder builds it; the exactly param-matched shared
+block (≈ 1.45× FLOPs) is the one test left and needs an ADR. Still beats dense by 1.24 %; 128 vs 8
+experts is worth −0.115 nats. **σ re-pooled over seven pairs: 0.0028** (2σ = **0.0057**, 4σ =
+**0.0113**); no recorded verdict flips (L2 vs L1, +0.0012, stays inside). H8's line for the L7b pair
+becomes $T$ + 2σ = 0.0154 + 0.0057 = **0.0211**. Routing probe on `142` deferred to after the queue
+(no CPU probes beside DDP). **`143-l7b-small-s0` started 08:03** (≈ 16 h), then `144`; queue done
+≈ Sat 3 Oct 16:15, post-queue probes ≈ 2.5 h after. Next ladder id **145**, rig id **031**.
+
 ### 2026-09-30 — resumed: `queue_small_6` running (`142` from 13:45); the owed CPU probes cannot share the machine with DDP, so they wait for the queue
 
 **Pick-up.** Machine rebooted; driver 615.71.09 and kernel 7.2.5 as in `029`, `027` UUID map holds,
