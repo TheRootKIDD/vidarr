@@ -1131,6 +1131,42 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-10-03 (00:30) — `143-l7b-small-s0`: L7b at `small`, seed 0 = 3.0943 nats, +0.64 % vs the L5 pair — **provisional *weakens* H8** under ADR-013; H8's threshold had been misapplied; **paused** after this run, `144` not started
+
+**`143-l7b-small-s0` completed, exit 0** at 23:41: **3.0943 nats**, 15.62 h at 45.1 k tok/s (0.06 %
+unaccounted), zero `n_thermal` of 476 rows, ≤ 80 °C. Against the L5 pair (3.0748): **Δ = +0.0196
+nats, +0.64 %**, flat in budget (+0.023 at 1 B tokens, +0.020 at 2.46 B; `137` read +0.019 at
+`screen`). Throughput 8 % below L5 at equal FLOPs, as at `screen`.
+
+**Correction — H8's threshold.** ADR-013 says the "0.5 %" thresholds (H8, H17-elsewhere, H3-FP4)
+"are below the floor and become 'no detectable regression': Δ ≤ 2σ". From `137` on (2026-09-23
+entries, the queue-5/6 notes, this loop's instructions) H8 was scored against $T$ = 0.5 % of
+$L_{ref}$ (0.0154–0.0167) instead. No ADR changed the rule, so ADR-013 stands: **$T$ = 2σ = 0.0057,
+weakens above 4σ = 0.0113** (σ = 0.0028, seven pairs). Under it `143` is **provisional *weakens***
+(1.7× the line); under the misapplied reading it would be silent (0.0014 under 0.0210). Neither
+reading supports H8. `137` re-read under ADR-013 with today's σ: Δ = +0.0191 > 4σ, so its
+"inconclusive" was the 0.5 % reading too; at `screen` with one seed ADR-013 allows a non-silent
+verdict only above 4σ, which it is — the `screen` and `small` readings agree. A seed-1 run would need
+Δ ≤ −0.008 (below L5's better seed; the largest `small` seed gap is 0.006) for the pair to support
+H8, so `144` would most likely formalise *weakens*. **What S3 should carry:** halving fabric bytes
+per FLOP via $L_e$ = 2 costs ≈ 0.6 % loss and ≈ 8 % Ampere GEMM throughput at these widths.
+
+**Paused** on the user's request (2026-10-02 18:40: "pause when the current is done"):
+`queue_small_6.sh` was SIGSTOPped so it could not start `144`; `/mnt/nvme/pause_after_143.sh` logged
+`143`'s END and a PAUSED line at 23:41:05 and killed the queue script. GPUs idle (13–25 MiB), no
+queue or trainer processes. **`144-l7b-small-s1` was never started — the id is free.** The post-queue
+waiter (`post_queue6/run.sh`, waiting for `QUEUE DONE`) was stopped, so it will not fire by itself.
+
+**Pick-up, in order:** (1) `nvidia-smi` works, `027` UUID map holds (index 0 = `GPU-4673cc7d`);
+after a reboot with a new driver, env capture + soak (rig ids 031/032); (2) decide whether `144`
+is still worth ≈ 16 h — under ADR-013 it can only formalise *weakens* barring an outlier seed; if
+yes, a one-run queue (`run 144-l7b-small-s1 L7b 4 2.5e9 1`) modelled on `queue_small_6.sh`;
+(3) **then, with the GPUs idle**, launch `/mnt/nvme/post_queue6/run.sh` by hand (it waits for
+`QUEUE DONE` in `queue_small_6.log` — append that line or drop the wait): 8 k-context eval of
+`132`–`135` and routing probes on `132`–`135` and `112`; then `probe_routing` on `142` (H6's
+second-seed partition check against `138`). No CPU probes beside a DDP run. Next ladder id **145**
+(`144` stays reserved for L7b seed 1), rig id **031**.
+
 ### 2026-10-02 (08:30) — `142-l5-ne128-small-s1`: the L5-ne128 pair = 2.9587 nats, +2.60 % vs the L1 pair — **H6 weakened at two seeds**; σ re-pooled over seven pairs to 0.0028
 
 **`142-l5-ne128-small-s1` completed, exit 0** at 08:03: **2.9586 nats**, 42.29 h at 16.5 k tok/s
