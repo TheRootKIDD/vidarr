@@ -156,6 +156,35 @@ I30. In total that is roughly 1.5–3 weeks of GPU time, against which `sim/` en
 parallel because it needs no GPU until S0. Bears on H6, H13, H15a, H7; touches `03 §2`, `03 §5`, I20,
 I24, I26, I28, I29, I30.
 
+### ADR-032 — L5b and L5c as built: per-iteration attention by low-rank adapter or by full copies
+2026-10-10 · accepted (design for two ADR-031 leftovers; spec in `01 §4.2`)
+Context: `03 §2`'s L5 row lists L5b ("per-iteration LoRA on attention") and L5c ("unshared
+per-iteration attention with a shared expert pool"), which answer `00 §P6` caveat 2: sharing
+attention across iterations stops the block from simulating per-layer attention. `01 §4.2` gave the
+adapter's form ($W + A_j B_j$, rank $r_a \ll d$) but not its rank, scope or initialisation, and L5c
+had no spec text. ADR-011 already says halted tokens' K/V must be recomputed per iteration once
+attention weights vary by iteration. Decision:
+1. **L5b**: adapters on $W_q, W_k, W_v, W_o$ only (attention is what caveat 2 is about; experts are
+   already per-iteration in effect through the depth-conditioned router), **rank $r_a$ = 16**,
+   $B_j$ = 0 at init, so the run starts as L5. Rank 16 adds ≈ 0.66 M parameters (+0.8 %) and
+   ≈ +0.65 % training FLOPs. That is the "cheap fix" scale. A rank sweep is not scheduled; it waits
+   until L5b or L5c shows that per-iteration attention matters at all.
+2. **L5c**: $r_{max}$ full attention modules, everything else shared; same FLOPs as L5, ≈ +11 M
+   parameters (+14 %). This is the upper bound on what L5b can recover.
+3. **One feature each.** Each branches from L5, with $d_{ff}$ pinned at 896, fixed $r$ = 8, the per-iteration
+   global range, at `screen`, seed 0. Comparator: `110`, under ADR-013 at one seed. The two are never
+   combined, and neither runs on $\mathcal{G}$ (L5d) until an ADR says which iteration's weights make a
+   $\mathcal{G}$ entry; `validate()` refuses those combinations rather than guessing.
+4. **Halted tokens** (ACT rungs only; L5b/L5c train at fixed $r$): when attention weights vary by
+   iteration, the K/V of a halted token is recomputed each iteration from its held state, per
+   ADR-011, and the freeze-once path is skipped.
+Reading of the outcome: if neither beats L5 by more than 4σ, sharing attention costs nothing
+measurable here, and caveat 2 is moot at this scale. If L5c wins and L5b does not, the gap needs
+more than a rank-16 delta. If both win, L5b is the design, because it costs 0.8 % of the parameters.
+ADR-031's rule sends any winner to a `small` pair. Consequences: `model/` gains `IterLoRA`, the
+`middle.shared_attention` knob and presets `L5b`/`L5c`; unit tests cover start-equals-L5, causal
+masking, and per-iteration K/V for halted tokens. Bears on H6; touches `01 §4.2`, ADR-011, ADR-029.
+
 ## Proposed / pending
 - **ADR-007** — Fixed $r$ schedule for prefill vs learned halting in prefill.
 - **ADR-008** — Local and indexed attention: one softmax, or two gated branches.

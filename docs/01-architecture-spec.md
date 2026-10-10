@@ -88,6 +88,10 @@ $e_j$ is a learned embedding of $j$ (optionally also of $r_{max}$ and remaining 
 $$W \mapsto W + A_j B_j, \qquad \mathrm{rank}\ r_a \ll d .$$
 Per-iteration adapters on attention are what lets the shared block simulate per-layer attention weights (`docs/00 §P6`, caveat 2). Default off; ladder step L5b.
 
+**L5b, as built (ADR-032).** Attention only: the four projections $W_q, W_k, W_v, W_o$ each get their own $A_j B_j$ for $j = 1..r_{max}$, rank $r_a$ = 16 ($A_j \in \mathbb{R}^{r_a \times d_{in}}$ random with scale $1/\sqrt{d_{in}}$, $B_j$ = 0, so L5b starts as L5). At `small` that adds $r_{max} r_a (2 \cdot 2d + 2(d + H_{kv} d_h))$ ≈ 0.66 M parameters and ≈ +0.65 % training FLOPs, less than one 64-wide step of $d_{ff}$ (≈ 14 MFLOP/token). The experts are therefore pinned at L5's width (896) and the extra FLOPs are reported, not traded. The router, norms and experts stay as in L5. Because $W_k, W_v$ now differ by iteration, a halted token's K/V is recomputed at every later iteration from its held state (ADR-011's L5b clause), not frozen.
+
+**L5c — unshared per-iteration attention (ADR-032).** The opposite end of the same axis: $r_{max}$ independent attention modules, iteration $j$ using its own $W_q^{(j)}, W_k^{(j)}, W_v^{(j)}, W_o^{(j)}$, while the depth-conditioned norms, router and the expert pool stay shared. FLOPs per token are identical to L5; parameters grow by $(r_{max} - 1)$ attention blocks (≈ +11 M at `small`). This is the attention-untied, experts-tied split of the tied-expert literature (`05`, Jaggi 2026). Halted tokens' K/V are recomputed per iteration as for L5b. L5b and L5c bracket the question "does the shared block lose by sharing attention?": L5c is the full answer at a parameter cost, L5b the cheap one. Both are defined over the L5 baseline's per-iteration global range only; combining either with $\mathcal{G}$ (L5d) needs a rule for which iteration's weights produce a $\mathcal{G}$ entry and is refused until an ADR gives one.
+
 ### 4.3 Attention (v2 P7, ADR-021)
 Grouped-query attention with rotary positions. Two key ranges, combined either in one softmax or as two gated branches (ADR-008 pending):
 - **Local, per-iteration**: at iteration $j$, token $t$ attends to $\{c_s^{(j)} : t - W < s \le t\}$ — the per-iteration KV of tokens still in flight (the current segment). This is the only place per-iteration KV is used; these caches are transient and are discarded once a token leaves the local range (Q11 asks whether iterations $j' < j$ should also be visible locally; default: same iteration only).
@@ -200,7 +204,8 @@ model:
     r_min: 2
     r_max: 8                       # 16 at `medium`
     depth_embed: 64
-    per_iter_lora_rank: 0          # L5b
+    per_iter_lora_rank: 0          # 16 = L5b (ADR-032)
+    shared_attention: true         # false = L5c, one attention block per iteration (ADR-032)
   streams:
     two_stream: false              # true = L4 (optional, last ladder step)
     p_sees_own_context: true       # false = L4b
