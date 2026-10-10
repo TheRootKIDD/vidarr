@@ -1131,6 +1131,61 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-10-10 (09:45) — post-queue probes done on GPU: 8 k eval of the L5 / L5d pairs (H15a's 8 k end still silent; L5d's cost grows with position inside 2 k); routing — **`142` partitions experts by depth like `138`**, L5 at `small` does not
+
+**How they ran.** `post_queue6/run.sh` never ran (its waiter was stopped at the 2026-10-03 pause;
+only a two-window smoke test of `134` existed). With the ladder paused the GPUs were idle, so
+`/mnt/nvme/post_queue7/run.sh` replaced it. That runner uses the same scripts on `--device cuda`, one lane per card, and
+ran 09:19–09:42 with all ten jobs exiting 0. The 8 k eval covers the **full held-out set** (1401
+windows × 8192 = 11.5 M tokens, not the planned 2 M); routing uses the default 8 × 4 sequences, as
+every earlier `routing.json`. Outputs are new files beside the checkpoints, the old runs' `results.md`
+are left as they were: `eval_ctx8192.json` in `132`–`135`, `routing.json` in `132`–`135`, `112`, `142`.
+
+**8 k-context eval (`eval_context`, rungs trained at 2 k, RoPE θ = 10 k).** Loss per position
+bucket, pair means (seed gaps ≤ 0.007 below 2 k):
+
+| positions | L5 pair (`132`/`133`) | L5d pair (`134`/`135`) | Δ (L5d − L5) |
+|---|---|---|---|
+| 0–512 | 3.1776 | 3.1686 | −0.009 (−0.28 %) |
+| 512–1024 | 3.0466 | 3.0657 | +0.019 (+0.62 %) |
+| 1024–2048 | 3.0406 | 3.0660 | **+0.025 (+0.83 %)** |
+| 2048–4096 | 4.634 | 4.135 | −0.50 (seed gap L5 0.22) |
+| 4096–8192 | 5.815 | 5.307 | −0.51 (seed gap L5 0.22) |
+| all 8 k | 4.835 | 4.460 | |
+
+(1) **Beyond 2048 both designs fail to extrapolate** (> 4 nats; the two-window test's 4.53 holds
+up on the full set). L5d degrades less, but that difference lies in an untrained regime where L5's seeds
+differ by 0.22 nats, so it says nothing about H15a. **H15a's 8 k end stays silent** until something
+trains at 8 k, as the 2026-09-30 entry said. (2) **Inside the trained 2 k, the L5d tax grows with
+position.** It is slightly negative where L5d's 512-token local window still sees the whole prefix,
+then +0.62 % and +0.83 % at 1–2 k. The +0.48 % averaged over the 2 k context (the H15a verdict of
+`134`/`135`) is therefore a mean over positions, and the tax at the far end of the window is
+≈ 1.7× that. This is still under H15a's 2 % at 2 k. A per-doubling increase of ≈ 0.2 points would put
+4–8 k near 1.2 %, but that is extrapolation, recorded as an expectation for the 8 k-trained run and
+not as a result.
+
+**Routing probes (`probe_routing`; metrics as in `138`'s write-up).**
+
+| run | $N_e$ | mean corr. across iterations | $j$=0 vs last | experts > 3× across $j$ (> 10×) | dead at ≥ 1 $j$ |
+|---|---|---|---|---|---|
+| `138` L5-ne128 `small` s0 | 128 | 0.35 | 0.23 | 77 (29) | 14 |
+| **`142` L5-ne128 `small` s1** | 128 | **0.32** | 0.20 | 74 (24) | 11 |
+| `112` L5-ne128 `screen` | 128 | 0.34 | 0.31 | 80 (16) | 11 |
+| `132` / `133` L5 `small` | 8 | 0.75 / 0.76 | 0.46 / 0.38 | 0 / 0 | 0 / 0 |
+| `110` / `136` L5, L5-noej `screen` | 8 | 0.71 / 0.82 | 0.49 / 0.58 | 0 | 0 |
+| `134` / `135` L5d `small` (32 routers) | 8 | — (all at 8.0 of 8 effective; correlations of near-uniform histograms are noise) | | 0 | 0 |
+
+**Depth partitioning at $N_e$ = 128 replicates on the second seed** (`142` sharpens 128 → 83
+effective experts with depth, against `138`'s 128 → 89), and **it is already present at `screen`**
+(`112`), so it is neither seed- nor budget-specific. At $N_e$ = 8 the router does not partition at
+either budget: the `small` L5 pair reads as `110` did at `screen`. H6's verdict is unchanged
+(weakened). The router uses depth when it has the experts to spend on it, and that still does not
+close the 2.6 % gap to L1.
+
+**State:** paused, GPUs idle, nothing owed. Next is the user's call: the ADR-gated `screen` variants
+(L5e, L6c), an 8 k-trained L5/L5d pair for H15a's 8 k end (a sizing question for `06`), or the
+post-ladder brainstorm (I28). Next ladder id **145**, rig id **031**.
+
 ### 2026-10-10 (morning) — `144-l7b-small-s1`: L7b pair = 3.0926 nats, +0.58 % vs the L5 pair — **H8 weakened at two seeds**; σ over eight pairs 0.0028; paused
 
 **Pick-up 2026-10-09.** The user decided `144` was worth running, and asked to pause after it.
