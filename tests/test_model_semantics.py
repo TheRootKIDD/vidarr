@@ -21,7 +21,10 @@ from model.middle import IterState
 from model.model import BigMoE
 from model.moe import MoE
 
-STEPS = ["L0", "L1", "L2", "L3", "L5", "L5-ne1", "L5-noej", "L5d", "L6", "L7-g4", "L7b", "L4"]
+STEPS = [
+    "L0", "L1", "L2", "L3", "L5", "L5-ne1", "L5-noej", "L5b", "L5c", "L5d", "L6", "L7-g4", "L7b",
+    "L4",
+]
 
 
 def tiny(step: str, **kw) -> ModelCfg:
@@ -70,6 +73,7 @@ def test_derived_widths_follow_adr_025_027() -> None:
     assert ladder("L5-ne128").expert_width() == 448
     assert ladder("L5-ne1").expert_width() == 1792
     assert ladder("L7b").expert_width() == 448  # L_e = 2 halves the width at matched FLOPs
+    assert ladder("L5b").expert_width() == ladder("L5c").expert_width() == 896  # pinned, ADR-032
     d = ladder("L7-g4").to_dict()["derived"]
     assert d["sub_expert_width"] == 224 and d["n_sub_experts"] == 32
     assert ladder("L1").expert_width() == 1024  # dense 2048 / k = 2
@@ -110,7 +114,7 @@ def test_masks() -> None:
     assert off.int().tolist() == [[1, 1, 1, 1, 0], [1, 1, 1, 1, 1]]
 
 
-@pytest.mark.parametrize("step", ["L0", "L2", "L5", "L5d"])
+@pytest.mark.parametrize("step", ["L0", "L2", "L5", "L5b", "L5c", "L5d"])
 def test_no_future_leakage(step: str) -> None:
     """Perturbing token t must not change hidden states at positions < t."""
     torch.manual_seed(0)
@@ -333,3 +337,101 @@ def test_two_layer_expert_has_residual_and_norm() -> None:
     assert len(e.ffs) == 2 and len(e.norms) == 1
     x = torch.randn(4, 8)
     assert e(x).shape == (4, 8)
+
+
+# ---- per-iteration attention: L5b / L5c (ADR-032) -----------------------------------------
+def test_l5b_starts_as_l5_and_adds_the_stated_parameters() -> None:
+    """B_j = 0 at init: L5b with L5's weights computes exactly L5."""
+    torch.manual_seed(0)
+    cfg_b = tiny("L5b")
+    m_b = BigMoE(cfg_b).eval()
+    m_5 = BigMoE(tiny("L5")).eval()
+    missing, unexpected = m_5.load_state_dict(m_b.state_dict(), strict=False)
+    assert not missing and unexpected and all(".lora." in k for k in unexpected)
+    toks = torch.randint(0, cfg_b.vocab, (2, cfg_b.context))
+    with torch.no_grad():
+        hb, _ = m_b.forward_hidden(toks, r=cfg_b.middle.r_max)
+        h5, _ = m_5.forward_hidden(toks, r=cfg_b.middle.r_max)
+    assert torch.allclose(hb, h5, atol=1e-6)
+    a = cfg_b.attention
+    q_o = 2 * (cfg_b.d + a.heads * a.head_dim)
+    k_v = 2 * (cfg_b.d + a.kv_heads * a.head_dim)
+    expected = cfg_b.middle.r_max * cfg_b.middle.per_iter_lora_rank * (q_o + k_v)
+    assert sum(p.numel() for k, p in m_b.named_parameters() if ".lora." in k) == expected
+
+
+def test_l5b_adapter_of_iteration_j_acts_only_from_iteration_j() -> None:
+    torch.manual_seed(0)
+    cfg = tiny("L5b")
+    m = BigMoE(cfg).eval()
+    toks = torch.randint(0, cfg.vocab, (1, cfg.context))
+    with torch.no_grad():
+        h1, _ = m.forward_hidden(toks, r=1)
+        h2, _ = m.forward_hidden(toks, r=2)
+        m.middle.attn.lora["q"].b[1].normal_()  # iteration 2's adapter only
+        h1b, _ = m.forward_hidden(toks, r=1)
+        h2b, _ = m.forward_hidden(toks, r=2)
+    assert torch.allclose(h1, h1b)
+    assert not torch.allclose(h2, h2b)
+
+
+def test_l5c_has_one_attention_per_iteration_and_shares_the_rest() -> None:
+    torch.manual_seed(0)
+    cfg = tiny("L5c")
+    m = BigMoE(cfg).eval()
+    m_5 = BigMoE(tiny("L5"))
+    per_attn = sum(p.numel() for p in m.middle.attn.parameters())
+    assert m.n_params()["total"] - m_5.n_params()["total"] == (cfg.middle.r_max - 1) * per_attn
+    assert {id(m.middle.attention_at(j)) for j in range(1, cfg.middle.r_max + 1)} == {
+        id(x) for x in [m.middle.attn, *m.middle.attn_rest]
+    }
+    toks = torch.randint(0, cfg.vocab, (1, cfg.context))
+    with torch.no_grad():
+        h1, _ = m.forward_hidden(toks, r=1)
+        h2, _ = m.forward_hidden(toks, r=2)
+        m.middle.attn_rest[0].wq.weight.mul_(2.0)  # iteration 2's attention only
+        h1b, _ = m.forward_hidden(toks, r=1)
+        h2b, _ = m.forward_hidden(toks, r=2)
+    assert torch.allclose(h1, h1b)
+    assert not torch.allclose(h2, h2b)
+
+
+@pytest.mark.parametrize("step", ["L5b", "L5c"])
+def test_per_iteration_attention_recomputes_halted_kv(step: str) -> None:
+    """ADR-011: with attention weights varying by iteration nothing is frozen; the halted
+    token's state is held and its K/V comes from that state at every iteration."""
+    torch.manual_seed(0)
+    cfg = tiny(step, halting=HaltingCfg(mode="act", ponder_cost=0.0, epsilon=0.01))
+    mid = BigMoE(cfg).eval().middle
+    b, t = 1, 8
+    st = IterState(
+        c=torch.randn(b, t, cfg.d),
+        p=None,
+        active=torch.ones(b, t, dtype=torch.bool),
+        r=torch.zeros(b, t, dtype=torch.long),
+        cum_halt=torch.zeros(b, t),
+        remainder=torch.zeros(b, t),
+        frozen_kv=None,
+        frozen=torch.zeros(b, t, dtype=torch.bool),
+        loads=[],
+    )
+    with torch.no_grad():
+        mid.halt.weight.zero_()
+        mid.halt.bias.fill_(-20.0)
+    st.cum_halt[0, ::2] = 1.0  # even tokens halt at r_min = 2
+    with torch.no_grad():
+        for j in range(1, 4):
+            prev = st.c.clone()
+            st, _ = mid.iteration(st, j, torch.arange(t), None, force_active=False)
+    assert (st.r[0, ::2] == 2).all() and (st.r[0, 1::2] == 3).all()
+    assert torch.allclose(st.c[0, ::2], prev[0, ::2])  # held state (ADR-010)
+    assert st.frozen_kv is None and not st.frozen.any()
+
+
+def test_per_iteration_attention_refuses_undefined_combinations() -> None:
+    l5b = ladder("L5b")
+    with pytest.raises(NotImplementedError):
+        g = dc.replace(l5b.attention, global_source="final_vector")
+        dc.replace(l5b, attention=g).validate()
+    with pytest.raises(ValueError):
+        dc.replace(l5b, middle=dc.replace(l5b.middle, shared_attention=False)).validate()

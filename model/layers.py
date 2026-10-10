@@ -69,6 +69,22 @@ def local_window_mask(t: int, window: int, device: torch.device) -> Tensor:
     return (k <= q) & (k > q - window)
 
 
+class IterLoRA(nn.Module):
+    """Per-iteration low-rank delta for one projection (`docs/01 §4.2`, L5b, ADR-032).
+
+    Iteration j (1-based) adds x A_j^T B_j^T. B starts at zero, so the adapted
+    projection starts equal to the shared one.
+    """
+
+    def __init__(self, slots: int, d_in: int, d_out: int, rank: int) -> None:
+        super().__init__()
+        self.a = nn.Parameter(torch.randn(slots, rank, d_in) / d_in**0.5)
+        self.b = nn.Parameter(torch.zeros(slots, d_out, rank))
+
+    def forward(self, x: Tensor, j: int) -> Tensor:
+        return (x @ self.a[j - 1].T) @ self.b[j - 1].T
+
+
 class Attention(nn.Module):
     """GQA with rotary positions over an explicit key set.
 
@@ -77,21 +93,49 @@ class Attention(nn.Module):
     (`docs/01 §3`, ADR-002) and the global final-vector cache (`§4.3`) plain to
     express: pass `kv_in` = the context stream only, or prepend precomputed
     memory K/V through `mem_kv`.
+
+    With `lora_rank` > 0 every projection carries `lora_slots` per-iteration
+    adapters (L5b); callers pass the iteration `j` to use them, or None for the
+    shared weights alone.
     """
 
-    def __init__(self, d: int, heads: int, kv_heads: int, head_dim: int, theta: float) -> None:
+    def __init__(
+        self,
+        d: int,
+        heads: int,
+        kv_heads: int,
+        head_dim: int,
+        theta: float,
+        lora_rank: int = 0,
+        lora_slots: int = 0,
+    ) -> None:
         super().__init__()
         self.heads, self.kv_heads, self.head_dim, self.theta = heads, kv_heads, head_dim, theta
         self.wq = nn.Linear(d, heads * head_dim, bias=False)
         self.wk = nn.Linear(d, kv_heads * head_dim, bias=False)
         self.wv = nn.Linear(d, kv_heads * head_dim, bias=False)
         self.wo = nn.Linear(heads * head_dim, d, bias=False)
+        self.lora: nn.ModuleDict | None = None
+        if lora_rank:
+            projections = {"q": self.wq, "k": self.wk, "v": self.wv, "o": self.wo}
+            self.lora = nn.ModuleDict(
+                {
+                    name: IterLoRA(lora_slots, lin.in_features, lin.out_features, lora_rank)
+                    for name, lin in projections.items()
+                }
+            )
 
-    def kv(self, x: Tensor, positions: Tensor) -> tuple[Tensor, Tensor]:
+    def _proj(self, name: str, lin: nn.Linear, x: Tensor, j: int | None) -> Tensor:
+        y = lin(x)
+        if self.lora is not None and j is not None:
+            y = y + self.lora[name](x, j)
+        return y
+
+    def kv(self, x: Tensor, positions: Tensor, j: int | None = None) -> tuple[Tensor, Tensor]:
         """K/V for rows `x` [B, T, d] at absolute `positions` [T] -> each [B, Hkv, T, dh]."""
         b, t, _ = x.shape
-        k = self.wk(x).view(b, t, self.kv_heads, self.head_dim).transpose(1, 2)
-        v = self.wv(x).view(b, t, self.kv_heads, self.head_dim).transpose(1, 2)
+        k = self._proj("k", self.wk, x, j).view(b, t, self.kv_heads, self.head_dim).transpose(1, 2)
+        v = self._proj("v", self.wv, x, j).view(b, t, self.kv_heads, self.head_dim).transpose(1, 2)
         cos, sin = rotary_cos_sin(positions, self.head_dim, self.theta)
         return apply_rotary(k, cos, sin), v
 
@@ -102,10 +146,11 @@ class Attention(nn.Module):
         kv: tuple[Tensor, Tensor],
         mask: Tensor | None,
         is_causal: bool = False,
+        j: int | None = None,
     ) -> Tensor:
         """q_in [B, Tq, d]; kv = (K, V) [B, Hkv, Tk, dh]; mask [Tq, Tk] bool or None."""
         b, tq, _ = q_in.shape
-        q = self.wq(q_in).view(b, tq, self.heads, self.head_dim).transpose(1, 2)
+        q = self._proj("q", self.wq, q_in, j).view(b, tq, self.heads, self.head_dim).transpose(1, 2)
         cos, sin = rotary_cos_sin(positions, self.head_dim, self.theta)
         q = apply_rotary(q, cos, sin)
         k, v = kv
@@ -115,7 +160,7 @@ class Attention(nn.Module):
             out = F.scaled_dot_product_attention(q, k, v, is_causal=True)
         else:
             out = F.scaled_dot_product_attention(q, k, v, attn_mask=mask)
-        return self.wo(out.transpose(1, 2).reshape(b, tq, -1))
+        return self._proj("o", self.wo, out.transpose(1, 2).reshape(b, tq, -1), j)
 
 
 class SwiGLU(nn.Module):

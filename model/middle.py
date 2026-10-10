@@ -8,6 +8,8 @@ Depth conditioning through e_j (ADR-003); local range W over the current
 segment's per-iteration caches and, with `global_source = final_vector`, the
 global cache G of completed tokens' final vectors (ADR-021); ragged depth with
 last-state output and K/V stored once for halted tokens (ADR-010/011).
+Attention is shared across iterations by default; L5b adds per-iteration
+low-rank adapters and L5c gives each iteration its own attention (ADR-032).
 """
 
 from __future__ import annotations
@@ -44,13 +46,29 @@ class MiddleBlock(nn.Module):
         self.cfg = cfg
         self.depth = nn.Embedding(m.r_max + 1, m.depth_embed)  # e_j, j = 1..r_max (0 unused)
         self.norm = DepthNorm(cfg.d, m.depth_embed)
-        self.attn = Attention(cfg.d, a.heads, a.kv_heads, a.head_dim, a.rope_theta)
+        self.attn = Attention(
+            cfg.d, a.heads, a.kv_heads, a.head_dim, a.rope_theta,
+            lora_rank=m.per_iter_lora_rank, lora_slots=m.r_max,
+        )
+        # L5c: iterations 2..r_max get their own attention; iteration 1 uses self.attn
+        self.attn_rest = (
+            None
+            if m.shared_attention
+            else nn.ModuleList(
+                Attention(cfg.d, a.heads, a.kv_heads, a.head_dim, a.rope_theta)
+                for _ in range(m.r_max - 1)
+            )
+        )
         self.moe = MoE(cfg, depth_dim=m.depth_embed)
         # norm applied to final vectors before the G K/V; only exists when G is used (L5d+)
         self.g_norm = nn.RMSNorm(cfg.d) if a.global_source == "final_vector" else None
         self.halt = nn.Linear(cfg.d + m.depth_embed, 1)
         nn.init.zeros_(self.halt.weight)
         nn.init.constant_(self.halt.bias, -2.0)  # start with a low halting probability
+
+    def attention_at(self, j: int) -> Attention:
+        """The attention used at iteration j (1-based): shared, or L5c's own copy."""
+        return self.attn if self.attn_rest is None or j == 1 else self.attn_rest[j - 2]
 
     # ---- the global cache -----------------------------------------------------
     def global_entry(self, c_final: Tensor, positions: Tensor) -> tuple[Tensor, Tensor]:
@@ -106,9 +124,14 @@ class MiddleBlock(nn.Module):
         b, t, d = st.c.shape
         e = self.depth(torch.tensor(j, device=st.c.device))
         uc = self.norm(st.c, e)
-        # per-iteration local K/V from the context stream; halted tokens keep their frozen entry
-        fresh = self.attn.kv(uc, positions)
-        if st.frozen_kv is not None:
+        attn = self.attention_at(j)
+        # per-iteration local K/V from the context stream; halted tokens keep their frozen entry,
+        # unless attention weights vary by iteration (L5b/L5c): then K/V is recomputed from the
+        # held state at every iteration and nothing is frozen (ADR-011)
+        fresh = attn.kv(uc, positions, j)
+        if cfg.middle.per_iteration_attention:
+            k, v = fresh
+        elif st.frozen_kv is not None:
             fm = st.frozen[:, None, :, None]
             k = torch.where(fm, st.frozen_kv[0], fresh[0])
             v = torch.where(fm, st.frozen_kv[1], fresh[1])
@@ -116,7 +139,7 @@ class MiddleBlock(nn.Module):
             k, v = fresh
         # tokens that halted before this iteration and are not yet frozen: freeze now (ADR-011)
         newly = ~st.active & ~st.frozen
-        if newly.any():
+        if newly.any() and not cfg.middle.per_iteration_attention:
             base_k, base_v = (k, v) if st.frozen_kv is None else st.frozen_kv
             nm = newly[:, None, :, None]
             frozen_kv = (torch.where(nm, k, base_k), torch.where(nm, v, base_v))
@@ -147,7 +170,7 @@ class MiddleBlock(nn.Module):
                 if mem_kv is None:
                     loc[0, 0] = True
             fast = plain_causal and (i == 0 or cfg.streams.p_sees_own_context)
-            a = self.attn(u, positions, (k, v), None if fast else m_i, is_causal=fast)
+            a = attn(u, positions, (k, v), None if fast else m_i, is_causal=fast, j=j)
             y, lm = self.moe(u, e)
             aux = aux + lm
             x_new = x + a + y

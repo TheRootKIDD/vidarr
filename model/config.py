@@ -70,7 +70,13 @@ class MiddleCfg:
     r_min: int = 2
     r_max: int = 8
     depth_embed: int = 64
-    per_iter_lora_rank: int = 0  # L5b; not implemented in Phase 1
+    per_iter_lora_rank: int = 0  # 16 = L5b: per-iteration adapters on attention (ADR-032)
+    shared_attention: bool = True  # False = L5c: one attention block per iteration (ADR-032)
+
+    @property
+    def per_iteration_attention(self) -> bool:
+        """Attention weights differ by iteration (L5b, L5c): halted K/V is recomputed (ADR-011)."""
+        return self.per_iter_lora_rank > 0 or not self.shared_attention
 
 
 @dataclass(frozen=True)
@@ -199,8 +205,13 @@ class ModelCfg:
             raise ValueError("heads must be a multiple of kv_heads")
         if a.index_enabled or self.memory_enabled or self.tenant_lora_rank:
             raise NotImplementedError("index (L9), memory (L8) and tenants (L11) are Phase 3")
-        if self.middle.per_iter_lora_rank:
-            raise NotImplementedError("per-iteration attention LoRA (L5b) is not implemented yet")
+        if self.middle.per_iter_lora_rank and not self.middle.shared_attention:
+            raise ValueError("L5b adapters on L5c's unshared attention: two features (ADR-032)")
+        if self.middle.per_iteration_attention and a.global_source == "final_vector":
+            raise NotImplementedError(
+                "L5b/L5c over the final-vector cache: no rule yet for which iteration's "
+                "weights make a G entry (ADR-032)"
+            )
         if a.prev_segment_local or a.kv_share_every != 1:
             raise NotImplementedError("ADR-022 crossing / L6b KV sharing are not implemented yet")
         if r.k > r.n_experts * e.granularity:
@@ -275,6 +286,9 @@ def ladder(step: str, **overrides: Any) -> ModelCfg:
         "L5-ne1": replace(rec, router=RouterCfg(k=1, n_experts=1)),
         "L5-ne128": replace(rec, router=RouterCfg(k=4, n_experts=128)),
         "L5-noej": replace(rec, router=RouterCfg(k=2, n_experts=8, use_depth_embed=False)),
+        # ADR-032: d_ff pinned at L5's 896 so per-iteration attention is the only change
+        "L5b": replace(rec, middle=MiddleCfg(per_iter_lora_rank=16), experts=ExpertsCfg(d_ff=896)),
+        "L5c": replace(rec, middle=MiddleCfg(shared_attention=False), experts=ExpertsCfg(d_ff=896)),
         "L5d": replace(rec, attention=AttentionCfg(global_source="final_vector")),
         "L6": replace(
             rec,
