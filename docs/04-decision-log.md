@@ -1202,6 +1202,26 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-10-10 (10:15) — L5b and L5c built (ADR-032); `146` L5c and `147` L5b queued behind `145`
+
+On the user's request ("draft L5c and L5b while 145 trains"): ADR-032 fixes the two designs, `01 §4.2`
+carries the spec, and `model/` gains `IterLoRA`, `middle.shared_attention`, and the presets `L5b`
+(rank-16 adapters on q/k/v/o, +0.66 M params, ≈ +0.65 % FLOPs) and `L5c` (one attention block per
+iteration, +11 M params, same FLOPs). Both have $d_{ff}$ pinned at 896. Seven new unit tests cover
+L5b starting as L5, per-iteration isolation, parameter counts, causality, recomputed halted K/V,
+and refusing the undefined combinations. The full suite passed and `ruff check` is clean (commits
+`9407098`, `d4ea81c`).
+
+**Rule slip, recorded for `145`'s write-up:** the full pytest suite ran on the CPU once at ≈ 10:03
+while `145`'s DDP run was live, against the "no CPU work beside a DDP run" rule. One logged step read
+9.45 s against 9.34 s (≈ +1 %); loss is unaffected (`06 §7`). Later test runs go into the queue
+script, after the GPUs are free.
+
+**Armed:** `/mnt/nvme/queue_screen_6.sh` (pid at arming 14419) waits for `QUEUE DONE` in
+`queue_screen_5.log`, runs the unit suite (and aborts if it fails), then runs **`146-l5c-screen`** and
+**`147-l5b-screen`** (seed 0, 1 B tokens, micro-batch 4), ≈ 6–7 h each. Comparator `110`, ADR-013 at
+one seed. Next ladder id **148**.
+
 ### 2026-10-10 (09:55) — ADR-031 amends the plan; Phase 1 leftovers start with `145-l5-ne1-screen`
 
 On the user's instruction ("write everything not in the plan into the plan, then start with what is left
