@@ -1131,6 +1131,33 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-10-10 (morning) — `144-l7b-small-s1`: L7b pair = 3.0926 nats, +0.58 % vs the L5 pair — **H8 weakened at two seeds**; σ over eight pairs 0.0028; paused
+
+**Pick-up 2026-10-09.** The user decided `144` was worth running, and asked to pause after it.
+`/mnt/nvme/queue_small_7.sh` was a one-run queue, modelled on `queue_small_6.sh` with the same
+nvidia-smi and busy-GPU guards. It started `144` at 16:18 and wrote `QUEUE DONE — PAUSED` at
+07:54 on 2026-10-10. The `post_queue6` probes were deliberately not chained behind it. (The
+session that launched it disconnected before writing this entry, so it is written here
+after the fact, from the queue script, its log and the run's own record.)
+
+**`144-l7b-small-s1` completed, exit 0** at 07:54: **3.0909 nats**, 15.60 h at 45.1 k tok/s (0.06 %
+unaccounted), zero `n_thermal` of 476 rows, ≤ 77 °C. With `143` (3.0943): **L7b pair 3.0926**, seed
+gap 0.0034. **Δ(L7b − L5 pair) = +0.0178 nats, +0.58 %**: 1.6× ADR-013's weakening line, so
+**H8's quality clause is weakened at two seeds**. All four seed-wise differences are positive (+0.013
+to +0.023). The gap narrows from +0.023 at 0.5 B tokens to +0.018 at 2.46 B and is flat over the
+last 0.5 B. The misapplied 0.5 %-of-$L$ reading would be silent, so no reading supports H8,
+and the note's own "≤ 0.5 %" is missed at face value. **σ re-pooled over eight pairs = 0.0028**
+(0.00278; 2σ 0.0056, 4σ 0.0111). No earlier verdict moves. **What S3 should carry:** $L_e$ = 2
+halves fabric bytes per FLOP for ≈ 0.6 % loss and ≈ 8 % Ampere GEMM throughput at these widths.
+
+**State:** paused, nothing running, GPUs idle. **Pick-up:** (1) with the GPUs idle, launch
+`/mnt/nvme/post_queue6/run.sh` by hand (drop its wait on `queue_small_6.log`, or append `QUEUE DONE`
+there): 8 k-context eval of `132`–`135` and routing probes on `132`–`135` and `112`, ≈ 4.5 h CPU;
+then `probe_routing` on `142` (H6's second-seed partition check against `138`). (2) The `small` pair
+programme and every H with a ready preset now have a verdict. Next is either the ADR-gated `screen`
+variants (L5e, L6c) or the post-ladder findings brainstorm (I28), and that is the user's call. Next
+ladder id **145**, rig id **031**.
+
 ### 2026-10-03 (00:30) — `143-l7b-small-s0`: L7b at `small`, seed 0 = 3.0943 nats, +0.64 % vs the L5 pair — **provisional *weakens* H8** under ADR-013; H8's threshold had been misapplied; **paused** after this run, `144` not started
 
 **`143-l7b-small-s0` completed, exit 0** at 23:41: **3.0943 nats**, 15.62 h at 45.1 k tok/s (0.06 %
