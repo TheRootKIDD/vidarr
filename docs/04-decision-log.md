@@ -1173,6 +1173,20 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-10-10 (09:55) — ADR-031 amends the plan; Phase 1 leftovers start with `145-l5-ne1-screen`
+
+On the user's instruction ("write everything not in the plan into the plan, then start with what is left
+over from Phase 1"), ADR-031 schedules every raised-but-unscheduled item and makes the Phase 1 exit
+conditional on its leftovers, and I30 records the 8 k-training question. **Leftover order:** L5-ne1
+(preset exists), then L5c and L5b (code), L5e (code, `01` text), L5-pm (design ADR first), L3b
+(design ADR first), and L5d-8k (I30 sizing first). `sim/` (Phase 2) may be engineered meanwhile.
+
+**`145-l5-ne1-screen` launched 09:55** as `/mnt/nvme/queue_screen_5.sh`, a one-run queue on the
+`queue_small_7` pattern. It is L5 with $N_e$ = 1, $k$ = 1, i.e. a dense recurrent block at matched
+FLOPs, at `screen` (1 B tokens, seed 0, micro-batch 4). It runs at 56.8 k tok/s with 3.63 GiB per GPU,
+so ≈ 4.9 h. Comparators: `110` (L5, $N_e$ = 8), `100` (L0) and `106` (L1); verdicts under ADR-013 at
+one seed. Next ladder id **146**, rig id **031**.
+
 ### 2026-10-10 (09:45) — post-queue probes done on GPU: 8 k eval of the L5 / L5d pairs (H15a's 8 k end still silent; L5d's cost grows with position inside 2 k); routing — **`142` partitions experts by depth like `138`**, L5 at `small` does not
 
 **How they ran.** `post_queue6/run.sh` never ran (its waiter was stopped at the 2026-10-03 pause;
