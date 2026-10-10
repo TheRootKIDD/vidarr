@@ -115,6 +115,47 @@ Decision: **L3 is added to the `small` list** and runs at 2.5 B tokens, 2 seeds,
 Consequences: ≈ 17 h of extra `small` time at the measured L3 rate (`018`: 628 ms DDP micro-step, ≈ 26.1 k tok/s without accumulation; ≈ 43.3 k with, measured in `108`), against a `small` programme already budgeted at 16–18 days — under 5 %. `03 §2`'s `small` list is edited. **The identity of L3b remains unresolved and this ADR does not settle it**: ADR-012 and `01 §7` name it as *sequential DeepSeek-style modules*, while I20 names it as *a forward MTP curriculum*. Those are different experiments with different costs — sequential modules need $m-1$ dependent passes at decode, which cuts against the note's reason for wanting MTP at all, whereas a curriculum keeps the single-pass draft and changes only the training schedule. Whichever is built needs its own ADR, and the `small` result should inform that choice rather than the other way round. If L3 at 2.5 B closes most of the gap, the budget was the cause and L3b may be unnecessary.
 Bears on H13, L3, L3b; touches I20.
 
+### ADR-031 — Everything raised but unscheduled goes into the plan; Phase 1 closes only when its leftovers are run or dropped
+2026-10-10 · accepted (the user's instruction: "write everything not in the plan into the plan, then start with what is left over from Phase 1")
+Context: when the `small` pair programme finished (`144`), a sweep of `03` against this log found
+work in two states. (i) **In the plan but never run:** `03 §2`'s L5 row asks for $N_e$ ∈ {1, 8, 128},
+L5b, L5c and L5e ("decide after L5", `08 §4`), and the resolution plan (§Open questions) asks for
+the top two of the L5 family at `small`. Only $N_e$ = 8 and 128 ran. `L5-ne1` has a preset, L5b raises
+`NotImplementedError`, and neither L5c nor L5e exists in code. (ii) **Raised but never written into `03`:** L3b,
+I20's forward-MTP curriculum, which is H13's recovery variant and the reading the session log settled
+on (2026-09-11/-21); I29's parameter-matched H6 arm; an 8 k-*trained* L5/L5d pair for H15a's 8 k end
+(the 2026-09-30 and 2026-10-10 evals showed the 2 k checkpoints cannot extrapolate, I30); the optional
+Q11 ablation; E-Q12 (ADR-024's prefill modes); and the findings brainstorm (I28). `03 §5` also said
+L5e and L6c were Phase 5 spawns, while `08` and the L6 row place them earlier, which is a contradiction.
+Decision: **`03` is amended so that every item has a phase and a place in the ladder.**
+1. **Phase 1 leftovers** (each must be run or dropped by its own ADR before Phase 1 exits), in
+   order of readiness: **L5-ne1** `screen` (preset exists); **L5c** and **L5b** `screen` (H6's
+   attention-sharing question, Q2); **L5e** `screen`, H/L split at $K$ = 8, $d_{ff}$(H) = 2048, +7 %
+   FLOPs, which `08 §4`'s cost table shows fits the 0.6 GFLOP budget and which is reported as such
+   rather than as matched; **L5-pm**, the parameter-matched H6 arm (I29), at `small` × 2 seeds after a
+   `screen` run; **L3b** forward-MTP curriculum, `screen` then a `small` pair, since H13 is decided at
+   `small` (ADR-030); **L5d-8k**, an L5/L5d pair trained at context 8192, one seed each at `screen`,
+   after I30's sizing note in `06`; and the **`small` confirmation** of any L5-family arm (L5-ne1,
+   L5b, L5c, L5e) that beats L5 at `screen` by more than 4σ. That last item is the resolution plan's
+   "top two at `small`" made conditional, so that a silent arm does not spend ≈ 2 days. Each new arm
+   gets its `01` spec text and design ADR before its code, as usual. The **Q11 ablation** stays
+   optional and does not gate the exit.
+2. **L6c** stays in Phase 3 beside L6, as `03 §2` already says, because it needs `sim/`'s scheduler
+   to be scored. **E-Q12** joins Phase 3 with S5, since TTFT is a simulator read; its quality half
+   can run on the L5d checkpoints whenever ADR-024 is accepted. **L3c** (sequential MTP modules,
+   ADR-012's fallback) is built only if L3b fails, and I26 must be answered first.
+3. **The findings brainstorm (I28)** is a milestone after Phase 3 and before Phase 3.5/4. By then the
+   ladder through L9 and S1–S7 are done, which is when the user asked for it, and it comes before
+   `medium` spends 8-day runs.
+4. `03 §5`'s Phase 5 note keeps L5e and L6c as *objective-sensitivity* candidates for 5a: they run
+   earlier, and 5a may revisit them. That removes the contradiction.
+Consequences: Phase 2 starts after the Phase 1 leftovers. At the measured rates the `screen` runs
+take ≈ 6–9 h each (≈ 2.5 days for L5-ne1, L5b, L5c, L5e, L3b and the L5-pm screen); the `small` pairs
+take ≈ 1.5–3.5 days each (L5-pm, L3b, plus conditional confirmations); the L5d-8k pair's cost waits on
+I30. In total that is roughly 1.5–3 weeks of GPU time, against which `sim/` engineering can proceed in
+parallel because it needs no GPU until S0. Bears on H6, H13, H15a, H7; touches `03 §2`, `03 §5`, I20,
+I24, I26, I28, I29, I30.
+
 ## Proposed / pending
 - **ADR-007** — Fixed $r$ schedule for prefill vs learned halting in prefill.
 - **ADR-008** — Local and indexed attention: one softmax, or two gated branches.
@@ -249,7 +290,8 @@ Cost units from `docs/06 §4`: one `screen` run ≈ 8 h (1 B tokens, 1 seed); on
 | I4 | vendor data for `note64` / `gpu_today` | hours–days |
 | I5 | `bench_nccl` on all four cards | ≈ 1 h, run first |
 | I6 | train a 32 k BPE on a 1 B-token subset; decide by convention, no A/B | ≈ 1 h CPU |
-- **I29** *(2026-09-16)* **H6 lacks a parameter-matched arm.** `112` (L5-ne128, 193 M params) sits at +0.018 nats vs L1 (246.6 M), which reads *weakens* under ADR-013 at `screen` now that σ = 0.0018, but the arm is 68 % of L1's parameters and its curve crossed L1's at ≈ 1300 steps. Needed: L5-ne128 at `small` (two seeds; not in `queue_small_1`) or a preset at exactly L1's non-embedding count. Until then H6's `screen` verdict is provisional.
+- **I29** *(2026-09-16)* **H6 lacks a parameter-matched arm.** `112` (L5-ne128, 193 M params) sits at +0.018 nats vs L1 (246.6 M), which reads *weakens* under ADR-013 at `screen` now that σ = 0.0018, but the arm is 68 % of L1's parameters and its curve crossed L1's at ≈ 1300 steps. Needed: L5-ne128 at `small` (two seeds; not in `queue_small_1`) or a preset at exactly L1's non-embedding count. Until then H6's `screen` verdict is provisional. *Update 2026-10-10:* the L5-ne128 `small` pair (`138`/`142`) weakens H6 with this caveat attached; the exactly matched preset is scheduled as **L5-pm** (ADR-031). Its design ADR must choose how the missing ≈ 32 % of parameters is added: more experts at the same $k$ and width keeps FLOPs matched, while wider experts raise FLOPs (≈ 1.45×, per an earlier session note). Only the first option keeps H6's "matched params *and* FLOPs" wording.
+- **I30** *(2026-10-10)* **H15a's 8 k end needs a model trained at 8 k.** Every rung trains at context 2048 (RoPE θ = 10 k). The full-held-out 8 k eval of the L5/L5d pairs (session log 2026-10-10) is > 4 nats beyond position 2048 for both designs, so it measures length extrapolation, not the cost of final-vector global attention at a trained 8 k. H15a's statement covers "2 k–8 k", so its upper end is silent until **L5d-8k** (ADR-031) trains an L5/L5d pair at 8192. To settle before launch, as a sizing note in `06 §3`: (1) per-GPU memory at 8192, since L5's per-iteration global attention is 4× the score memory of 2 k and must stay under the 10 GB cap (micro-batch 1 with accumulation, and checkpointing, are the levers); (2) the token budget, keeping 1 B at `screen` with the same tokens per step, so that the rung differs from `111` in context only; (3) RoPE θ, either kept at 10 k so context is the only change, or raised, which would be a second change and needs its own arm; (4) whether a 2 k-trained comparator is needed beside it. It is not, because `110`/`111` are those runs. Bears on H15a; touches `06 §3`, L5d.
 
 ## Session log
 
