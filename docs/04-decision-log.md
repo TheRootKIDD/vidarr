@@ -185,6 +185,27 @@ ADR-031's rule sends any winner to a `small` pair. Consequences: `model/` gains 
 `middle.shared_attention` knob and presets `L5b`/`L5c`; unit tests cover start-equals-L5, causal
 masking, and per-iteration K/V for halted tokens. Bears on H6; touches `01 §4.2`, ADR-011, ADR-029.
 
+### ADR-033 — I31's control: L5-ne13, L5 at L5c's parameter count and L5's FLOPs, at `screen` before the L5c pair
+2026-10-11 · accepted (the user: "run the I31 control at screen first … before spending the 29 h")
+Context: `146` (L5c) beats `110` by 0.056 nats at equal FLOPs but with +11.0 M parameters, so its
+gain mixes untied attention with capacity (I31). ADR-031 would send L5c straight to a `small` pair
+(≈ 29 h). A `screen` control (≈ 6 h) tells first whether the separation matters.
+Decision:
+1. **L5-ne13** = L5 with $N_e$ = 13 at $k$ = 2, $d_{ff}$ pinned at 896. FLOPs per token equal L5's and
+   L5c's (same $k$, same width), while the five extra experts add 10.3 M parameters: 87.80 M total
+   against L5c's 88.49 M (−0.8 %; $N_e$ = 14 would overshoot by +1.4 M). "More experts at the same
+   $k$" is the only way to add parameters at fixed FLOPs without touching attention. No spec change is
+   needed, since $N_e$ is an existing knob (`01 §4.5`).
+2. `screen`, seed 0, id `148`. Comparators are `110` (L5) and `146` (L5c), under ADR-013 at one seed.
+3. **Reading.** Let Δc = L5-ne13 − L5c. If Δc > 4σ (0.0111), untied attention beats the same
+   parameters spent on experts: run the L5c `small` pair, with an L5-ne13 pair beside it only if
+   H6's verdict needs it. If |Δc| ≤ 2σ, L5c's gain is capacity at this scale: the L5c pair is
+   dropped by this ADR and caveat 2 is moot. If L5-ne13 is better by > 4σ, the same outcome holds
+   more strongly. Anything between goes to the user.
+Consequences: preset `L5-ne13` and a unit test (width, params within 1 % of L5c). The L5c pair's
+ids move to 149/150 if it runs. This also informs I29/L5-pm, whose design ADR weighs the same
+"more experts at the same $k$" construction. Bears on H6; touches ADR-031, ADR-032, I31.
+
 ## Proposed / pending
 - **ADR-007** — Fixed $r$ schedule for prefill vs learned halting in prefill.
 - **ADR-008** — Local and indexed attention: one softmax, or two gated branches.
@@ -321,7 +342,7 @@ Cost units from `docs/06 §4`: one `screen` run ≈ 8 h (1 B tokens, 1 seed); on
 | I6 | train a 32 k BPE on a 1 B-token subset; decide by convention, no A/B | ≈ 1 h CPU |
 - **I29** *(2026-09-16)* **H6 lacks a parameter-matched arm.** `112` (L5-ne128, 193 M params) sits at +0.018 nats vs L1 (246.6 M), which reads *weakens* under ADR-013 at `screen` now that σ = 0.0018, but the arm is 68 % of L1's parameters and its curve crossed L1's at ≈ 1300 steps. Needed: L5-ne128 at `small` (two seeds; not in `queue_small_1`) or a preset at exactly L1's non-embedding count. Until then H6's `screen` verdict is provisional. *Update 2026-10-10:* the L5-ne128 `small` pair (`138`/`142`) weakens H6 with this caveat attached; the exactly matched preset is scheduled as **L5-pm** (ADR-031). Its design ADR must choose how the missing ≈ 32 % of parameters is added: more experts at the same $k$ and width keeps FLOPs matched, while wider experts raise FLOPs (≈ 1.45×, per an earlier session note). Only the first option keeps H6's "matched params *and* FLOPs" wording.
 - **I30** *(2026-10-10)* **H15a's 8 k end needs a model trained at 8 k.** Every rung trains at context 2048 (RoPE θ = 10 k). The full-held-out 8 k eval of the L5/L5d pairs (session log 2026-10-10) is > 4 nats beyond position 2048 for both designs, so it measures length extrapolation, not the cost of final-vector global attention at a trained 8 k. H15a's statement covers "2 k–8 k", so its upper end is silent until **L5d-8k** (ADR-031) trains an L5/L5d pair at 8192. To settle before launch, as a sizing note in `06 §3`: (1) per-GPU memory at 8192, since L5's per-iteration global attention is 4× the score memory of 2 k and must stay under the 10 GB cap (micro-batch 1 with accumulation, and checkpointing, are the levers); (2) the token budget, keeping 1 B at `screen` with the same tokens per step, so that the rung differs from `111` in context only; (3) RoPE θ, either kept at 10 k so context is the only change, or raised, which would be a second change and needs its own arm; (4) whether a 2 k-trained comparator is needed beside it. It is not, because `110`/`111` are those runs. Bears on H15a; touches `06 §3`, L5d.
-- **I31** *(2026-10-11)* **L5c's gain is untied attention plus 11 M parameters, not separated.** `146` (L5c) beats `110` by 0.056 nats at the same FLOPs but with +20.8 % non-embedding parameters (63.9 M vs 52.9 M), and the rank-16 L5b (+0.66 M) recovers none of it. Per added parameter, L5c is ≈ 5× as efficient as L5-ne128's extra experts, which suggests most of the gain is attention, but that is an inference. A parameter-matched control would separate the two: L5 at ≈ 63.9 M non-embedding parameters and the same FLOPs, e.g. $N_e$ ≈ 13 at $k$ = 2, $d_{ff}$ 896. It runs at `screen` (≈ 6 h), and at `small` beside the L5c pair if the `screen` gap stays > 4σ. To decide: whether to schedule it (an ADR; it is a new Phase 1 arm), and whether L5-pm's design (I29) should share the same "more experts at the same $k$" construction. Bears on H6; touches ADR-031, ADR-032.
+- **I31** *(2026-10-11)* **L5c's gain is untied attention plus 11 M parameters, not separated.** `146` (L5c) beats `110` by 0.056 nats at the same FLOPs but with +20.8 % non-embedding parameters (63.9 M vs 52.9 M), and the rank-16 L5b (+0.66 M) recovers none of it. Per added parameter, L5c is ≈ 5× as efficient as L5-ne128's extra experts, which suggests most of the gain is attention, but that is an inference. A parameter-matched control would separate the two: L5 at ≈ 63.9 M non-embedding parameters and the same FLOPs, e.g. $N_e$ ≈ 13 at $k$ = 2, $d_{ff}$ 896. It runs at `screen` (≈ 6 h), and at `small` beside the L5c pair if the `screen` gap stays > 4σ. To decide: whether to schedule it (an ADR; it is a new Phase 1 arm), and whether L5-pm's design (I29) should share the same "more experts at the same $k$" construction. Bears on H6; touches ADR-031, ADR-032. *Update 2026-10-11:* scheduled as **L5-ne13** (`148`, ADR-033), before the L5c pair.
 
 ## Session log
 
