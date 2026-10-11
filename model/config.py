@@ -285,6 +285,10 @@ def ladder(step: str, **overrides: Any) -> ModelCfg:
         "L5": rec,
         "L5-ne1": replace(rec, router=RouterCfg(k=1, n_experts=1)),
         "L5-ne128": replace(rec, router=RouterCfg(k=4, n_experts=128)),
+        # ADR-033: L5c's parameter count at L5's FLOPs (I31's control)
+        "L5-ne13": replace(
+            rec, router=RouterCfg(k=2, n_experts=13), experts=ExpertsCfg(d_ff=896)
+        ),
         "L5-noej": replace(rec, router=RouterCfg(k=2, n_experts=8, use_depth_embed=False)),
         # ADR-032: d_ff pinned at L5's 896 so per-iteration attention is the only change
         "L5b": replace(rec, middle=MiddleCfg(per_iter_lora_rank=16), experts=ExpertsCfg(d_ff=896)),

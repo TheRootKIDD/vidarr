@@ -22,7 +22,8 @@ from model.model import BigMoE
 from model.moe import MoE
 
 STEPS = [
-    "L0", "L1", "L2", "L3", "L5", "L5-ne1", "L5-noej", "L5b", "L5c", "L5d", "L6", "L7-g4", "L7b",
+    "L0", "L1", "L2", "L3", "L5", "L5-ne1", "L5-ne13", "L5-noej", "L5b", "L5c", "L5d", "L6",
+    "L7-g4", "L7b",
     "L4",
 ]
 
@@ -74,6 +75,7 @@ def test_derived_widths_follow_adr_025_027() -> None:
     assert ladder("L5-ne1").expert_width() == 1792
     assert ladder("L7b").expert_width() == 448  # L_e = 2 halves the width at matched FLOPs
     assert ladder("L5b").expert_width() == ladder("L5c").expert_width() == 896  # pinned, ADR-032
+    assert ladder("L5-ne13").expert_width() == 896  # pinned, ADR-033
     d = ladder("L7-g4").to_dict()["derived"]
     assert d["sub_expert_width"] == 224 and d["n_sub_experts"] == 32
     assert ladder("L1").expert_width() == 1024  # dense 2048 / k = 2
@@ -373,6 +375,15 @@ def test_l5b_adapter_of_iteration_j_acts_only_from_iteration_j() -> None:
         h2b, _ = m.forward_hidden(toks, r=2)
     assert torch.allclose(h1, h1b)
     assert not torch.allclose(h2, h2b)
+
+
+def test_l5_ne13_matches_l5c_params_at_l5_flops() -> None:
+    """ADR-033: same k and width as L5 (so the same FLOPs), parameters within 1 % of L5c."""
+    ne13, l5c = ladder("L5-ne13"), ladder("L5c")
+    assert ne13.router.k == l5c.router.k == 2
+    assert ne13.expert_width() == l5c.expert_width() == 896
+    p13, pc = BigMoE(ne13).n_params()["total"], BigMoE(l5c).n_params()["total"]
+    assert abs(p13 - pc) / pc < 0.01
 
 
 def test_l5c_has_one_attention_per_iteration_and_shares_the_rest() -> None:
