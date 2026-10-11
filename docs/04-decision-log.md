@@ -1224,6 +1224,15 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-10-11 (10:20) — ADR-033: `148-l5-ne13-screen` launched, I31's control, before the L5c pair
+
+On the user's choice ("run the I31 control at screen first"), ADR-033 defines **L5-ne13**: L5 with
+$N_e$ = 13 at $k$ = 2 and $d_{ff}$ 896, which has L5's FLOPs and 87.80 M parameters against L5c's
+88.49 M. The preset and a unit test are in (`model:` commit). The suite (74 tests) and `ruff` passed
+before launch, with the GPUs idle. `/mnt/nvme/queue_screen_7.sh` started `148` at 10:19:39 and runs
+at 45.2 k tok/s and 4.05 GiB, so it ends around 16:35. Reading per ADR-033 §3: L5-ne13 − L5c > 4σ
+means the L5c `small` pair runs (ids 149/150); within 2σ, ADR-033 drops it.
+
 ### 2026-10-11 (morning) — `145`–`147` written up: L5-ne1 +1.38 %, **L5c −1.68 %**, L5b −0.13 % vs `110`; L5c goes to a `small` pair; I31 opened
 
 Both queues ran unattended. `queue_screen_5` ended `145` at 14:56. `queue_screen_6` passed the unit
