@@ -1313,6 +1313,24 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-10-14 (morning) — the remaining Phase 1 leftovers drafted: ADR-034–037, code and tests; queued behind the L5c pair
+
+On the user's "draft them", while `149` trains:
+- **L5e** (ADR-034): one dense H block (skeleton form, $d_{ff}$ 2048, +6.29 M params) after
+  iteration 4 at $K$ = 8. **L5-pm** (ADR-035): $N_e$ 204, $k$ 4, $d_{ff}$ 448, 247.0 M non-embedding
+  vs L1's 246.6 M, at L5-ne128's FLOPs. **L3b** (ADR-036): forward MTP curriculum, four equal
+  phases; sequential modules renamed L3c. **L5d-8k** (ADR-037, `06 §3`): L5/L5d at context 8192,
+  θ 10 k, micro-batch 1 × 16; rig probe `031` sizes it first.
+- Code (`d355c9d`): `MiddleCfg.h_every`/`h_d_ff` and the H block, `MTPCfg.curriculum` with
+  `set_progress` (called by the trainer each step; a no-op for every other rung), presets `L5e`,
+  `L5-pm`, `L3b`, and eleven new tests. **Neither the tests nor ruff have run**, because a DDP job is
+  live. Only a byte-compile check ran. `150` will import this code when it starts. On its path
+  (L5c) the changes are no-ops (`h_block` None, no MTP heads).
+- **Armed:** `/mnt/nvme/queue_screen_8.sh` waits for `queue_small_8`'s QUEUE DONE (≈ 00:00 Oct 15),
+  gates on ruff and the unit suite, then runs the `031` probe (L5 and L5d, 3 smoke steps at 8192,
+  output on `/mnt/nvme/ckpt/031-ctx8k-sizing/`) and then `151` L5e, `152` L3b (micro-batch 2, as L3)
+  and `153` L5-pm (≈ 20 h). The L5d-8k pair is **not** queued; it launches after `031` is read.
+
 ### 2026-10-13 (evening) — `148` L5-ne13 written up: I31 answered, half of L5c's gain is untied attention; L5c `small` pair launched (`149`/`150`)
 
 `148` ended 2026-10-11 16:23 at **3.3043** nats (zero `n_thermal` rows, ≤ 79 °C). The GPUs then sat
