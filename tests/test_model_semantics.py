@@ -22,8 +22,8 @@ from model.model import BigMoE
 from model.moe import MoE
 
 STEPS = [
-    "L0", "L1", "L2", "L3", "L5", "L5-ne1", "L5-ne13", "L5-noej", "L5b", "L5c", "L5d", "L6",
-    "L7-g4", "L7b",
+    "L0", "L1", "L2", "L3", "L3b", "L5", "L5-ne1", "L5-ne13", "L5-pm", "L5-noej", "L5b", "L5c",
+    "L5d", "L5e", "L6", "L7-g4", "L7b",
     "L4",
 ]
 
@@ -39,7 +39,8 @@ def tiny(step: str, **kw) -> ModelCfg:
         dense_d_ff=128,
         attention=dc.replace(c.attention, heads=4, kv_heads=2, head_dim=16, window=16),
         experts=dc.replace(c.experts, d_ff=32),
-        middle=dc.replace(c.middle, r_max=3, depth_embed=8),
+        # L5e: K = 4 so that H runs inside the tiny loop, once, after iteration 2
+        middle=dc.replace(c.middle, r_max=3, depth_embed=8, h_every=4 if c.middle.h_every else 0),
     )
     c = dc.replace(c, **kw)
     c.validate()
@@ -76,6 +77,8 @@ def test_derived_widths_follow_adr_025_027() -> None:
     assert ladder("L7b").expert_width() == 448  # L_e = 2 halves the width at matched FLOPs
     assert ladder("L5b").expert_width() == ladder("L5c").expert_width() == 896  # pinned, ADR-032
     assert ladder("L5-ne13").expert_width() == 896  # pinned, ADR-033
+    assert ladder("L5e").expert_width() == 896  # pinned, ADR-034
+    assert ladder("L5-pm").expert_width() == ladder("L5-ne128").expert_width() == 448  # ADR-035
     d = ladder("L7-g4").to_dict()["derived"]
     assert d["sub_expert_width"] == 224 and d["n_sub_experts"] == 32
     assert ladder("L1").expert_width() == 1024  # dense 2048 / k = 2
@@ -116,7 +119,7 @@ def test_masks() -> None:
     assert off.int().tolist() == [[1, 1, 1, 1, 0], [1, 1, 1, 1, 1]]
 
 
-@pytest.mark.parametrize("step", ["L0", "L2", "L5", "L5b", "L5c", "L5d"])
+@pytest.mark.parametrize("step", ["L0", "L2", "L5", "L5b", "L5c", "L5d", "L5e"])
 def test_no_future_leakage(step: str) -> None:
     """Perturbing token t must not change hidden states at positions < t."""
     torch.manual_seed(0)
@@ -446,3 +449,117 @@ def test_per_iteration_attention_refuses_undefined_combinations() -> None:
         dc.replace(l5b, attention=g).validate()
     with pytest.raises(ValueError):
         dc.replace(l5b, middle=dc.replace(l5b.middle, shared_attention=False)).validate()
+
+
+# ---- L5e: the slow dense H block (ADR-034) -------------------------------------------------
+def test_l5e_h_acts_only_after_iteration_k_half() -> None:
+    torch.manual_seed(0)
+    cfg = tiny("L5e")  # K = 4 -> H after iteration 2
+    m = BigMoE(cfg).eval()
+    toks = torch.randint(0, cfg.vocab, (1, cfg.context))
+    with torch.no_grad():
+        h1, _ = m.forward_hidden(toks, r=1)
+        h2, _ = m.forward_hidden(toks, r=2)
+        for p in m.h_block.parameters():
+            p.mul_(2.0)
+        h1b, _ = m.forward_hidden(toks, r=1)
+        h2b, _ = m.forward_hidden(toks, r=2)
+    assert torch.allclose(h1, h1b)
+    assert not torch.allclose(h2, h2b)
+
+
+def test_l5e_h_writes_active_tokens_only() -> None:
+    """ADR-010: a halted token keeps its state; H still reads it as a key."""
+    torch.manual_seed(0)
+    cfg = tiny("L5e")
+    m = BigMoE(cfg).eval()
+    b, t = 1, cfg.context
+    c = torch.randn(b, t, cfg.d)
+    active = torch.ones(b, t, dtype=torch.bool)
+    active[0, ::3] = False
+    st = IterState(
+        c=c, p=None, active=active, r=torch.zeros(b, t, dtype=torch.long),
+        cum_halt=torch.zeros(b, t), remainder=torch.zeros(b, t), frozen_kv=None,
+        frozen=torch.zeros(b, t, dtype=torch.bool), loads=[],
+    )
+    with torch.no_grad():
+        out = m._apply_h(st, torch.arange(t))
+    assert torch.equal(out.c[~active], c[~active])
+    assert not torch.allclose(out.c[active], c[active])
+
+
+def test_l5e_adds_one_dense_block_of_the_stated_size() -> None:
+    m_e, m_5 = BigMoE(tiny("L5e")), BigMoE(tiny("L5"))
+    per_h = sum(p.numel() for p in m_e.h_block.parameters())
+    assert m_e.n_params()["total"] - m_5.n_params()["total"] == per_h
+    full = ladder("L5e")
+    a = full.attention
+    attn = 2 * full.d * a.heads * a.head_dim + 2 * full.d * a.kv_heads * a.head_dim
+    ff = 3 * full.d * full.middle.h_d_ff
+    n = sum(p.numel() for p in Block(full, "dense", full.middle.h_d_ff, "parallel").parameters())
+    assert attn + ff <= n < attn + ff + 4 * full.d  # + norms
+    assert abs(n - 6.29e6) < 0.01e6  # 01 §4.2
+
+
+def test_l5e_refuses_undefined_combinations() -> None:
+    base = ladder("L5e")
+    with pytest.raises(NotImplementedError):
+        g = dc.replace(base.attention, global_source="final_vector")
+        dc.replace(base, attention=g).validate()
+    with pytest.raises(NotImplementedError):
+        dc.replace(base, middle=dc.replace(base.middle, shared_attention=False)).validate()
+    with pytest.raises(ValueError):
+        dc.replace(base, middle=dc.replace(base.middle, h_every=3)).validate()
+
+
+# ---- L3b: forward MTP curriculum (ADR-036) -------------------------------------------------
+def test_l3b_phases_switch_heads_on_in_order() -> None:
+    m = BigMoE(tiny("L3b"))
+    got = []
+    for f in (0.0, 0.24, 0.25, 0.49, 0.5, 0.74, 0.75, 0.999):
+        m.set_progress(f)
+        got.append(m.mtp.active_heads)
+    assert got == [0, 0, 1, 1, 2, 2, 3, 3]
+    m3 = BigMoE(tiny("L3"))
+    m3.set_progress(0.0)
+    assert m3.mtp.active_heads == 3  # no curriculum: every head, always
+
+
+@pytest.mark.parametrize("frac, trained", [(0.1, []), (0.3, [2]), (0.6, [2, 3]), (0.9, [2, 3, 4])])
+def test_l3b_trains_only_the_active_heads(frac: float, trained: list[int]) -> None:
+    torch.manual_seed(0)
+    cfg = tiny("L3b")
+    m = BigMoE(cfg).train()
+    for a in m.mtp.adapters:
+        torch.nn.init.normal_(a[1].weight, std=0.02)  # off zero-init so gradients are visible
+    m.set_progress(frac)
+    toks = torch.randint(0, cfg.vocab, (2, cfg.context + 1))
+    out = m.loss(toks)
+    out.loss.backward()
+    for i, a in enumerate(m.mtp.adapters):
+        g = a[1].weight.grad
+        assert g is not None  # every head stays in the graph (DDP)
+        assert (g.abs().sum() > 0) == (i + 2 in trained)
+    assert sorted(int(k[-1]) for k in out.metrics if k.startswith("mtp_loss_h")) == trained
+
+
+def test_l3b_evaluates_every_head_in_every_phase() -> None:
+    torch.manual_seed(0)
+    cfg = tiny("L3b")
+    m = BigMoE(cfg).eval()
+    m.set_progress(0.0)  # phase 1: no head trains
+    toks = torch.randint(0, cfg.vocab, (2, cfg.context + 1))
+    with torch.no_grad():
+        out = m.loss(toks)
+    assert {k for k in out.metrics if k.startswith("mtp_accept_h")} == {
+        "mtp_accept_h2", "mtp_accept_h3", "mtp_accept_h4"
+    }
+
+
+# ---- L5-pm: I29's parameter-matched H6 arm (ADR-035) ---------------------------------------
+def test_l5_pm_matches_l1_non_embedding_params_at_l5_ne128_flops() -> None:
+    pm, ne128 = ladder("L5-pm"), ladder("L5-ne128")
+    assert pm.router.k == ne128.router.k == 4
+    assert pm.expert_width() == ne128.expert_width()
+    l1_non_emb = 246_577_920  # `106-l1-screen/summary.json`
+    assert abs(BigMoE(pm).n_params()["non_embedding"] - l1_non_emb) / l1_non_emb < 0.005

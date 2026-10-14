@@ -7,6 +7,11 @@ m = 4 costs one extra logits pass instead of three. `subsample: 1.0` switches
 that off and trains every head on every position (L3-full, I27 #3). Each head's loss is the mean
 over its own positions — an unbiased estimate of that head's full-position
 loss — so no rescaling is applied (ADR-012 as corrected).
+
+L3b (ADR-036): with `curriculum: forward` the token budget is split into m
+equal phases and phase i trains heads 2..i only (phase 1 is next-token only);
+positions are subsampled among the active heads, inactive heads get a zero
+gradient, and evaluation always runs every head.
 """
 
 from __future__ import annotations
@@ -27,6 +32,12 @@ class MTPHeads(nn.Module):
         )
         for a in self.adapters:
             nn.init.zeros_(a[1].weight)  # start as the main head
+        self.active_heads = cfg.m - 1  # auxiliary heads trained now (L3b's curriculum)
+
+    def set_progress(self, frac: float) -> None:
+        """L3b (ADR-036): in phase i of m (frac = step / total steps) heads 2..i train."""
+        if self.cfg.curriculum == "forward":
+            self.active_heads = min(self.cfg.m - 1, int(frac * self.cfg.m))
 
     def aux_losses(
         self, h: Tensor, tokens: Tensor, emb_weight: Tensor, generator: torch.Generator | None
@@ -36,7 +47,10 @@ class MTPHeads(nn.Module):
         if m == 1:
             return h.new_zeros(()), {}
         b, t, _ = h.shape
-        n_aux = m - 1
+        n_aux = self.active_heads if self.training else m - 1
+        if n_aux == 0:
+            # L3b phase 1: next-token only; a zero gradient keeps every head in DDP's graph
+            return self._zero_touch(h, 0), {}
         valid_t = t - m
         full = self.cfg.subsample == 1.0
         if full:
@@ -44,6 +58,7 @@ class MTPHeads(nn.Module):
             assign = None
         else:
             # ADR-012 default: each position t < T - m trains exactly one head j in 2..m
+            # (among the heads active in L3b's current phase)
             assign = torch.randint(0, n_aux, (b, valid_t), device=h.device, generator=generator)
         # Head 1's greedy prediction at every position, for the acceptance metric below.
         # Forward-only and chunked, so it costs one extra logits pass with no backward
@@ -53,6 +68,8 @@ class MTPHeads(nn.Module):
         metrics: dict[str, float] = {}
         for i, adapter in enumerate(self.adapters):
             j = i + 2  # predicts x_{t+j}
+            if i >= n_aux:
+                break  # inactive in this L3b phase; touched with a zero gradient below
             if assign is None:
                 sel = torch.ones(b, valid_t, dtype=torch.bool, device=h.device).nonzero(
                     as_tuple=True
@@ -77,7 +94,14 @@ class MTPHeads(nn.Module):
             metrics[f"mtp_loss_h{j}"] = float(loss.detach())
             metrics[f"mtp_top1_h{j}"] = float((draft == target).float().mean())
             metrics[f"mtp_accept_h{j}"] = float((draft == verify).float().mean())
-        return total, metrics
+        return total + self._zero_touch(h, n_aux), metrics
+
+    def _zero_touch(self, h: Tensor, first: int) -> Tensor:
+        """0 x the parameters of heads first+2..m, so DDP sees a (zero) gradient for each."""
+        z = h.new_zeros(())
+        for adapter in list(self.adapters)[first:]:
+            z = z + 0.0 * sum(p.sum() for p in adapter.parameters())
+        return z
 
     @staticmethod
     @torch.no_grad()

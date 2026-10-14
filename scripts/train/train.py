@@ -238,6 +238,7 @@ def worker(rank: int, world: int, a: TrainArgs, cfg: ModelCfg, out: Path) -> Non
                     f"(sparsity {sparsity_fraction(raw):.3f})",
                     flush=True,
                 )
+        raw.set_progress(step / total_steps)  # L3b's MTP curriculum (ADR-036); no-op otherwise
         lr = lr_at(step, total_steps, a)
         for g in opt.param_groups:
             g["lr"] = lr

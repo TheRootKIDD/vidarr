@@ -9,11 +9,13 @@ Recurrent, `global_source = final_vector` (L5d, v2 P7): the context is
 processed as segments of W tokens in order; each segment attends locally to
 its own per-iteration K/V and globally to the final vectors of the earlier
 segments (the cache G), with stop-gradient into G by default (ADR-023).
+L5e (ADR-034): a dense H block with its own weights runs after iteration
+j = K/2 (mod K) and writes the tokens still active.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import torch
 import torch.nn.functional as F
@@ -52,6 +54,7 @@ class BigMoE(nn.Module):
         self.emb = nn.Embedding(cfg.vocab, cfg.d)
         nn.init.normal_(self.emb.weight, std=0.02)
         self.stream_tag = nn.Parameter(torch.zeros(cfg.d)) if cfg.streams.two_stream else None
+        self.h_block: Block | None = None
         if cfg.arch == "layered":
             self.blocks = nn.ModuleList(
                 Block(cfg, cfg.ff, cfg.dense_d_ff, cfg.block_form) for _ in range(cfg.layers)
@@ -62,6 +65,8 @@ class BigMoE(nn.Module):
                 Block(cfg, "dense", w, "parallel") for _ in range(cfg.early_blocks)
             )
             self.middle = MiddleBlock(cfg)
+            if cfg.middle.h_every:  # L5e: the slow dense H block, own weights (ADR-034)
+                self.h_block = Block(cfg, "dense", cfg.middle.h_d_ff, "parallel")
             n_pred = cfg.pred_only_final
             self.final = nn.ModuleList(
                 Block(cfg, "dense", w, "parallel", pred_only=i >= cfg.final_blocks - n_pred)
@@ -130,6 +135,9 @@ class BigMoE(nn.Module):
             for j in range(1, n_iter + 1):
                 st, a = self._iterate(st, j, pos, mem, fixed)
                 aux = aux + a
+                k_h = cfg.middle.h_every
+                if self.h_block is not None and j % k_h == k_h // 2:
+                    st = self._apply_h(st, pos)
                 if not fixed and not st.active.any():
                     break
             loads.extend(st.loads)
@@ -150,6 +158,15 @@ class BigMoE(nn.Module):
         r_map = torch.cat(r_maps, dim=1)
         ponder = torch.cat(ponders, dim=1).mean() if not fixed else torch.zeros((), device=dev)
         return h, Extras(router_aux=aux, ponder=ponder, r_map=r_map, loads=loads)
+
+    def _apply_h(self, st: IterState, pos: Tensor) -> IterState:
+        """L5e (ADR-034): H reads every token's current state and writes active tokens only."""
+        assert self.h_block is not None
+        c, p, _ = self.h_block(st.c, st.p, pos)
+        keep = st.active[..., None]
+        c = torch.where(keep, c, st.c)
+        p = None if p is None or st.p is None else torch.where(keep, p, st.p)
+        return replace(st, c=c, p=p)
 
     def _iterate(
         self,
@@ -176,6 +193,11 @@ class BigMoE(nn.Module):
             [*st.loads, load],
         )
         return new, aux
+
+    def set_progress(self, frac: float) -> None:
+        """Training progress in [0, 1), for schedules inside the model (L3b, ADR-036)."""
+        if self.mtp is not None:
+            self.mtp.set_progress(frac)
 
     # ---- loss ------------------------------------------------------------------------
     def forward(

@@ -72,6 +72,8 @@ class MiddleCfg:
     depth_embed: int = 64
     per_iter_lora_rank: int = 0  # 16 = L5b: per-iteration adapters on attention (ADR-032)
     shared_attention: bool = True  # False = L5c: one attention block per iteration (ADR-032)
+    h_every: int = 0  # K; 8 = L5e: a dense H block after iteration j = K/2 (mod K) (ADR-034)
+    h_d_ff: int = 2048  # the H block's SwiGLU width (L5e)
 
     @property
     def per_iteration_attention(self) -> bool:
@@ -100,6 +102,7 @@ class MTPCfg:
     style: Literal["independent"] = "independent"  # ADR-012
     subsample: float | Literal["auto"] = "auto"  # auto = 1/(m-1)
     lambdas: tuple[float, ...] = (1.0, 0.5, 0.25, 0.125)  # per head, head 1 first
+    curriculum: Literal["none", "forward"] = "none"  # forward = L3b: heads 2..i in phase i of m
 
 
 @dataclass(frozen=True)
@@ -212,6 +215,11 @@ class ModelCfg:
                 "L5b/L5c over the final-vector cache: no rule yet for which iteration's "
                 "weights make a G entry (ADR-032)"
             )
+        if self.middle.h_every:
+            if self.arch != "recurrent" or self.middle.h_every % 2:
+                raise ValueError("L5e needs the recurrent arch and an even h_every (ADR-034)")
+            if a.global_source == "final_vector" or self.middle.per_iteration_attention:
+                raise NotImplementedError("L5e with L5d's G or with L5b/L5c: one feature (ADR-034)")
         if a.prev_segment_local or a.kv_share_every != 1:
             raise NotImplementedError("ADR-022 crossing / L6b KV sharing are not implemented yet")
         if r.k > r.n_experts * e.granularity:
@@ -282,6 +290,7 @@ def ladder(step: str, **overrides: Any) -> ModelCfg:
         "L1": moe,
         "L2": replace(moe, block_form="parallel"),
         "L3": replace(moe, block_form="parallel", mtp=MTPCfg(m=4)),
+        "L3b": replace(moe, block_form="parallel", mtp=MTPCfg(m=4, curriculum="forward")),
         "L5": rec,
         "L5-ne1": replace(rec, router=RouterCfg(k=1, n_experts=1)),
         "L5-ne128": replace(rec, router=RouterCfg(k=4, n_experts=128)),
@@ -289,10 +298,16 @@ def ladder(step: str, **overrides: Any) -> ModelCfg:
         "L5-ne13": replace(
             rec, router=RouterCfg(k=2, n_experts=13), experts=ExpertsCfg(d_ff=896)
         ),
+        # ADR-035: I29's exactly parameter-matched H6 arm, L5-ne128 extended to L1's params
+        "L5-pm": replace(
+            rec, router=RouterCfg(k=4, n_experts=204), experts=ExpertsCfg(d_ff=448)
+        ),
         "L5-noej": replace(rec, router=RouterCfg(k=2, n_experts=8, use_depth_embed=False)),
         # ADR-032: d_ff pinned at L5's 896 so per-iteration attention is the only change
         "L5b": replace(rec, middle=MiddleCfg(per_iter_lora_rank=16), experts=ExpertsCfg(d_ff=896)),
         "L5c": replace(rec, middle=MiddleCfg(shared_attention=False), experts=ExpertsCfg(d_ff=896)),
+        # ADR-034: one dense H block with its own weights after iteration 4
+        "L5e": replace(rec, middle=MiddleCfg(h_every=8), experts=ExpertsCfg(d_ff=896)),
         "L5d": replace(rec, attention=AttentionCfg(global_source="final_vector")),
         "L6": replace(
             rec,
