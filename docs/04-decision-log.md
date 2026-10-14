@@ -206,6 +206,95 @@ Consequences: preset `L5-ne13` and a unit test (width, params within 1 % of L5c)
 ids move to 149/150 if it runs. This also informs I29/L5-pm, whose design ADR weighs the same
 "more experts at the same $k$" construction. Bears on H6; touches ADR-031, ADR-032, I31.
 
+### ADR-034 — L5e as built: one dense H block with its own weights after iteration $K/2$, $K$ = 8
+2026-10-14 · accepted (design for an ADR-031 leftover; spec in `01 §4.2`)
+Context: `08 §4` recommends L5e, a slow dense H block beside the fast expert-bearing L block, to test
+HRM-Text's "two weight sets beat one shared loop" on held-out loss. At $K$ = 8, $d_{ff}^H$ = 2048 it
+fits the 0.6 GFLOP budget. `08` left open where in the loop H runs. At $K$ = $r_{max}$ there is one H
+call, and "after iteration 8" would make H a deeper final skeleton, which is a different experiment.
+`146`/`148` have since shown that unshared attention weights are worth ≈ 0.028 nats beyond their
+parameter count, which makes "a second weight set inside the loop" more interesting, not less.
+Decision:
+1. **H = the skeleton's dense parallel block** (attention 12/4 heads + SwiGLU), $d_{ff}^H$ = 2048,
+   +6.29 M parameters, applied after iteration $j$ with $j \equiv K/2 \pmod K$. At $K$ = 8, $r$ = 8,
+   that is once, after iteration 4, so L iterations 5–8 read H's write.
+2. H writes only to active tokens (ADR-010), and its attention reads every token's current state. No
+   $e_j$ on H while it runs at one depth.
+3. **One feature.** L5e branches from L5, with $d_{ff}$ pinned at 896, fixed $r$ = 8, the per-iteration
+   global range, `screen`, seed 0. It is refused with L5d's $\mathcal{G}$ and with L5b/L5c. Its
+   +7.0 % FLOPs (≈ +8.7 % counting attention scores) are reported, not traded (ADR-031).
+4. **Reading.** Comparator `110`. A gain > 4σ sends it to a `small` pair (ADR-031). Since H adds
+   parameters, a gain is also read against `148` (L5-ne13, +10.3 M params as experts), which bounds
+   what 6.3 M generic parameters buy.
+Consequences: `MiddleCfg.h_every`/`h_d_ff`, the H block in `model/` and preset `L5e`; tests:
+starts-and-runs, H acts only from iteration $K/2$ on, parameter count, causality, refusals. Bears on
+H6 (and the HRM-Text claim in `08 §4`); touches `01 §4.2`, ADR-010.
+
+### ADR-035 — L5-pm, I29's exactly parameter-matched H6 arm: L5-ne128 extended to $N_e$ = 204
+2026-10-14 · accepted (design for an ADR-031 leftover; resolves I29's open choice)
+Context: H6 compares the shared block with stacked MoE "at matched params and FLOPs". The `small`
+pair `138`/`142` (L5-ne128, $k$ = 4, $d_{ff}$ 448) weakened H6 at 68 % of L1's non-embedding
+parameters (168.5 M vs 246.6 M). I29 asks for an exact match and leaves open whether the missing
+parameters go into more experts (FLOPs unchanged) or wider experts (≈ 1.45× FLOPs). `148` showed that
+more experts at the same $k$ behave as expected (diminishing but positive returns).
+Decision:
+1. **More experts at the same $k$ and width.** $N_e$ = 204, $k$ = 4, $d_{ff}$ = 448: 247.0 M
+   non-embedding parameters against L1's 246.6 M (+0.16 %; $N_e$ = 203 would be −0.25 %). FLOPs are
+   L5-ne128's, so H6's "matched params *and* FLOPs" wording holds, and the arm differs from the
+   `138`/`142` pair in $N_e$ alone, which isolates I29's caveat exactly.
+2. `screen` (seed 0) first, against `112` and `106`; then a `small` pair against the L1 pair (2.8839),
+   which is H6's verdict under ADR-013 at two seeds.
+3. **Memory and time, estimated.** +78.5 M parameters × 16 B of states ≈ +1.25 GB over L5-ne128's
+   6.01 GiB → ≈ 7.3 GiB, under the 10 GB cap. Throughput below L5-ne128's 16.5 k tok/s: a 204-way
+   dispatch with smaller per-expert batches, so ≈ 13–15 k, ≈ 19–21 h at `screen` and ≈ 2 × 50 h for
+   the pair. The `screen` run measures both before the pair is queued.
+Consequences: preset `L5-pm`; a unit test (non-embedding parameters within 0.5 % of L1's, same $k$
+and width as L5-ne128). I29 closes when the pair is written up. Bears on H6; touches I29, ADR-031.
+
+### ADR-036 — L3b is the forward MTP curriculum; sequential modules become L3c
+2026-10-14 · accepted (resolves ADR-030's open "identity of L3b"; design for an ADR-031 leftover)
+Context: ADR-030 left L3b ambiguous between I20's forward curriculum and ADR-012's sequential modules.
+ADR-031 already named the curriculum L3b and the sequential fallback L3c, and this ADR makes that
+binding in `01 §7`. L3 at `small` (`122`/`131`) missed both of H13's clauses: +2.88 % main loss vs L2,
+and acceptance 42.5 / 25.6 / 17.6 %. The literature fix for sub-1 B models is an NTP → MTP forward
+curriculum (Aynetdinov et al. 2025, `05`), which keeps the single-pass draft.
+Decision:
+1. **Schedule.** The budget is split into $m$ = 4 equal phases. Phase $i$ trains heads $2..i$, so phase 1
+   is next-token only, then heads {2}, {2, 3}, {2, 3, 4}. The phase is set from step / total steps,
+   which is resume-safe. Each position trains one head chosen uniformly among the active ones
+   (ADR-012's subsampling restricted to them). Loss weights, adapters and zero-init are L3's.
+   Inactive heads get a zero gradient so DDP sees every parameter.
+2. **Evaluation** always runs all heads. H13's two clauses are scored on the final checkpoint as for
+   L3: the main loss against L2, and greedy acceptance per head.
+3. `screen` (seed 0) against `107` (L2, 3.1495) and `108` (L3, 3.2486); then a `small` pair against
+   the L2 pair (2.8851) and the L3 pair (2.9682), since H13 is decided at `small` (ADR-030).
+4. **Expected trade, stated in advance:** head 4 trains for only 25 % of the tokens, so its acceptance
+   may fall below L3's while the main loss recovers. That is the curriculum's documented trade, and
+   it is scored against H13's thresholds as they stand.
+Consequences: `MTPCfg.curriculum`, `BigMoE.set_progress`, one line in the trainer and preset `L3b`;
+tests: phase boundaries, zero gradient for inactive heads, all heads at eval. `01 §7` renames the
+sequential fallback L3c. Bears on H13; touches ADR-012, ADR-030, I20, I26.
+
+### ADR-037 — L5d-8k: an L5/L5d pair at context 8192, `screen` budget, θ unchanged, sized by rig probe `031`
+2026-10-14 · accepted (answers I30's four items; sizing in `06 §3`)
+Context: H15a covers 2 k–8 k, but every rung trained at 2048, and the 2 k checkpoints do not
+extrapolate (> 4 nats past 2048, session log 2026-10-10). I30 lists what to settle before training
+at 8 k.
+Decision (details in `06 §3`):
+1. **Arms:** L5 and L5d, both with `context=8192`, seed 0, 1.0 B tokens, micro-batch 1 ×
+   accumulation 16 (524,288 tokens per step, as at 2 k). Context is the only change from `110`/`111`.
+2. **RoPE θ stays at 10 k** (lowest-frequency wavelength ≈ 46 k tokens > 8192).
+3. **No extra 2 k comparator:** `110`/`111` exist. H15a at 8 k is L5d-8k − L5-8k against the 2 %
+   allowance, read under ADR-013 at one seed. The per-position split (0–2 k, 2–4 k, 4–8 k) is reported
+   beside it, because inside 2 k the L5d cost grew with position (2026-10-10).
+4. **Sizing first:** rig probe `031-ctx8k-sizing` runs a few smoke steps of each arm on idle GPUs
+   and records peak memory and tokens/s. The pair launches only if both arms are ≤ 10 GB per GPU;
+   otherwise activation checkpointing per iteration (already a config knob) is switched on in both
+   arms and the probe is repeated.
+5. Estimated cost: ≈ +55 % FLOPs per token over the 2 k anchor for both arms, ≈ 8–10 h each.
+Consequences: no model change. The probe and the pair go in a queue behind the current runs. I30
+closes when the pair is written up. Bears on H15a; touches I30, `06 §3`.
+
 ## Proposed / pending
 - **ADR-007** — Fixed $r$ schedule for prefill vs learned halting in prefill.
 - **ADR-008** — Local and indexed attention: one softmax, or two gated branches.
@@ -340,8 +429,8 @@ Cost units from `docs/06 §4`: one `screen` run ≈ 8 h (1 B tokens, 1 seed); on
 | I4 | vendor data for `note64` / `gpu_today` | hours–days |
 | I5 | `bench_nccl` on all four cards | ≈ 1 h, run first |
 | I6 | train a 32 k BPE on a 1 B-token subset; decide by convention, no A/B | ≈ 1 h CPU |
-- **I29** *(2026-09-16)* **H6 lacks a parameter-matched arm.** `112` (L5-ne128, 193 M params) sits at +0.018 nats vs L1 (246.6 M), which reads *weakens* under ADR-013 at `screen` now that σ = 0.0018, but the arm is 68 % of L1's parameters and its curve crossed L1's at ≈ 1300 steps. Needed: L5-ne128 at `small` (two seeds; not in `queue_small_1`) or a preset at exactly L1's non-embedding count. Until then H6's `screen` verdict is provisional. *Update 2026-10-10:* the L5-ne128 `small` pair (`138`/`142`) weakens H6 with this caveat attached; the exactly matched preset is scheduled as **L5-pm** (ADR-031). Its design ADR must choose how the missing ≈ 32 % of parameters is added: more experts at the same $k$ and width keeps FLOPs matched, while wider experts raise FLOPs (≈ 1.45×, per an earlier session note). Only the first option keeps H6's "matched params *and* FLOPs" wording.
-- **I30** *(2026-10-10)* **H15a's 8 k end needs a model trained at 8 k.** Every rung trains at context 2048 (RoPE θ = 10 k). The full-held-out 8 k eval of the L5/L5d pairs (session log 2026-10-10) is > 4 nats beyond position 2048 for both designs, so it measures length extrapolation, not the cost of final-vector global attention at a trained 8 k. H15a's statement covers "2 k–8 k", so its upper end is silent until **L5d-8k** (ADR-031) trains an L5/L5d pair at 8192. To settle before launch, as a sizing note in `06 §3`: (1) per-GPU memory at 8192, since L5's per-iteration global attention is 4× the score memory of 2 k and must stay under the 10 GB cap (micro-batch 1 with accumulation, and checkpointing, are the levers); (2) the token budget, keeping 1 B at `screen` with the same tokens per step, so that the rung differs from `111` in context only; (3) RoPE θ, either kept at 10 k so context is the only change, or raised, which would be a second change and needs its own arm; (4) whether a 2 k-trained comparator is needed beside it. It is not, because `110`/`111` are those runs. Bears on H15a; touches `06 §3`, L5d.
+- **I29** *(2026-09-16)* **H6 lacks a parameter-matched arm.** `112` (L5-ne128, 193 M params) sits at +0.018 nats vs L1 (246.6 M), which reads *weakens* under ADR-013 at `screen` now that σ = 0.0018, but the arm is 68 % of L1's parameters and its curve crossed L1's at ≈ 1300 steps. Needed: L5-ne128 at `small` (two seeds; not in `queue_small_1`) or a preset at exactly L1's non-embedding count. Until then H6's `screen` verdict is provisional. *Update 2026-10-10:* the L5-ne128 `small` pair (`138`/`142`) weakens H6 with this caveat attached; the exactly matched preset is scheduled as **L5-pm** (ADR-031). Its design ADR must choose how the missing ≈ 32 % of parameters is added: more experts at the same $k$ and width keeps FLOPs matched, while wider experts raise FLOPs (≈ 1.45×, per an earlier session note). Only the first option keeps H6's "matched params *and* FLOPs" wording. *Update 2026-10-14:* ADR-035 picks more experts at the same $k$ and width: **L5-pm** = $N_e$ 204, $k$ 4, $d_{ff}$ 448, 247.0 M non-embedding (L1 246.6 M).
+- **I30** *(2026-10-10)* **H15a's 8 k end needs a model trained at 8 k.** Every rung trains at context 2048 (RoPE θ = 10 k). The full-held-out 8 k eval of the L5/L5d pairs (session log 2026-10-10) is > 4 nats beyond position 2048 for both designs, so it measures length extrapolation, not the cost of final-vector global attention at a trained 8 k. H15a's statement covers "2 k–8 k", so its upper end is silent until **L5d-8k** (ADR-031) trains an L5/L5d pair at 8192. To settle before launch, as a sizing note in `06 §3`: (1) per-GPU memory at 8192, since L5's per-iteration global attention is 4× the score memory of 2 k and must stay under the 10 GB cap (micro-batch 1 with accumulation, and checkpointing, are the levers); (2) the token budget, keeping 1 B at `screen` with the same tokens per step, so that the rung differs from `111` in context only; (3) RoPE θ, either kept at 10 k so context is the only change, or raised, which would be a second change and needs its own arm; (4) whether a 2 k-trained comparator is needed beside it. It is not, because `110`/`111` are those runs. Bears on H15a; touches `06 §3`, L5d. *Update 2026-10-14:* answered by ADR-037 (sizing in `06 §3`); rig probe `031-ctx8k-sizing` measures memory and speed before the pair runs.
 - **I31** *(2026-10-11)* **L5c's gain is untied attention plus 11 M parameters, not separated.** `146` (L5c) beats `110` by 0.056 nats at the same FLOPs but with +20.8 % non-embedding parameters (63.9 M vs 52.9 M), and the rank-16 L5b (+0.66 M) recovers none of it. Per added parameter, L5c is ≈ 5× as efficient as L5-ne128's extra experts, which suggests most of the gain is attention, but that is an inference. A parameter-matched control would separate the two: L5 at ≈ 63.9 M non-embedding parameters and the same FLOPs, e.g. $N_e$ ≈ 13 at $k$ = 2, $d_{ff}$ 896. It runs at `screen` (≈ 6 h), and at `small` beside the L5c pair if the `screen` gap stays > 4σ. To decide: whether to schedule it (an ADR; it is a new Phase 1 arm), and whether L5-pm's design (I29) should share the same "more experts at the same $k$" construction. Bears on H6; touches ADR-031, ADR-032. *Update 2026-10-11:* scheduled as **L5-ne13** (`148`, ADR-033), before the L5c pair. *Answered 2026-10-13 (one seed):* `148` = 3.3043, +0.0275 vs L5c (2.5× 4σ) and −0.0285 vs L5, so ≈ half of the gain is untied attention; the L5c `small` pair runs (`149`/`150`).
 
 ## Session log
