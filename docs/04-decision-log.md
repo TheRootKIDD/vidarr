@@ -1320,6 +1320,29 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-10-16 (08:30) — `152` L3b: −1.21 % vs L3, +1.90 % vs L2, both H13 clauses still miss at `screen`; L3b `small` pair queued (`156`/`157`); `153` L5-pm runs at 11.25 k tok/s (≈ 25 h)
+
+**`152-l3b-screen` completed, exit 0** at 12:20 on 2026-10-15: **3.2094 nats** on the main head.
+That is **−0.0392 vs `108` L3** (3.7× 4σ) and **+0.0599 vs `107` L2** (11× H13's 2σ margin).
+Acceptance is **38.9 / 21.6 / 14.6 %**, about one point under `113`'s at every head (ADR-036's
+stated trade). **H13: both clauses still miss at `screen`**; the verdict waits on the pair. Along
+the trajectory, the cost to L2 steps up with each head switched on (+0.029 / +0.050 / +0.061 at the
+end of phases 2 / 3 / 4) and is still widening at 1 B tokens. The curriculum shortens the time the
+heads are on; it does not remove their cost. Peak 9.35 GiB from phase 2 on, 0.74 GiB above
+`108`, unexplained, and under the cap. `108`'s "acceptance" in its `results.md` was top-1 vs the
+true token (the logged metric then). Acceptance vs the main head is compared against `113`.
+
+**`153` L5-pm** started at 12:20. It runs at a steady **11.25 k tok/s**, peak 7.56 GiB, zero
+`n_thermal`, so it takes ≈ 24.7 h, not the ≈ 20 h estimated in ADR-035. It is at step 1527 of 1907
+at 08:13 and finishes ≈ 13:00.
+
+**Armed `/mnt/nvme/queue_small_9.sh`** (the user asked for the L3b pair to be queued). It waits for
+`queue_screen_9`'s `QUEUE DONE`, aborts if `model/`/`scripts/`/`costmodel/` changed since
+`36257dc`, then runs **`156`/`157` the L3b `small` pair** (micro-batch 2, ≈ 2 × 16.3 h). Order: `153`
+→ `031` rerun → `154`/`155` L5e pair → `156`/`157` L3b pair, ≈ 3 days in all. **The L5d-8k pair
+moves to ids `158`/`159`** and launches by hand after `031` is read, behind the L3b pair unless
+the user reorders. Next ladder id **160**, rig id **032**.
+
 ### 2026-10-15 (11:00) — L5c pair −1.70 % vs the L5 pair (two seeds); `151` L5e −1.15 % vs L5 → `small` pair; `031` failed at config time and is re-queued with the width pinned; σ over nine pairs 0.0026
 
 **`queue_small_8` finished** at 00:02, both runs exit 0. **`149` = 3.0230, `150` = 3.0219 → L5c pair
@@ -1349,7 +1372,7 @@ phase 2 on (flat through phase 3, since each position trains one auxiliary head)
 **Armed `/mnt/nvme/queue_screen_9.sh`** behind `queue_screen_8`. It aborts if `model/`,
 `scripts/` or `costmodel/` changed since the gate at `36257dc`. It reruns `031` with
 `experts.d_ff=896` (attempt-1 logs kept as `train.attempt1.log`), then **`154`/`155` the L5e `small`
-pair** (≈ 2 × 14.7 h). The L5d-8k pair (156/157) launches by hand after `031` is read. Next ladder id
+pair** (≈ 2 × 14.7 h). The L5d-8k pair (156/157; moved to 158/159 on 2026-10-16) launches by hand after `031` is read. Next ladder id
 **156**, rig id **032**.
 
 ### 2026-10-14 (morning) — the remaining Phase 1 leftovers drafted: ADR-034–037, code and tests; queued behind the L5c pair
