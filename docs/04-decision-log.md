@@ -1320,6 +1320,24 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-10-18 (08:45) — L5d-8k pair and L5-pm `small` pair queued behind the L3b pair (user: "follow your suggestion")
+
+**Armed `/mnt/nvme/queue_screen_10.sh`**, which waits for `queue_small_9`'s `QUEUE DONE`. It runs
+**`158-l5-8k-screen`** and **`159-l5d-8k-screen`** (ADR-037 with its amendment: `--set context=8192
+experts.d_ff=896`, micro-batch 1, 1 B tokens, seed 0; sized by `031` at ≈ 7.6 h + ≈ 24 h). Then
+three GPU probe lanes in parallel: `eval_context` at 8192 on `158` and `159` (the per-position
+buckets ADR-037 §3 asks for) and `probe_routing` on `153` (depth partitioning at $N_e$ = 204 vs
+`112`/`138`/`142`). Probe logs go to `/mnt/nvme/post_queue10/`.
+
+**Armed `/mnt/nvme/queue_small_10.sh`** behind it: **`160`/`161` the L5-pm `small` pair** (ADR-035
+§2, micro-batch 4, seeds 0/1, ≈ 2 × 62 h). Both queues abort if `model/`, `scripts/` or
+`costmodel/` changed since the gate at `36257dc`, or if the GPUs are busy. The code is unchanged
+as of `fb4f333`. I32's $r$ = 9 control is not queued.
+
+**Timeline (measured rates):** `156` ends ≈ 10:50 today (phase 4 runs at 42.4 k tok/s, 12.4 s per
+step), `157` ≈ 2026-10-19 03:00, `158` ≈ 10:30, `159` ≈ 2026-10-20 10:30, probes ≈ 11:00,
+`160` ≈ 2026-10-23 01:00, `161` ≈ 2026-10-25 15:00. Next ladder id **162**, rig id **032**.
+
 ### 2026-10-17 (20:30) — `153` L5-pm −0.33 % vs L1 (3.9σ, silent; lead shrinking); L5e pair −0.96 % vs the L5 pair; `031`: L5d-8k ≈ 24 h; σ over ten pairs 0.0027; `156` L3b s0 running
 
 **`153` L5-pm** (exit 0, 2026-10-16 13:12, 24.9 h at 11.26 k tok/s, peak 7.56 GiB, zero
