@@ -77,4 +77,25 @@ L1 pair (2.8839). That is H6's verdict at two seeds and closes I29. The cost is 
 estimated: ≈ 62 h per seed at 11.26 k tok/s, **≈ 5.2 days for the pair**, against ADR-035's 2 × 50 h.
 Each seed is over one node-day, which CLAUDE.md allows now that this `screen` has finished. Memory
 is 7.56 GiB, under the cap. A routing probe (depth partitioning, as for `138`/`142`) is owed on GPU
-once the cards are idle. Rig: 24.9 h, zero `n_thermal`, ≤ 66 °C.
+once the cards are idle (done: see the addendum). Rig: 24.9 h, zero `n_thermal`, ≤ 66 °C.
+
+## Addendum 2026-10-21: routing probe (depth partitioning)
+
+`probe_routing --id 153-l5-pm-screen --device cuda` ran on GPU 2 on 2026-10-20 at 11:25, after
+`159`, on idle cards (`queue_screen_10`; log in `/mnt/nvme/post_queue10/`). It used 8 × 4 held-out
+batches, as for every earlier `routing.json`. The measure is the mean correlation, across expert
+loads, between each pair of iterations. Lower means the iterations use more distinct experts.
+
+| run | $N_e$ | mean cross-iteration load correlation | effective experts, iterations 1 → 8 | near-dead experts (< 0.1 × uniform), iterations 1 → 8 |
+|---|---|---|---|---|
+| **`153` L5-pm** | 204 | **0.24** | 203 → 171 → 169 → 153 → 155 → 148 → 130 → 136 (64–99 %) | 0, 2, 1, 6, 1, 4, 8, 10 |
+| `112` L5-ne128 `screen` | 128 | 0.34 | 128 → 112 → 114 → 102 → 111 → 104 → 91 → 90 (70–100 %) | 0, 0, 0, 1, 0, 1, 5, 8 |
+| `138` / `142` L5-ne128 `small` | 128 | 0.35 / 0.32 | | |
+| `110` L5 | 8 | 0.71 | | |
+
+**The router partitions experts by depth more sharply as $N_e$ grows** (0.71 → 0.34 → 0.24). It
+concentrates on a narrower set in the late iterations: 64 % of the pool is effectively used at
+iteration 7, against 71 % for `112`. About 5 % of the pool is near-dead at iterations 7–8. On this
+reading, the extra 76 experts are spent mostly as more depth-specific capacity, which is what
+stacked layers have by construction. This is one probe at one seed, and it is descriptive. It does
+not say whether the partitioning causes the −0.029 offset against `112`.
