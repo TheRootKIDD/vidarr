@@ -1401,6 +1401,19 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-10-21 (17:20) — pause armed after `161` on the user's request; `queue_screen_11` stopped before it ran anything
+
+The user asked to pause after `161`. `queue_screen_11.sh` was still in its wait loop (no merge, no
+gate, no run), so it was stopped (`kill`, PID 322404) and nothing else changed. `queue_small_10.sh`
+keeps running: `160` is at step 2263 of 4768 (46.5 s/step, ends ≈ 2026-10-23 02:00) and `161`
+follows it (≈ 62 h, ends ≈ 2026-10-25 16:00), after which the queue writes QUEUE DONE and the GPUs
+go idle. Branch `l3c-i33` stays unmerged. **Pick-up:** write up `160`/`161` (H6 vs the L1 pair
+2.8839; closes I29; re-pool σ over twelve pairs), then
+`nohup /mnt/nvme/queue_screen_11.sh > /mnt/nvme/queue_screen_11.nohup 2>&1 &`. It sees
+`queue_small_10`'s QUEUE DONE at once and proceeds: merge, ruff + pytest gate, `032`, I34 probes,
+`162`/`163`/`164` (≈ 26 h). If the machine is rebooted in between, check `nvidia-smi` and the UUID
+map first. Next ladder id 165, rig id 033.
+
 ### 2026-10-21 (15:00) — the user asked for I33's fix, both controls, L3c (I26 design pass) and a `screen` run: ADR-038/039/040; I34 opened; code on branch `l3c-i33`, merged by the queue after `161`
 
 **Decisions** (the user: "Fix I33 and queue both controls after 161, give L3c a design pass (I26) and a
