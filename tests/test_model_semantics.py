@@ -22,8 +22,8 @@ from model.model import BigMoE
 from model.moe import MoE
 
 STEPS = [
-    "L0", "L1", "L2", "L3", "L3b", "L5", "L5-ne1", "L5-ne13", "L5-pm", "L5-noej", "L5b", "L5c",
-    "L5d", "L5e", "L6", "L7-g4", "L7b",
+    "L0", "L1", "L2", "L3", "L3b", "L3c", "L5", "L5-ne1", "L5-ne13", "L5-pm", "L5-noej", "L5b",
+    "L5c", "L5d", "L5e", "L6", "L7-g4", "L7b",
     "L4",
 ]
 
@@ -271,7 +271,7 @@ def test_mtp_subsampling_covers_every_position_once() -> None:
     m = BigMoE(cfg).eval()
     toks = torch.randint(0, cfg.vocab, (2, cfg.context + 1))
     h, _ = m.forward_hidden(toks[:, :-1])
-    aux, metrics = m.mtp.aux_losses(h, toks, m.emb.weight, None)
+    aux, metrics = m.mtp.aux_losses(h, toks, m.emb.weight, m.out_norm, None)
     # manual: head 2 predicts x_{t+2} for t < T - 2, over all such positions
     valid = cfg.context - 2
     hs = m.mtp.adapters[0](h[:, :valid])
@@ -285,7 +285,7 @@ def test_mtp_subsampling_covers_every_position_once() -> None:
     assert "mtp_acc_h2" not in metrics
     draft = logits.argmax(-1)  # head 2's draft of x_{t+2}, made at t
     top1 = (draft == toks[:, 2 : 2 + valid]).float().mean()
-    pred1 = (h @ m.emb.weight.t()).argmax(-1)  # head 1 at position s predicts x_{s+1}
+    pred1 = m.head(h).argmax(-1)  # head 1 = the main head, output norm included (I34)
     accept = (draft == pred1[:, 1 : 1 + valid]).float().mean()
     assert abs(metrics["mtp_top1_h2"] - float(top1)) < 1e-6
     assert abs(metrics["mtp_accept_h2"] - float(accept)) < 1e-6
@@ -298,7 +298,7 @@ def test_mtp_full_trains_every_head_on_every_position() -> None:
     m = BigMoE(cfg).eval()
     toks = torch.randint(0, cfg.vocab, (2, cfg.context + 1))
     h, _ = m.forward_hidden(toks[:, :-1])
-    aux, metrics = m.mtp.aux_losses(h, toks, m.emb.weight, None)
+    aux, metrics = m.mtp.aux_losses(h, toks, m.emb.weight, m.out_norm, None)
     valid = cfg.context - 3
     ref = 0.0
     for j in (2, 3):
@@ -563,3 +563,108 @@ def test_l5_pm_matches_l1_non_embedding_params_at_l5_ne128_flops() -> None:
     assert pm.expert_width() == ne128.expert_width()
     l1_non_emb = 246_577_920  # `106-l1-screen/summary.json`
     assert abs(BigMoE(pm).n_params()["non_embedding"] - l1_non_emb) / l1_non_emb < 0.005
+
+
+# ---- ADR-038 (I33): router aux averaged over segments ----------------------------------------
+@pytest.mark.parametrize("step, n_seg", [("L5d", 4), ("L5", 1)])
+def test_router_aux_is_averaged_over_segments(step: str, n_seg: int) -> None:
+    torch.manual_seed(0)
+    cfg = tiny(step)  # L5d: window 16, context 64 -> 4 segments; L5: one segment
+    m = BigMoE(cfg).train()
+    toks = torch.randint(0, cfg.vocab, (2, cfg.context))
+    with torch.no_grad():
+        mean = m.forward_hidden(toks, r=cfg.middle.r_max)[1].router_aux
+        m.cfg = dc.replace(cfg, router=dc.replace(cfg.router, segment_aux="sum"))
+        summed = m.forward_hidden(toks, r=cfg.middle.r_max)[1].router_aux
+    assert float(mean) > 0
+    assert torch.allclose(summed, n_seg * mean, rtol=1e-5)
+
+
+# ---- L3c: sequential MTP modules (ADR-039) -------------------------------------------------
+def test_l3c_refuses_undefined_combinations() -> None:
+    l3c = ladder("L3c")
+    with pytest.raises(NotImplementedError):
+        dc.replace(ladder("L5"), mtp=l3c.mtp).validate()
+    with pytest.raises(ValueError):
+        dc.replace(l3c, mtp=dc.replace(l3c.mtp, curriculum="forward")).validate()
+
+
+def test_l3c_adds_three_modules_of_the_stated_size() -> None:
+    l3, l3c = ladder("L3"), ladder("L3c")
+    d = l3.d
+    blk = Block(l3c, "dense", l3c.mtp.module_d_ff, "parallel")
+    block = sum(p.numel() for p in blk.parameters())
+    per_module = 2 * d * d + block + 3 * d  # projection, block, three RMSNorms
+    adapters = 3 * (d * d + d)  # L3's heads: RMSNorm + d->d
+    diff = BigMoE(l3c).n_params()["total"] - BigMoE(l3).n_params()["total"]
+    assert diff == 3 * per_module - adapters
+    assert abs(3 * per_module - 22.4e6) / 22.4e6 < 0.01  # ADR-039: about +22.4 M
+
+
+def _l3c_chain(m: BigMoE, h: torch.Tensor, x_in: list[torch.Tensor]) -> list[torch.Tensor]:
+    """Module states for given inputs x_in[i] (module j = i + 2), as ADR-039 writes them."""
+    pos = torch.arange(h.shape[1])
+    out, prev = [], h
+    for i, x in enumerate(x_in):
+        prev = m.mtp.module(i, prev, torch.nn.functional.embedding(x, m.emb.weight), pos)
+        out.append(prev)
+    return out
+
+
+def test_l3c_module_j_never_sees_its_own_target() -> None:
+    """Teacher forcing feeds x_{t+j-1}; perturbing x_q leaves module j unchanged at s <= q - j."""
+    torch.manual_seed(0)
+    cfg = tiny("L3c")
+    m = BigMoE(cfg).eval()
+    toks = torch.randint(0, cfg.vocab, (1, cfg.context + 1))
+    q = 40
+    alt = toks.clone()
+    alt[0, q] = (alt[0, q] + 1) % cfg.vocab
+    t = cfg.context
+    idx = [(torch.arange(t) + j - 1).clamp(max=t) for j in range(2, cfg.mtp.m + 1)]
+    with torch.no_grad():
+        a = _l3c_chain(m, m.forward_hidden(toks[:, :-1])[0], [toks[:, i] for i in idx])
+        b = _l3c_chain(m, m.forward_hidden(alt[:, :-1])[0], [alt[:, i] for i in idx])
+    for i, (ha, hb) in enumerate(zip(a, b, strict=True)):
+        j = i + 2
+        assert torch.allclose(ha[0, : q - j + 1], hb[0, : q - j + 1], atol=1e-5)
+        assert not torch.allclose(ha[0, q - j + 1 :], hb[0, q - j + 1 :])
+
+
+def test_l3c_evaluation_runs_the_anchored_greedy_chain() -> None:
+    """At evaluation module 2 reads head 1's draft and module j reads module j-1's draft."""
+    torch.manual_seed(0)
+    cfg = tiny("L3c")
+    m = BigMoE(cfg).eval()
+    toks = torch.randint(0, cfg.vocab, (2, cfg.context + 1))
+    with torch.no_grad():
+        h, _ = m.forward_hidden(toks[:, :-1])
+        _, metrics = m.mtp.aux_losses(h, toks, m.emb.weight, m.out_norm, None)
+        pred1 = m.head(h).argmax(-1)
+        drafts, x, prev = [], pred1, h
+        pos = torch.arange(h.shape[1])
+        for i in range(cfg.mtp.m - 1):
+            prev = m.mtp.module(i, prev, torch.nn.functional.embedding(x, m.emb.weight), pos)
+            x = (m.mtp.out_norms[i](prev) @ m.emb.weight.t()).argmax(-1)
+            drafts.append(x)
+    valid = cfg.context - cfg.mtp.m
+    for i, d in enumerate(drafts):
+        j = i + 2
+        accept = (d[:, :valid] == pred1[:, j - 1 : j - 1 + valid]).float().mean()
+        top1 = (d[:, :valid] == toks[:, j : j + valid]).float().mean()
+        assert abs(metrics[f"mtp_accept_h{j}"] - float(accept)) < 1e-6
+        assert abs(metrics[f"mtp_top1_h{j}"] - float(top1)) < 1e-6
+
+
+def test_l3c_trains_every_module_and_the_trunk() -> None:
+    torch.manual_seed(0)
+    cfg = tiny("L3c")
+    m = BigMoE(cfg).train()
+    toks = torch.randint(0, cfg.vocab, (2, cfg.context + 1))
+    out = m.loss(toks)
+    out.mtp.backward()
+    for i in range(cfg.mtp.m - 1):
+        g = m.mtp.projs[i].weight.grad
+        assert g is not None and g.abs().sum() > 0
+    assert m.blocks[0].attn.parameters().__next__().grad is not None  # MTP trains the trunk
+    assert sorted(int(k[-1]) for k in out.metrics if k.startswith("mtp_loss_h")) == [2, 3, 4]
