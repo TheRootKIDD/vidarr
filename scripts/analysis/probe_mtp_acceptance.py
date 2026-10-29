@@ -134,6 +134,7 @@ def measure(
         pred1 = pred1.reshape(b, t)  # pred1[t] -> token t+1
         pred1_raw = _argmax_over_vocab(flat, emb, chunk).reshape(b, t)  # as logged before I34
         ent1 = ent1.reshape(b, t)
+        toks = toks.cpu()  # the helpers return CPU tensors; compare on the CPU
         main_correct += int((pred1 == toks[:, 1:]).sum())
         main_n += pred1.numel()
 
