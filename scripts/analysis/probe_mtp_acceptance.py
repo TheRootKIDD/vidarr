@@ -37,6 +37,13 @@ in hand when it decides whether to draft at all -- and acceptance per head is re
 per bucket. If acceptance is high where head 1 is confident, the aggregate understates
 what speculative decode actually gets.
 
+**I34 (2026-10-21).** Head 1 is the main head, `head(h)` = RMSNorm_out(h) @ E^T. Until
+this date both this probe and the trainer took h @ E^T, without the output norm, whose
+learned per-dimension gain can move the argmax. The probe now verifies against the
+main head and also reports the old verifier (`acceptance_vs_head1_raw`), so logged
+numbers can be compared. L3c's sequential modules (ADR-039) need the anchored chain,
+which the trainer's own evaluation computes; this probe refuses them.
+
 Offline from a checkpoint, CPU by default, so it cannot perturb a running ladder.
 
 Run: `python -m scripts.analysis.probe_mtp_acceptance --id 108-l3-screen --threads 4`
@@ -98,9 +105,12 @@ def measure(
     m = cfg.mtp.m
     if m <= 1 or model.mtp is None:
         return {}
+    if cfg.mtp.style != "independent":
+        raise SystemExit("L3c's modules need the anchored chain: read the trainer's evals")
     emb = model.emb.weight
     windows = corpus.val_windows(cfg.context, None)
     hits = {j: 0 for j in range(2, m + 1)}
+    hits_raw = {j: 0 for j in range(2, m + 1)}  # I34: the verifier without the output norm
     correct = {j: 0 for j in range(2, m + 1)}
     n = {j: 0 for j in range(2, m + 1)}
     main_correct = 0
@@ -120,8 +130,9 @@ def measure(
         h, _ = model.forward_hidden(inp)
         b, t, d = h.shape
         flat = h.reshape(-1, d)
-        pred1, ent1 = _argmax_and_entropy(flat, emb, chunk)
+        pred1, ent1 = _argmax_and_entropy(model.out_norm(flat), emb, chunk)  # the main head
         pred1 = pred1.reshape(b, t)  # pred1[t] -> token t+1
+        pred1_raw = _argmax_over_vocab(flat, emb, chunk).reshape(b, t)  # as logged before I34
         ent1 = ent1.reshape(b, t)
         main_correct += int((pred1 == toks[:, 1:]).sum())
         main_n += pred1.numel()
@@ -139,6 +150,7 @@ def measure(
             truth = toks[:, j : j + valid]
             acc = draft == verify
             hits[j] += int(acc.sum())
+            hits_raw[j] += int((draft == pred1_raw[:, j - 1 : j - 1 + valid]).sum())
             correct[j] += int((draft == truth).sum())
             n[j] += draft.numel()
             bucket_hits[j] += torch.bincount(bk[acc].reshape(-1), minlength=nb)
@@ -158,6 +170,7 @@ def measure(
         "per_head": {
             f"h{j}": {
                 "acceptance_vs_head1": hits[j] / max(1, n[j]),
+                "acceptance_vs_head1_raw": hits_raw[j] / max(1, n[j]),
                 "top1_accuracy_vs_truth": correct[j] / max(1, n[j]),
                 "positions": n[j],
             }
@@ -217,10 +230,14 @@ def main() -> None:
         return
 
     print(f"  main head top-1 vs truth: {100 * res['main_head_top1_accuracy']:.1f}%")
-    print(f"  {'head':>5s} {'ACCEPTANCE':>11s} {'top-1 truth':>12s}   (H13 wants 70/55/45)")
+    print(
+        f"  {'head':>5s} {'ACCEPTANCE':>11s} {'raw (I34)':>10s} {'top-1 truth':>12s}"
+        "   (H13 wants 70/55/45)"
+    )
     for k, v in res["per_head"].items():
         print(
             f"  {k:>5s} {100 * v['acceptance_vs_head1']:10.1f}% "
+            f"{100 * v['acceptance_vs_head1_raw']:9.1f}% "
             f"{100 * v['top1_accuracy_vs_truth']:11.1f}%"
         )
 

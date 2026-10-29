@@ -10,7 +10,8 @@ processed as segments of W tokens in order; each segment attends locally to
 its own per-iteration K/V and globally to the final vectors of the earlier
 segments (the cache G), with stop-gradient into G by default (ADR-023).
 L5e (ADR-034): a dense H block with its own weights runs after iteration
-j = K/2 (mod K) and writes the tokens still active.
+j = K/2 (mod K) and writes the tokens still active. The router aux is summed
+within a segment and averaged over segments (ADR-038, I33).
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ from torch.utils.checkpoint import checkpoint
 from model.block import Block
 from model.config import ModelCfg
 from model.middle import IterState, MiddleBlock
-from model.mtp import MTPHeads
+from model.mtp import MTPHeads, MTPModules
 
 
 @dataclass
@@ -73,7 +74,11 @@ class BigMoE(nn.Module):
                 for i in range(cfg.final_blocks)
             )
         self.out_norm = nn.RMSNorm(cfg.d)
-        self.mtp = MTPHeads(cfg.d, cfg.mtp) if cfg.mtp.m > 1 else None
+        self.mtp: MTPHeads | MTPModules | None = None
+        if cfg.mtp.m > 1 and cfg.mtp.style == "sequential":
+            self.mtp = MTPModules(cfg)  # L3c (ADR-039)
+        elif cfg.mtp.m > 1:
+            self.mtp = MTPHeads(cfg.d, cfg.mtp)
 
     # ---- embedding and streams ---------------------------------------------------
     def embed(self, tokens: Tensor) -> tuple[Tensor, Tensor | None]:
@@ -154,6 +159,8 @@ class BigMoE(nn.Module):
                     mem = g
                 else:
                     mem = (torch.cat([mem[0], g[0]], 2), torch.cat([mem[1], g[1]], 2))
+        if cfg.router.segment_aux == "mean":
+            aux = aux / len(hs)  # ADR-038 (I33): averaged over segments; one segment is unchanged
         h = torch.cat(hs, dim=1)
         r_map = torch.cat(r_maps, dim=1)
         ponder = torch.cat(ponders, dim=1).mean() if not fixed else torch.zeros((), device=dev)
@@ -216,7 +223,7 @@ class BigMoE(nn.Module):
         metrics: dict[str, float] = {}
         if self.mtp is not None:
             # heads 2..m read the same hidden state; targets x_{t+j}, j >= 2, from `tokens`
-            mtp, metrics = self.mtp.aux_losses(h, tokens, self.emb.weight, generator)
+            mtp, metrics = self.mtp.aux_losses(h, tokens, self.emb.weight, self.out_norm, generator)
         else:
             mtp = main.new_zeros(())
         ponder = self.cfg.halting.ponder_cost * ex.ponder

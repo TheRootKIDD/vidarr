@@ -54,6 +54,8 @@ class RouterCfg:
     bias_update_rate: float = 1e-3  # aux-loss-free load controller step (DeepSeek-V3 style)
     aux_loss_coef: float = 1e-3  # small sequence-level auxiliary loss
     use_depth_embed: bool = True  # False = E-Q2 ablation (router without e_j)
+    # ADR-038 (I33): aux averaged over L5d's segments; "sum" reproduces runs before it
+    segment_aux: Literal["mean", "sum"] = "mean"
 
 
 @dataclass(frozen=True)
@@ -99,10 +101,11 @@ class HaltingCfg:
 @dataclass(frozen=True)
 class MTPCfg:
     m: int = 1  # 1 disables; 4 = L3
-    style: Literal["independent"] = "independent"  # ADR-012
+    style: Literal["independent", "sequential"] = "independent"  # ADR-012; sequential = L3c
     subsample: float | Literal["auto"] = "auto"  # auto = 1/(m-1)
     lambdas: tuple[float, ...] = (1.0, 0.5, 0.25, 0.125)  # per head, head 1 first
     curriculum: Literal["none", "forward"] = "none"  # forward = L3b: heads 2..i in phase i of m
+    module_d_ff: int = 2048  # L3c (ADR-039): SwiGLU width of each module's dense block
 
 
 @dataclass(frozen=True)
@@ -228,6 +231,11 @@ class ModelCfg:
             raise ValueError("L_e must be 1 or 2")
         if self.mtp.m < 1:
             raise ValueError("mtp.m >= 1")
+        if self.mtp.style == "sequential":
+            if self.arch != "layered":
+                raise NotImplementedError("L3c on the recurrent design is not specified (ADR-039)")
+            if self.mtp.curriculum != "none":
+                raise ValueError("L3c with L3b's curriculum: two features (ADR-039)")
         final_vec = self.arch == "recurrent" and a.global_source == "final_vector"
         if final_vec and self.context % a.window:
             raise ValueError("context must be a multiple of the window (segment length)")
@@ -291,6 +299,8 @@ def ladder(step: str, **overrides: Any) -> ModelCfg:
         "L2": replace(moe, block_form="parallel"),
         "L3": replace(moe, block_form="parallel", mtp=MTPCfg(m=4)),
         "L3b": replace(moe, block_form="parallel", mtp=MTPCfg(m=4, curriculum="forward")),
+        # ADR-039: DeepSeek-V3-style sequential MTP modules in place of L3's heads
+        "L3c": replace(moe, block_form="parallel", mtp=MTPCfg(m=4, style="sequential")),
         "L5": rec,
         "L5-ne1": replace(rec, router=RouterCfg(k=1, n_experts=1)),
         "L5-ne128": replace(rec, router=RouterCfg(k=4, n_experts=128)),
