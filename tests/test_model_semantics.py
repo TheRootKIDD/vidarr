@@ -23,7 +23,7 @@ from model.moe import MoE
 
 STEPS = [
     "L0", "L1", "L2", "L3", "L3b", "L3c", "L5", "L5-ne1", "L5-ne13", "L5-pm", "L5-noej", "L5b",
-    "L5c", "L5d", "L5e", "L6", "L7-g4", "L7b",
+    "L5c", "L5d", "L5e", "L6", "L6c", "L7-g4", "L7b",
     "L4",
 ]
 
@@ -48,7 +48,7 @@ def tiny(step: str, **kw) -> ModelCfg:
 
 
 def r_for(cfg: ModelCfg) -> int | None:
-    return None if cfg.halting.mode == "act" else cfg.middle.r_max
+    return None if cfg.halting.mode != "fixed" else cfg.middle.r_max
 
 
 # ---- shapes and the ladder ------------------------------------------------------------
@@ -262,6 +262,144 @@ def test_fixed_mode_runs_exactly_r_iterations() -> None:
         _, ex = m.forward_hidden(toks, r=2)
     assert (ex.r_map == 2).all()
     assert len(ex.loads) == 2
+
+
+# ---- L6: gated ACT (ADR-041) ------------------------------------------------------------
+@pytest.mark.parametrize("gate", [True, False])
+def test_act_gate_is_the_halting_heads_only_path_from_the_main_loss(gate: bool) -> None:
+    torch.manual_seed(0)
+    base = tiny("L6")
+    cfg = dc.replace(base, halting=dc.replace(base.halting, ponder_cost=0.0, gate=gate))
+    m = BigMoE(cfg).train()
+    toks = torch.randint(0, cfg.vocab, (2, cfg.context + 1))
+    m.loss(toks).main.backward()
+    g = m.middle.halt.weight.grad
+    moved = g is not None and bool(g.abs().sum() > 0)
+    assert moved == gate  # ungated, the loss cannot see h (ADR-010's last state only)
+
+
+def test_act_gate_is_graves_mean_field_output() -> None:
+    """With the gate, the last state equals c0 + sum_j (1 - H^(j-1)) * Delta_j, i.e. Graves's
+    halting-weighted mean of the states when no token halts inside the loop."""
+    torch.manual_seed(0)
+    cfg = tiny("L6", halting=HaltingCfg(mode="act", ponder_cost=0.0, epsilon=0.01))
+    m = BigMoE(cfg).eval()
+    mid = m.middle
+    b, t = 1, 8
+    pos = torch.arange(t)
+    c0 = torch.randn(b, t, cfg.d)
+    st = IterState(
+        c=c0, p=None, active=torch.ones(b, t, dtype=torch.bool),
+        r=torch.zeros(b, t, dtype=torch.long), cum_halt=torch.zeros(b, t),
+        remainder=torch.zeros(b, t), frozen_kv=None,
+        frozen=torch.zeros(b, t, dtype=torch.bool), loads=[],
+    )
+    with torch.no_grad():
+        st1, _ = mid.iteration(st, 1, pos, None, force_active=False)
+        st2, _ = mid.iteration(st1, 2, pos, None, force_active=False)
+        # ungated reference for iteration 2 from the same input state
+        ref = dc.replace(cfg, halting=dc.replace(cfg.halting, gate=False))
+        mid.cfg = ref
+        st2u, _ = mid.iteration(dc.replace(st1, loads=[]), 2, pos, None, force_active=False)
+        mid.cfg = cfg
+    assert st1.active.all() and st2.active.all()  # nothing halts at the init bias
+    w = (1 - st1.cum_halt)[..., None]
+    assert torch.allclose(st2.c, st1.c + w * (st2u.c - st1.c), atol=1e-5)
+
+
+# ---- L6c: expert-choice depth by learned thresholds (ADR-042) -------------------------------
+def tiny_l6c(r_max: int = 3, **halting) -> ModelCfg:
+    base = tiny("L6c")
+    return dc.replace(
+        base,
+        middle=dc.replace(base.middle, r_max=r_max),
+        halting=dc.replace(base.halting, **halting),
+    )
+
+
+def test_l6c_survival_schedule_has_mean_depth_5_55() -> None:
+    h = ladder("L6c").halting
+    s = [h.survival_fraction(j, 2, 8) for j in range(1, 9)]
+    assert s[:2] == [1.0, 1.0] and abs(s[-1] - 0.3) < 1e-9
+    assert abs(sum(s) - 5.55) < 1e-9
+
+
+@pytest.mark.parametrize("train", [False, True])
+def test_l6c_is_causal(train: bool) -> None:
+    """Perturbing token t changes no hidden state before t, in training and in evaluation."""
+    torch.manual_seed(0)
+    cfg = tiny_l6c()
+    m = BigMoE(cfg).train(train)
+    m.middle.depth_tau[3] = 0.5  # a threshold that splits the toy scores
+    toks = torch.randint(0, cfg.vocab, (1, cfg.context))
+    t = 40
+    alt = toks.clone()
+    alt[0, t] = (alt[0, t] + 1) % cfg.vocab
+    outs = []
+    for x in (toks, alt):
+        m.middle._tau_sum = m.middle._tau_n = None  # same tau for both passes
+        with torch.no_grad():
+            outs.append(m.forward_hidden(x))
+    (h1, ex1), (h2, _) = outs
+    assert set(ex1.r_map.unique().tolist()) == {2, 3}  # some tokens stopped at r_min
+    assert torch.allclose(h1[0, :t], h2[0, :t], atol=1e-5)
+    assert not torch.allclose(h1[0, t:], h2[0, t:])
+
+
+def test_l6c_stopped_tokens_stay_stopped_and_keep_their_state() -> None:
+    torch.manual_seed(0)
+    cfg = tiny_l6c(r_max=5)
+    m = BigMoE(cfg).eval()
+    mid = m.middle
+    mid.depth_tau[3:] = 0.5
+    b, t = 2, 16
+    pos = torch.arange(t)
+    st = IterState(
+        c=torch.randn(b, t, cfg.d), p=None, active=torch.ones(b, t, dtype=torch.bool),
+        r=torch.zeros(b, t, dtype=torch.long), cum_halt=torch.zeros(b, t),
+        remainder=torch.zeros(b, t), frozen_kv=None,
+        frozen=torch.zeros(b, t, dtype=torch.bool), loads=[],
+    )
+    with torch.no_grad():
+        for j in range(1, 6):
+            prev = st
+            st, _ = mid.iteration(st, j, pos, None, force_active=False)
+            assert not (st.active & ~prev.active).any()  # nested
+            stopped = ~st.active
+            assert torch.equal(st.c[stopped], prev.c[stopped]) or j <= 2
+            assert (st.r[stopped] == prev.r[stopped]).all() or j <= 2
+    assert (st.r >= 2).all() and (st.r < 5).any()
+
+
+def test_l6c_thresholds_move_only_in_training() -> None:
+    torch.manual_seed(0)
+    cfg = tiny_l6c()
+    m = BigMoE(cfg)
+    toks = torch.randint(0, cfg.vocab, (2, cfg.context))
+    assert torch.isnan(m.middle.depth_tau[3])
+    m.train()
+    with torch.no_grad():
+        m.forward_hidden(toks)
+        assert torch.isnan(m.middle.depth_tau[3])  # queued, not applied (recompute-safe)
+        m.forward_hidden(toks)
+    tau = m.middle.depth_tau.clone()
+    assert torch.isfinite(tau[3])
+    m.eval()
+    with torch.no_grad():
+        m.forward_hidden(toks)
+        m.forward_hidden(toks)
+    assert torch.equal(m.middle.depth_tau.nan_to_num(), tau.nan_to_num())
+
+
+def test_l6c_mean_depth_follows_the_schedule() -> None:
+    torch.manual_seed(0)
+    cfg = tiny_l6c(r_max=8, tau_momentum=0.5)
+    m = BigMoE(cfg).train()
+    with torch.no_grad():
+        for _ in range(25):
+            _, ex = m.forward_hidden(torch.randint(0, cfg.vocab, (8, cfg.context)))
+    want = sum(cfg.halting.survival_fraction(j, 2, 8) for j in range(1, 9))  # 5.55
+    assert abs(float(ex.r_map.float().mean()) - want) < 0.5
 
 
 # ---- MTP (ADR-012) ------------------------------------------------------------------------
