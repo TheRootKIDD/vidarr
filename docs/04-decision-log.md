@@ -380,9 +380,112 @@ compute buys. If `151` − `163` < −4σ, the second weight set beats equal com
 inconclusive at one seed, and it goes to the user. No `small` pair is scheduled by this ADR.
 Consequences: no code. Bears on H6 and `08 §4`; touches I32, ADR-034.
 
+### ADR-007 — Prefill runs the learned depth rule; a fixed prefill schedule is a measured inference option
+2026-10-29 · accepted (was proposed since 2026-09-02; unblocks L6)
+Context: `01 §2` left open whether prefill uses a fixed $r$ schedule (throughput: every prompt token
+the same depth, no ragged masks) or the learned halting of decode. ADR-016 makes training lockstep
+with ragged-depth masks, so the training forward over a document *is* a sequential prefill. A fixed
+prefill schedule would put prompt tokens' final vectors, and so $\mathcal{G}$, at depths the model never
+produced in training.
+Decision:
+1. **Prefill = the training forward**: the same learned depth rule (ACT for L6, the threshold router
+   for L6c), ragged, segments in order (ADR-021/022). No train/inference mismatch by construction.
+2. A **fixed-$r$ prefill** is an inference option, scored twice before anyone builds on it: quality
+   as the held-out continuation loss after a fixed-$r$ prefill of an L6/L6c checkpoint, at
+   $r \in \{\lceil \bar r \rceil, r_{max}\}$ (a probe, no training); cost as TTFT in S5. It is not a
+   training mode, and no rung trains with it.
+3. ADR-024's parallel prefill modes are separate and stay proposed (Phase 3, E-Q12).
+Consequences: `01 §2` and `01 §4.7` say so; the fixed-prefill probe is written when L6/L6c
+checkpoints exist (after `165`/`166`), on idle GPUs. Bears on H7, H15a; touches ADR-024, S5.
+
+### ADR-008 — Local and global keys share one softmax
+2026-10-29 · accepted (was proposed since 2026-09-02; ratifies what was built and measured)
+Context: `01 §4.3` left open whether the local per-iteration range and the global final-vector range
+$\mathcal{G}$ are combined in one softmax or as two attention branches mixed by a learned gate. ADR-029
+(3) built one softmax over the concatenated keys, and every L5d measurement used it: `111` +0.45 % vs
+L5 at `screen`, the `134`/`135` pair +0.48 % (H15a supported), the 8 k pair `158`/`159` +0.76 %. A gate
+adds parameters and a second normalisation per head for a cost H15a already says is small.
+Decision: **one softmax** over [$\mathcal{G}$ | local window], as built. The gated two-branch form
+becomes an ablation of L9 only, where $\mathcal{G}$ is read through an approximate index and a learned
+gate could down-weight a lossy range; it is scheduled there if L9's $\Delta$ misses H15b's 1 %.
+Consequences: `01 §4.3` reads "one softmax". No code. Bears on H15a, H15b; touches L9, ADR-029.
+
+### ADR-041 — L6 as built: ACT with a gated residual (the loss reaches the halting head), $\lambda_p$ = 3·10⁻³, scored against an L5d fixed-$r$ curve
+2026-10-29 · accepted (design for L6; resolves I25 for L6)
+Context: `model/` already has ACT halting (`halting.mode = act`, preset `L6` = L5d + ACT, $\lambda_p$
+= 10⁻²) but it has never been trained. **As written it cannot learn a useful policy**: with the output
+fixed to the last state (ADR-010), the halting probabilities $h_t^{(j)}$ affect the loss only through
+the integer $r_t$, which has no gradient. The halting head is trained by the ponder cost alone, which
+pushes every $h$ up, so the predicted outcome is collapse to $r_{min}$ = 2. Graves's ACT avoids this
+by outputting the halting-weighted mean of the states. Second, H7's control: I25 asked for a fixed-$r$
+curve, and `114`/`110`/`115` gave one for **L5** (3.3567 / 3.3328 / 3.3370 at $r$ = 4 / 8 / 12). L6
+sits on **L5d**, whose depth curve is unmeasured, and on ADR-038's segment-mean aux, so `111` is not
+its baseline either; `162` (L5d with `mean`, $r$ = 8) is.
+Decision:
+1. **Gated residual.** In `act` mode the update of iteration $j$ is scaled by the probability that
+   the token is still running, $1 - H_t^{(j-1)}$, with $H^{(0)}$ = 0 (`01 §4.7`). That is Graves's
+   mean-field output, $\sum_j p_j c^{(j)}$, written as a residual recursion, so the loss gradient
+   reaches every earlier $h$. **ADR-010 holds literally**: the output and what later tokens attend
+   to is the last computed state of this recursion. Knob `halting.gate` (default true; `false`
+   reproduces the ungated code for a collapse check if ever wanted). Fixed-$r$ rungs are untouched.
+2. **$\lambda_p$ = 3·10⁻³.** The L5 sweep puts the average marginal value of iterations 5–8 at
+   0.0239 / 4 ≈ 0.006 nats per token per iteration, and iterations 9–12 at ≤ 0. A ponder price of
+   half that should keep iterations worth more than ≈ 0.003 and drop the rest, landing $\bar r$
+   between 4 and 8. The preset's 10⁻² sat above the measured marginal value and would most likely
+   have pushed $\bar r$ to $r_{min}$. One value, one run; if $\bar r$ ends at $r_{min}$ or $r_{max}$,
+   that is the result, and a $\lambda_p$ sweep goes to the user.
+3. **Controls, the L5d depth curve:** `167-l5d-r4-screen` and `168-l5d-r6-screen` (`--rung L5d --set
+   middle.r_min=r middle.r_max=r experts.d_ff=896`, the `114` construction), with `162` as the
+   $r$ = 8 point. All three use the segment-mean aux.
+4. **Scoring (I25).** L6's $\bar r$ is `val_r_mean`. The control value at $\bar r$ is the linear
+   interpolation of the L5d curve between its neighbouring points. "Adaptive depth works" needs L6 below
+   that value by > 4σ (one seed, `screen`, ADR-013). Within 2σ means it matched a fixed depth, so the
+   adaptivity bought nothing. H7's own wording (≥ 30 % middle-block FLOPs saved at ≤ 1 % loss vs
+   fixed $r_{max}$, i.e. vs `162`) is reported beside it, as stated. Middle-block FLOPs are $\bar r / 8$
+   of `162`'s; wall-clock does not fall in the reference implementation, which computes halted tokens
+   and masks them.
+Consequences: about ten lines in `model/middle.py` and `model/model.py`, the preset's $\lambda_p$, tests
+(the halting head gets a non-zero gradient from the main loss in `act` mode; `gate = false` gives it
+none; fixed mode is bit-identical). Code on branch `l6-adr041`, merged by `queue_screen_12` after
+`164`. `165-l6-screen`. Bears on H7; resolves I25 for L6; touches ADR-010, ADR-016.
+
+### ADR-042 — L6c as built: expert-choice depth by learned thresholds (causal), MoR score gate, fixed survival schedule
+2026-10-29 · accepted (design for L6c; resolves I24's quality half)
+Context: I24 — MoR's expert-choice depth router beat token-choice by 2.6 points (`05`), and the spec
+committed to token-choice. Plain expert-choice selects the top fraction of tokens *across the batch*
+at each iteration, so a token's depth depends on later tokens in its own sequence. That is a causal
+leak in training and impossible at decode, and it makes held-out loss flattering. MoR patches it with an
+auxiliary predictor. Expert-Threshold routing (Sun et al. 2026, `05`) replaces top-$k$ with a
+per-expert threshold, an EMA of the batch's $k$-th score: causal, the same rule in training and
+inference, balanced without an aux loss, and −0.067 CE vs token-choice at 2.4 B.
+Decision:
+1. **Router.** The halting linear layer, re-initialised as a depth router: $g_t^{(j)} =
+   \sigma(w_g^\top[u; e_j])$ on each active token at the start of iteration $j > r_{min}$ (= 2). The
+   token continues iff $g_t^{(j)} \ge \tau_j$; otherwise it stops with $r_t = j - 1$ and follows
+   ADR-010/011. Same parameter count as L6.
+2. **Thresholds.** $\tau_j$ is a buffer. After each training step it moves toward the quantile of
+   that step's scores among tokens active at $j-1$ that keeps the conditional fraction
+   $s_j / s_{j-1}$: EMA momentum 0.99, set directly on the first step, the quantile all-reduced
+   across ranks, and applied at the next forward. So the selection of any batch uses only earlier
+   batches (causal; checkpoint recomputation sees the same $\tau$). Evaluation uses the same rule,
+   frozen.
+3. **Survival schedule** $s_1 = s_2 = 1$, $s_j = 1 - 0.7\,(j-2)/6$ for $j$ = 3..8, so 0.88 / 0.77 /
+   0.65 / 0.53 / 0.42 / 0.30, **mean depth 5.55** (−30.6 % middle-block FLOPs vs $r_{max}$): just
+   inside H7's 30 %. The schedule is met on average, not per batch.
+4. **Gate.** A continuing token's update is scaled by its score, $g\,\Delta$ (MoR). This is the
+   router's only gradient path; no aux loss.
+5. **Run `166-l6c-screen`** beside `165`, same base (L5d, segment-mean aux), seed 0, `screen`.
+   Scored like L6 (ADR-041 §4) at its measured $\bar r$, and against L6 directly: by I24's prior,
+   L6c should be better at equal $\bar r$. Since the two will not land on the same $\bar r$, the
+   comparison is between their distances to the L5d fixed-$r$ curve.
+Consequences: `halting.mode = expert` with knobs `survival`, `survival_last`, `tau_momentum`; preset
+`L6c`; tests (causality: changing tokens after $t$ changes no output at $\le t$, in training mode and
+in eval; once stopped, a token stays stopped; $\tau$ moves only in training; mean depth follows the
+schedule on random data within tolerance after warm-up). **I24's systems half stays open**: what a
+per-iteration threshold rule costs P11's continuous scheduler is a `sim/` experiment (S2 variant) and
+waits for the simulator. Bears on H7, H11; touches I24, ADR-016.
+
 ## Proposed / pending
-- **ADR-007** — Fixed $r$ schedule for prefill vs learned halting in prefill.
-- **ADR-008** — Local and indexed attention: one softmax, or two gated branches.
 - **ADR-028** — Unit model revisions from the author's hardware document (`docs/07 §4`): (a) two compute classes per chip — an FF core with a large array ($s_{min,ff}$ = 256–1024) and attention cores with small arrays ($s_{min,attn}$ ≈ 64), hence $\phi_{ff}$, $\phi_{attn}$ as separate scenario inputs; (b) the tile floor is a *row* floor, $N$ = $M$ × (LHS bw / RHS bw) rows per weight tile, with each token contributing 1 + $m$ rows under $m$-token speculation — the scheduler's queues count rows; (c) the reduce leg of the local fabric carries ≥ 16-bit partial sums: `02 §2` traffic becomes $b d\, b_{act} + b d\, b_{sum}$, $b_{sum}$ ≥ 2; (d) full pipelining inside the unit doubles tokens in flight and per-token latency — the Little's-law budget $Z$ of `02 §5.5` carries the factor; (e) router-based unit fabrics are ≤ 50 % link-efficient (avg. 2 hops), torus collectives 100 %: `02 §1`'s "switch" option is not equivalent to a torus; (f) the asymmetric 4×4×4 torus all-gather costs ≈ 3X/(8B) vs ≈ X/(2B) on a flat ring (our derivation from the author's algorithm) — the number S1/S3 must reproduce; (g) the failure domain is the 4-chip ring board, and a failed rail port is bypassed through torus neighbours at ¼ load (`02 §11`); (h) the replica-rounding utilisation floor $\ell / \lceil \ell \rceil$ reported beside the Little's-law model in S4. Also fills `note64.yaml` with the sourced ratios of `docs/07 §6`; absolute $\phi$, $\beta_C$, $\lambda_C$, $\nu_C$ stay placeholders (I4). Bears on H1, H5, H8, H9, H10, H11, H16; changes `02 §1, §2, §5, §11`.
 - **ADR-024** — Parallel prefill mode for long prompts (the author's "less effective mode"): (a) all segments at once with local attention only, global cache filled afterwards from context-poor final vectors; (b) pipelined segments, segment $k+1$ at iteration $j$ attending globally to segment $k$'s iteration-$j$ caches (transient per-iteration global cache during prefill, in-flight depth up to $r$ segments). Both are inference-time modes of a sequentially trained model; E-Q12 evaluates both against sequential prefill on continuation loss and TTFT (S5). If both degrade, a mixed-mode training variant becomes a later ladder step.
 
@@ -467,13 +570,13 @@ Consequences: no code. Bears on H6 and `08 §4`; touches I32, ADR-034.
 
 - **I25** **H7's comparator is the wrong control.** H7 reads *"learned $r_t$ saves ≥ 30 % middle-block FLOPs at ≤ 1 % loss **vs fixed $r_{max}$**"*. Beating fixed $r_{max}$ is not the interesting claim: a learned policy that settles at a mean depth of, say, 5.6 is competing against $r$ = 8, so it is being credited for the FLOPs saved by *being shallower*, which any fixed $r$ = 6 run would also save. **The honest control is fixed $r$ at the same mean depth**, and the ladder does not currently have one — `03 §2` runs L5 at fixed $r$ = 8 only. Without it, "adaptive depth works" and "this model wanted to be shallower" are indistinguishable, and the ARC Prize HRM ablation (`05` line 92) is a live example of exactly that confusion resolving the boring way: a same-size plain transformer within ~5 pp, *"the outer refinement loop, not the hierarchy, carries it"*. Found while answering the HRM brief (`08 §5`), not from the brief itself.
 
-  **Resolution — a fixed-$r$ sweep as a control, not a feature**: L5 at $r$ ∈ {4, 8, 12}, one seed each at `screen`, ≈ 16 h total at the measured rate. It gives H7 a loss-vs-mean-depth curve to compare a learned policy against, and it is independently useful — it is the first measurement of whether this architecture wants more or less depth at all, which H6 also benefits from. **H7 should not be scored before it exists.** Cheap, and the cheapest thing on `08 §9`'s list. Bears on H7, H6; touches `03 §1`, `03 §2`.
+  **Resolution — a fixed-$r$ sweep as a control, not a feature**: L5 at $r$ ∈ {4, 8, 12}, one seed each at `screen`, ≈ 16 h total at the measured rate. It gives H7 a loss-vs-mean-depth curve to compare a learned policy against, and it is independently useful — it is the first measurement of whether this architecture wants more or less depth at all, which H6 also benefits from. **H7 should not be scored before it exists.** Cheap, and the cheapest thing on `08 §9`'s list. Bears on H7, H6; touches `03 §1`, `03 §2`. *Update 2026-10-29:* the L5 sweep ran (`114`/`110`/`115`, flat past 8), but L6 sits on L5d with ADR-038's aux, so ADR-041 adds the matching L5d curve (`167` $r$ = 4, `168` $r$ = 6, `162` $r$ = 8) and fixes the scoring: L6/L6c against the interpolated curve at their own $\bar r$, > 4σ below it to count. **Resolved for L6/L6c by ADR-041 §3–4.**
 
 - **I24** **H7's depth mechanism is token-choice; its strongest prior says expert-choice is better.** `01 §4.7` specifies per-token depth as an **ACT halting head**: each token accumulates $h_t^{(j)}$ and stops when the sum crosses $1-\epsilon$. That is a *token-choice* decision — each token decides for itself, locally. Mixture-of-Recursions (Bae et al. 2025, arXiv:2507.10524), which `docs/05` records as **the strongest prior for both H6 and H7**, instead uses an *expert-choice* router: at each recursion the router picks which tokens continue, under a capacity constraint. The same entry records that **expert-choice beats token-choice by 2.6 points** in their ablation. So the mechanism the spec commits to is the one its own best prior measured as worse, and no ladder step currently compares them. Raised by Annemette 2026-09-11 (as "let the router decide how many times each token goes around").
 
   **Why the spec may be right anyway, and why this is a trade rather than a fix.** Expert-choice depth routing needs batch-level information — you cannot select the top tokens to continue without seeing the others — so it is a *synchronisation point*. The note's P11 execution model is continuous and non-lockstep at inference, with tokens flowing through units independently (`02 §5`); ACT halting is a purely local decision and composes with that, while expert-choice does not, or not without a capacity rule evaluated over whatever happens to be in flight. Training is lockstep either way (ADR-016), so the conflict is inference-only — but inference is where the note's whole scheduling argument lives. **If expert-choice wins on quality but costs the continuous execution model, that is a trade to price, not a free upgrade.**
 
-  **Proposed resolution — L6c, beside L6 rather than after it** (the I20 pattern): L6 as specified (ACT halting, token-choice) vs **L6c** (expert-choice depth router with a capacity factor, MoR-style) at `screen`, same budget, same seed, on top of L5d. Quality half is one cheap run. The systems half belongs to `sim/`: an S-experiment measuring what a per-iteration capacity rule costs the continuous scheduler in utilisation and tokens in flight, against ACT's ragged depth. Report both before H7 is scored. Note the interaction with ADR-010/011: expert-choice changes *which* tokens stop, not the ragged-depth semantics or the halted-KV rule, so those stay as accepted. Bears on H7, H11; touches `01 §4.7`, `02 §5`.
+  **Proposed resolution — L6c, beside L6 rather than after it** (the I20 pattern): L6 as specified (ACT halting, token-choice) vs **L6c** (expert-choice depth router with a capacity factor, MoR-style) at `screen`, same budget, same seed, on top of L5d. Quality half is one cheap run. The systems half belongs to `sim/`: an S-experiment measuring what a per-iteration capacity rule costs the continuous scheduler in utilisation and tokens in flight, against ACT's ragged depth. Report both before H7 is scored. Note the interaction with ADR-010/011: expert-choice changes *which* tokens stop, not the ragged-depth semantics or the halted-KV rule, so those stay as accepted. Bears on H7, H11; touches `01 §4.7`, `02 §5`. *Update 2026-10-29:* **quality half resolved by ADR-042**: L6c = expert-choice by learned per-iteration thresholds (Expert-Threshold routing), causal and identical in training and evaluation, MoR score gate, survival schedule with mean depth 5.55; `166` beside L6 `165`. The systems half stays open until `sim/` can run it.
 - **I22** *(closed by I23; confirmed 2026-09-11 by `106-l1-screen`)* `100-l0-screen` took 18 h of wall-clock for 4.28 h of timed steps; the first checkpoint came on time (30 min), so the loss is later and outside the timed region — evaluation, checkpointing to `/home` (SATA, 31 GiB free, btrfs zstd), the per-step barrier, or the host. The trainer now records absolute time, `eval_s` and `ckpt_s` per step. **Confirmed closed by `106-l1-screen`**, which ran the *same 1907 steps* of a *more expensive* rung in **5.62 h of wall-clock against 5.540 h of summed `step_s` plus 0.079 h of evals and checkpoints — 0.1 % unaccounted**, where `100` left ≈ 76 % unexplained. **None of I22's suspects was the cause**: not `/home`, not the evals, not the per-step barrier, not the host. It was I23's thermal throttling throughout, and `024`'s layout fix removed it. Every `results.md` still reports timed-step hours *and* wall-clock, now as a cheap regression check rather than an open question.
 - **I21** *(closed 2026-09-11 by `026-train-step-rungs-1gpu`)* `014-train-step-rungs`: DDP's per-micro-step all-reduce costs the recurrent rungs ≈ 1.9–2.9 s against ≈ 0.25 s for the dense baseline, for a smaller gradient. Likely no bucket/compute overlap because the shared block's gradient completes only at the end of backward, plus many small expert matrices and checkpoint recompute; unverified. Gradient accumulation (16 micro-steps per step) hides it in training; measure the reducer timeline before any throughput statement about the recurrent design on this rig. **Premise withdrawn 2026-09-10 (`024`, and the erratum appended to `014`).** `024` measures the identical DDP L5 configuration at **737.5 ms** where `014` reported 2526 ms, so against `014`'s own 651 ms single-GPU figure the DDP overhead is **≈ 86 ms — below the dense rung's ≈ 250 ms**, not eight times above it. `014`'s minimum sits 1 % under its median, i.e. it never ran a fast step, which dates the loss to cards already saturated before the rung began rather than to the reducer. **I21 is not closed**: `024` measures one rung, and `014` kept no thermal telemetry, so the recurrent rungs' true all-reduce cost is simply unmeasured. **Closed by `026`**, which re-measured the single-GPU column on the candidate-C layout and paired it with `018`'s DDP column. The DDP overhead is a ring all-reduce of the gradient and nothing else: at $N$ = 4 that is $2(N-1)/N$ = 1.5× the gradient, BF16 at 2 bytes per parameter, over the measured $\lambda_{link}$ = 3.59 GB/s (`002-nccl`). That parameter-free prediction matches measurement within 10 % on six of nine rungs, **including the recurrent L5 at ratio 1.02**. **L5 pays 66 ms on 77.5 M parameters against L0's 65 ms on 100.1 M** — the same cost per parameter, not eight times it, and cheaper per parameter than the 271 M layered rungs at 0.85–0.89 ms/M. There is nothing left to explain: the ≈ 1.9–2.9 s was thermal throttling on the old layout, in both columns. Two rungs sit above ratio 1.2 — L5d at 1.57 and L5-ne128 at 1.31, the latter plausibly many small expert buckets rather than a few large ones — and are second-order against a prediction that assumes a perfect ring. **Consequence for the design:** the recurrent rungs carry no distributed-training penalty beyond their parameter count, so accumulation is worth having for the 271 M layered rungs (all-reduce ≈ 40 % of a micro-step) and close to irrelevant for the 77.5 M recurrent ones (9–11 %).
 - **I17** `docs/07 §4.1`: the author's baseline unit is $U$ = 16 (even 4×4 torus + cheap routers), the note's is 64 (asymmetric 1:4:16:64). `note64.yaml` carries both; every S-experiment that depends on $U$ reports the pair until Q14 is answered.
