@@ -1518,8 +1518,8 @@ $r$ = 8; I25). **ADR-042**: L6c is expert-choice depth by learned per-iteration 
 (Expert-Threshold routing). It is causal and identical in training and eval, avoiding the batch top-$k$
 leak; it uses MoR's score gate and survival schedule 1, 1, 0.88 … 0.30, mean depth 5.55. That resolves
 I24's quality half; its systems half waits for `sim/`. Code on branch `l6-adr041` (`cb7f964`, worktree
-`../vidarr-l6`): `halting.mode = expert`, `halting.gate`, preset `L6c`, eight new tests. **Tests and
-ruff ran nowhere yet beside ruff on the branch** (`162` is running; no CPU work beside DDP).
+`../vidarr-l6`): `halting.mode = expert`, `halting.gate`, preset `L6c`, eight new tests. **Only ruff has run on the
+branch; the tests run in the queue's gate** (`162` is running; no CPU work beside DDP).
 `/mnt/nvme/queue_screen_12.sh` is armed: it waits for `queue_screen_11`'s QUEUE DONE, then merges,
 gates (ruff + pytest), re-runs the seven I34 probes with the fixed probe, and runs **`165` L6, `166`
 L6c, `167` L5d-r4, `168` L5d-r6** (≈ 30 h; ends ≈ 2026-11-01). The hourly loop (session cron) writes
