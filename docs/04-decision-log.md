@@ -1420,6 +1420,15 @@ effective experts, 19 / 23 near-dead at iteration 8 (`153`: 10). Both runs: zero
 2026-10-21 (17:20) pick-up: merge `l3c-i33`, ruff + pytest gate, `032` L3c sizing, I34 probes, then
 `162` L5d-segmean, `163` L5-r9, `164` L3c (≈ 26 h). Next ladder id 165, rig id 033.
 
+**Queue progress (20:33).** Merged `l3c-i33` → `22d1cdd`; gate passed (ruff, 97 tests); worktree
+removed. **`032` L3c sizing:** 9.73 GiB peak at micro-batch 2 (> 9.5) → `164` runs at micro-batch 1;
+36.9 k tok/s on the smoke steps. **The I34 probes all crashed** (`RuntimeError`, CUDA vs CPU tensors:
+the chunked argmax helpers return CPU tensors and the probe compared them with the GPU tokens; the
+unit tests run on CPU and could not see it). The queue logged them as `exit 0` because `$(date -Is)`
+inside the `echo` resets `$?` before it is read (`run()` saves `rc` first and is unaffected). Fixed
+in `b96364b`; no JSON was written, so nothing is wrong on disk. **The seven I34 probes are re-run on
+GPU after QUEUE DONE**, before `164`'s write-up, which needs them. `162` started 20:33.
+
 ### 2026-10-21 (17:20) — pause armed after `161` on the user's request; `queue_screen_11` stopped before it ran anything
 
 The user asked to pause after `161`. `queue_screen_11.sh` was still in its wait loop (no merge, no
