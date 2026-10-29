@@ -1,1 +1,1 @@
-"""Discrete-event simulator of docs/02. Skeleton — Phase 2."""
+"""Discrete-event simulator of docs/02. Milestone 1 (ADR-043): see sim/README.md."""
