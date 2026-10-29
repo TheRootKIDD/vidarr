@@ -1504,6 +1504,27 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-10-29 (21:00) — ADR-007/008 accepted; ADR-041 (L6) and ADR-042 (L6c) drafted, built on `l6-adr041`, queued as `queue_screen_12` (`165`–`168`) behind `164`
+
+The user asked for ADR-007/008 and I24/I25 for L6 and for the work to be queued behind the current queue.
+**ADR-007** (prefill runs the learned depth rule; fixed-$r$ prefill is a probe plus S5) and **ADR-008**
+(one softmax, as built and measured by every L5d run) are accepted, with no runs. **The existing L6 code
+could not have learned a policy**: with ADR-010's last-state output the halting head saw the loss only
+through the integer $r_t$, so ponder cost alone would have collapsed it to $r_{min}$. **ADR-041** gates
+each update by $1 - H^{(j-1)}$, Graves's mean-field output in residual form, with ADR-010 kept literally.
+It lowers $\lambda_p$ to 3·10⁻³, under the measured ≈ 0.006 nats per iteration of L5's iterations 5–8, and
+scores L6 at its own $\bar r$ against an **L5d** fixed-$r$ curve (`167` $r$ = 4, `168` $r$ = 6, `162`
+$r$ = 8; I25). **ADR-042**: L6c is expert-choice depth by learned per-iteration thresholds
+(Expert-Threshold routing). It is causal and identical in training and eval, avoiding the batch top-$k$
+leak; it uses MoR's score gate and survival schedule 1, 1, 0.88 … 0.30, mean depth 5.55. That resolves
+I24's quality half; its systems half waits for `sim/`. Code on branch `l6-adr041` (`cb7f964`, worktree
+`../vidarr-l6`): `halting.mode = expert`, `halting.gate`, preset `L6c`, eight new tests. **Tests and
+ruff ran nowhere yet beside ruff on the branch** (`162` is running; no CPU work beside DDP).
+`/mnt/nvme/queue_screen_12.sh` is armed: it waits for `queue_screen_11`'s QUEUE DONE, then merges,
+gates (ruff + pytest), re-runs the seven I34 probes with the fixed probe, and runs **`165` L6, `166`
+L6c, `167` L5d-r4, `168` L5d-r6** (≈ 30 h; ends ≈ 2026-11-01). The hourly loop (session cron) writes
+up both queues. Next ladder id 169, rig id 033.
+
 ### 2026-10-29 (20:45) — L5-pm pair: **H6 weakened at matched params and FLOPs** (+1.67 % vs L1, two seeds); I29 closed; σ over twelve pairs 0.0030; `queue_screen_11` relaunched
 
 **`queue_small_10` finished** 2026-10-25 15:04 and the GPUs stayed idle as armed. **`160` = 2.9349,
