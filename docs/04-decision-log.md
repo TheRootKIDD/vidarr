@@ -1525,6 +1525,14 @@ gates (ruff + pytest), re-runs the seven I34 probes with the fixed probe, and ru
 L6c, `167` L5d-r4, `168` L5d-r6** (≈ 30 h; ends ≈ 2026-11-01). The hourly loop (session cron) writes
 up both queues. Next ladder id 169, rig id 033.
 
+**Simulator milestone 1 written (Phase 2), not yet run.** Branch `sim-m1` (`812d852`, `e2bffa2`; worktree
+`.claude/worktrees/agent-a06f90379f5e0445d`): `SimParams` and a source-checked scenario loader, a heap
+event loop, units/owners/expert queues/egress links for fixed-$r$ decode, a JSON CLI, and 11 tests. On
+the branch, **ADR-043** records its ten implementation decisions (accepted on merge) and **I35** asks
+for a value of the expert-queue timeout $w_{max}$, which sets per-iteration latency at L5 on this rig.
+Only ruff and a compile check have run. Tests and a first `local_3060` run come once
+`queue_screen_12` is done; then it merges. The measured side of S0 does not exist yet.
+
 ### 2026-10-29 (20:45) — L5-pm pair: **H6 weakened at matched params and FLOPs** (+1.67 % vs L1, two seeds); I29 closed; σ over twelve pairs 0.0030; `queue_screen_11` relaunched
 
 **`queue_small_10` finished** 2026-10-25 15:04 and the GPUs stayed idle as armed. **`160` = 2.9349,
