@@ -485,6 +485,33 @@ schedule on random data within tolerance after warm-up). **I24's systems half st
 per-iteration threshold rule costs P11's continuous scheduler is a `sim/` experiment (S2 variant) and
 waits for the simulator. Bears on H7, H11; touches I24, ADR-016.
 
+### ADR-044 — The L3c `small` pair is dropped; H13 closes as weakened at this scale
+2026-10-30 · accepted (the user's decision: "write the ADR to drop the pair")
+Context: ADR-039 §6 runs an L3c `small` pair if `164` beats L3 by > 4σ on the main head *or* on
+acceptance at every head. `164` met the main-head condition (−0.0494 vs `108`, 4.1× 4σ) and failed the
+acceptance one (34.5 / 16.1 / 8.4 % against L3's I34-corrected 38.6 / 22.0 / 15.2 %, lower at every
+head). The trigger was written to catch a route that might reach H13's bounds. It did not anticipate
+the two clauses moving apart. H13 needs both: acceptance ≥ 70 / 55 / 45 % *and* main-head Δ ≤ 2σ
+against L2. On `164`, acceptance would have to roughly double at module 2 and quintuple at module 4,
+and the main-head cost against L2 (+0.0497, 8.3× 2σ) would have to vanish. Every earlier MTP arm
+shrank its `screen` cost by at most ≈ 20 % at `small` (L3: +0.0991 → +0.0832). The pair costs ≈ 2 × 23 h.
+Decision:
+1. **The L3c `small` pair is not run.** ADR-039 §6's trigger is superseded for `164`; ADR-031 allows
+   a leftover to be dropped by its own ADR.
+2. **H13 is closed as weakened at this scale**, on the L3 pair (`122`/`131`), the L3b pair
+   (`156`/`157`) and L3c at `screen` (`164`). No MTP route is left in the plan. MTP stays off the
+   rest of the ladder (ADR-030 already branches L5 onwards from L2 without heads).
+3. **What is kept:** `164`'s main-head result (sequential modules halve L3's main-head cost) is
+   recorded as a finding for the post-ladder brainstorm (I28), not as a route to H13. **I36** stays
+   open as an optional GPU probe (decode-faithful acceptance for L3/L3b/L3c). It can change the
+   acceptance numbers, not the main-head clause, so it cannot reopen H13 by itself.
+4. **Systems side:** S5's speculative-decode scenarios take acceptance as a scenario input. They use
+   the measured, I34-corrected L3 pair (41.6 / 24.1 / 16.0 %) with its source line, beside the note's
+   70 / 55 / 45 % as the design target, never the target alone.
+Consequences: ≈ 46 GPU-hours are not spent; nothing is queued. `03`'s H13 row reads "closed:
+weakened". If I36's probe is ever built, its numbers are an addendum to `164`, not a new verdict.
+Bears on H13; touches ADR-012, ADR-030, ADR-031, ADR-039, I28, I36.
+
 ## Proposed / pending
 - **ADR-028** — Unit model revisions from the author's hardware document (`docs/07 §4`): (a) two compute classes per chip — an FF core with a large array ($s_{min,ff}$ = 256–1024) and attention cores with small arrays ($s_{min,attn}$ ≈ 64), hence $\phi_{ff}$, $\phi_{attn}$ as separate scenario inputs; (b) the tile floor is a *row* floor, $N$ = $M$ × (LHS bw / RHS bw) rows per weight tile, with each token contributing 1 + $m$ rows under $m$-token speculation — the scheduler's queues count rows; (c) the reduce leg of the local fabric carries ≥ 16-bit partial sums: `02 §2` traffic becomes $b d\, b_{act} + b d\, b_{sum}$, $b_{sum}$ ≥ 2; (d) full pipelining inside the unit doubles tokens in flight and per-token latency — the Little's-law budget $Z$ of `02 §5.5` carries the factor; (e) router-based unit fabrics are ≤ 50 % link-efficient (avg. 2 hops), torus collectives 100 %: `02 §1`'s "switch" option is not equivalent to a torus; (f) the asymmetric 4×4×4 torus all-gather costs ≈ 3X/(8B) vs ≈ X/(2B) on a flat ring (our derivation from the author's algorithm) — the number S1/S3 must reproduce; (g) the failure domain is the 4-chip ring board, and a failed rail port is bypassed through torus neighbours at ¼ load (`02 §11`); (h) the replica-rounding utilisation floor $\ell / \lceil \ell \rceil$ reported beside the Little's-law model in S4. Also fills `note64.yaml` with the sourced ratios of `docs/07 §6`; absolute $\phi$, $\beta_C$, $\lambda_C$, $\nu_C$ stay placeholders (I4). Bears on H1, H5, H8, H9, H10, H11, H16; changes `02 §1, §2, §5, §11`.
 - **ADR-024** — Parallel prefill mode for long prompts (the author's "less effective mode"): (a) all segments at once with local attention only, global cache filled afterwards from context-poor final vectors; (b) pipelined segments, segment $k+1$ at iteration $j$ attending globally to segment $k$'s iteration-$j$ caches (transient per-iteration global cache during prefill, in-flight depth up to $r$ segments). Both are inference-time modes of a sequentially trained model; E-Q12 evaluates both against sequential prefill on continuation loss and TTFT (S5). If both degrade, a mixed-mode training variant becomes a later ladder step.
@@ -1504,6 +1531,16 @@ and an ADR first, L6c likewise; the `small` programme (L0, L1, L2, L3, L5, L5d a
 the ladder's own next step and needs no new code. The choice between "more `screen` variants" and
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
+
+### 2026-10-30 (21:30) — ADR-044: the L3c `small` pair is dropped; H13 closed as weakened
+
+The user chose to drop the pair that ADR-039 §6's main-head trigger called for. **ADR-044** records it:
+the pair cannot reach H13's bounds on `164`'s numbers (acceptance below L3's at every head, +0.0497
+vs L2), so ≈ 46 GPU-hours are saved and **H13 closes as weakened at this scale**. I36 stays open as an
+optional probe that cannot reopen H13 by itself. S5 will price speculative decode with the measured
+L3-pair acceptance. Nothing queued; `165` L6 running (ETA ≈ 02:45). Note for the `sim-m1` merge:
+ADR-043 lives on that branch and is inserted at the same place as ADR-044, so the merge needs a
+trivial ordering fix.
 
 ### 2026-10-30 (21:00) — `164` L3c: **main head −0.0494 vs L3 (4.1× 4σ) but +0.0497 vs L2; anchored-chain acceptance 34.5 / 16.1 / 8.4 %, below L3's at every head → H13 weakened at `screen` on both clauses**; I34 closed; I36 opened; ADR-039 §6's `small`-pair trigger fires (user's call); `queue_screen_12` gate passed, `165` L6 running
 
