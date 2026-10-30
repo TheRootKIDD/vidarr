@@ -91,11 +91,21 @@ class StreamsCfg:
 
 @dataclass(frozen=True)
 class HaltingCfg:
-    mode: Literal["fixed", "act"] = "fixed"
+    mode: Literal["fixed", "act", "expert"] = "fixed"  # act = L6 (ADR-041), expert = L6c (ADR-042)
     ponder_cost: float = 0.0
     epsilon: float = 0.01
     output: Literal["last"] = "last"  # ADR-010
     halted_kv: Literal["once"] = "once"  # ADR-011
+    gate: bool = True  # scale updates by the running probability (act) or the score (expert)
+    survival: Literal["linear"] = "linear"  # L6c: s_j falls linearly from 1 at r_min ...
+    survival_last: float = 0.3  # ... to this at r_max (ADR-042: mean depth 5.55 at r_max 8)
+    tau_momentum: float = 0.99  # L6c: EMA of the per-iteration thresholds
+
+    def survival_fraction(self, j: int, r_min: int, r_max: int) -> float:
+        """L6c's s_j: the fraction of tokens still running at iteration j (ADR-042)."""
+        if j <= r_min:
+            return 1.0
+        return 1.0 - (1.0 - self.survival_last) * (j - r_min) / (r_max - r_min)
 
 
 @dataclass(frozen=True)
@@ -211,6 +221,12 @@ class ModelCfg:
             raise ValueError("heads must be a multiple of kv_heads")
         if a.index_enabled or self.memory_enabled or self.tenant_lora_rank:
             raise NotImplementedError("index (L9), memory (L8) and tenants (L11) are Phase 3")
+        if self.halting.mode == "expert" and not (
+            self.arch == "recurrent" and self.middle.r_max > self.middle.r_min
+        ):
+            raise ValueError("L6c needs the recurrent arch and r_max > r_min (ADR-042)")
+        if not 0.0 < self.halting.survival_last <= 1.0:
+            raise ValueError("halting.survival_last must be in (0, 1]")
         if self.middle.per_iter_lora_rank and not self.middle.shared_attention:
             raise ValueError("L5b adapters on L5c's unshared attention: two features (ADR-032)")
         if self.middle.per_iteration_attention and a.global_source == "final_vector":
@@ -319,10 +335,17 @@ def ladder(step: str, **overrides: Any) -> ModelCfg:
         # ADR-034: one dense H block with its own weights after iteration 4
         "L5e": replace(rec, middle=MiddleCfg(h_every=8), experts=ExpertsCfg(d_ff=896)),
         "L5d": replace(rec, attention=AttentionCfg(global_source="final_vector")),
+        # ADR-041: gated ACT residual, ponder price below the measured marginal iteration value
         "L6": replace(
             rec,
             attention=AttentionCfg(global_source="final_vector"),
-            halting=HaltingCfg(mode="act", ponder_cost=1e-2),
+            halting=HaltingCfg(mode="act", ponder_cost=3e-3),
+        ),
+        # ADR-042: expert-choice depth by learned thresholds, mean depth 5.55
+        "L6c": replace(
+            rec,
+            attention=AttentionCfg(global_source="final_vector"),
+            halting=HaltingCfg(mode="expert"),
         ),
         "L7-g4": replace(rec, experts=ExpertsCfg(granularity=4)),
         "L7b": replace(rec, experts=ExpertsCfg(layers=2)),

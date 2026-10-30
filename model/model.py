@@ -117,6 +117,9 @@ class BigMoE(nn.Module):
         seg = cfg.attention.window if final_vec else t
         n_iter = cfg.middle.r_max if r is None else r
         fixed = cfg.halting.mode == "fixed"
+        expert = cfg.halting.mode == "expert" and self.training
+        if expert:
+            self.middle.apply_pending_tau()  # L6c: last step's quantiles (ADR-042)
         mem: tuple[Tensor, Tensor] | None = None
         hs, r_maps, ponders, loads = [], [], [], []
         aux = torch.zeros((), device=dev)
@@ -138,7 +141,10 @@ class BigMoE(nn.Module):
                 loads=[],
             )
             for j in range(1, n_iter + 1):
+                prev_active = st.active
                 st, a = self._iterate(st, j, pos, mem, fixed)
+                if expert and j > cfg.middle.r_min:
+                    self.middle.record_tau(j, st.cum_halt, prev_active)
                 aux = aux + a
                 k_h = cfg.middle.h_every
                 if self.h_block is not None and j % k_h == k_h // 2:

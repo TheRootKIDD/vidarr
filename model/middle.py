@@ -10,6 +10,9 @@ global cache G of completed tokens' final vectors (ADR-021); ragged depth with
 last-state output and K/V stored once for halted tokens (ADR-010/011).
 Attention is shared across iterations by default; L5b adds per-iteration
 low-rank adapters and L5c gives each iteration its own attention (ADR-032).
+Variable depth: ACT halting with the update of iteration j scaled by the
+probability of still running (L6, ADR-041), or expert-choice depth by learned
+per-iteration thresholds with the update scaled by the router score (L6c, ADR-042).
 """
 
 from __future__ import annotations
@@ -17,6 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import torch
+import torch.distributed as dist
 from torch import Tensor, nn
 
 from model.config import ModelCfg
@@ -32,7 +36,7 @@ class IterState:
     p: Tensor | None  # [B, T, d]
     active: Tensor  # [B, T] bool — still iterating
     r: Tensor  # [B, T] int — iterations executed so far
-    cum_halt: Tensor  # [B, T] float — cumulative halting probability
+    cum_halt: Tensor  # [B, T] float — cumulative halting probability (L6c: this iteration's score)
     remainder: Tensor  # [B, T] float — ACT remainder at the halting step (for ponder cost)
     frozen_kv: tuple[Tensor, Tensor] | None  # [B, Hkv, T, dh] K/V of halted tokens (ADR-011)
     frozen: Tensor  # [B, T] bool — K/V frozen from this iteration on
@@ -65,6 +69,13 @@ class MiddleBlock(nn.Module):
         self.halt = nn.Linear(cfg.d + m.depth_embed, 1)
         nn.init.zeros_(self.halt.weight)
         nn.init.constant_(self.halt.bias, -2.0)  # start with a low halting probability
+        self._tau_sum: Tensor | None = None
+        self._tau_n: Tensor | None = None
+        if cfg.halting.mode == "expert":
+            # L6c (ADR-042): the same layer is the depth router; default init so that scores
+            # differ from the first step; thresholds tau_j learned as an EMA (NaN = not yet set)
+            self.halt.reset_parameters()
+            self.register_buffer("depth_tau", torch.full((m.r_max + 1,), float("nan")))
 
     def attention_at(self, j: int) -> Attention:
         """The attention used at iteration j (1-based): shared, or L5c's own copy."""
@@ -110,6 +121,43 @@ class MiddleBlock(nn.Module):
             fk2, fv2, out.frozen, aux, load,
         )
 
+    # ---- L6c thresholds (ADR-042) ------------------------------------------------
+    @torch.no_grad()
+    def record_tau(self, j: int, scores: Tensor, prev_active: Tensor) -> None:
+        """Queue this batch's score quantile for iteration j; applied at the next training forward,
+        so a batch's selection only ever uses earlier batches (causal; recompute-safe)."""
+        h, m = self.cfg.halting, self.cfg.middle
+        keep = h.survival_fraction(j, m.r_min, m.r_max) / h.survival_fraction(
+            j - 1, m.r_min, m.r_max
+        )  # conditional on running at j - 1
+        s = scores[prev_active].float()
+        if s.numel() == 0:
+            return
+        if self._tau_sum is None or self._tau_n is None:
+            self._tau_sum = torch.zeros_like(self.depth_tau)
+            self._tau_n = torch.zeros_like(self.depth_tau)
+        self._tau_sum[j] += torch.quantile(s, 1.0 - keep)
+        self._tau_n[j] += 1
+
+    @torch.no_grad()
+    def apply_pending_tau(self) -> None:
+        """Move tau toward the queued quantiles (mean over segments and ranks). Called at the start
+        of every training forward on every rank, so the all-reduce is symmetric."""
+        tau: Tensor = self.depth_tau
+        stats = torch.zeros(2, tau.numel(), device=tau.device)
+        if self._tau_sum is not None and self._tau_n is not None:
+            stats[0], stats[1] = self._tau_sum, self._tau_n
+        if dist.is_available() and dist.is_initialized():
+            dist.all_reduce(stats)
+        self._tau_sum = self._tau_n = None
+        seen = stats[1] > 0
+        if not seen.any():
+            return
+        q = stats[0][seen] / stats[1][seen]
+        old = tau[seen]
+        mom = self.cfg.halting.tau_momentum
+        tau[seen] = torch.where(torch.isnan(old), q, mom * old + (1 - mom) * q)
+
     # ---- one iteration ---------------------------------------------------------
     def iteration(
         self,
@@ -125,6 +173,14 @@ class MiddleBlock(nn.Module):
         e = self.depth(torch.tensor(j, device=st.c.device))
         uc = self.norm(st.c, e)
         attn = self.attention_at(j)
+        mode = cfg.halting.mode
+        # L6c: the depth router decides at the start of iteration j > r_min who continues
+        act_in, g = st.active, None
+        if mode == "expert" and not force_active and j > cfg.middle.r_min:
+            g = torch.sigmoid(self.halt(torch.cat([uc, e.expand(b, t, -1)], dim=-1))).squeeze(-1)
+            tau = self.depth_tau[j]
+            if not torch.isnan(tau):
+                act_in = st.active & (g >= tau)
         # per-iteration local K/V from the context stream; halted tokens keep their frozen entry,
         # unless attention weights vary by iteration (L5b/L5c): then K/V is recomputed from the
         # held state at every iteration and nothing is frozen (ADR-011)
@@ -138,7 +194,7 @@ class MiddleBlock(nn.Module):
         else:
             k, v = fresh
         # tokens that halted before this iteration and are not yet frozen: freeze now (ADR-011)
-        newly = ~st.active & ~st.frozen
+        newly = ~act_in & ~st.frozen
         if newly.any() and not cfg.middle.per_iteration_attention:
             base_k, base_v = (k, v) if st.frozen_kv is None else st.frozen_kv
             nm = newly[:, None, :, None]
@@ -173,13 +229,25 @@ class MiddleBlock(nn.Module):
             a = attn(u, positions, (k, v), None if fast else m_i, is_causal=fast, j=j)
             y, lm = self.moe(u, e)
             aux = aux + lm
-            x_new = x + a + y
+            upd = a + y
+            if cfg.halting.gate and not force_active:
+                if mode == "act":  # ADR-041: P(still running) = 1 - H^(j-1), Graves's mean field
+                    upd = upd * (1 - st.cum_halt)[..., None].to(upd.dtype)
+                elif g is not None:  # ADR-042: the router score (MoR)
+                    upd = upd * g[..., None].to(upd.dtype)
+            x_new = x + upd
             # ragged depth: halted tokens keep their last computed state (ADR-010)
-            new.append(torch.where(st.active[..., None], x_new, x))
+            new.append(torch.where(act_in[..., None], x_new, x))
         st.loads.append(self.moe.last_route.load if self.moe.last_route is not None else None)
+        r = st.r + act_in.long()
+        if mode == "expert" and not force_active:
+            # stopped tokens stay stopped; the scores travel in `cum_halt` for the threshold EMA
+            active, rem = act_in, st.remainder
+            cum = torch.zeros_like(st.cum_halt) if g is None else g.detach().float()
+            p_new = new[1] if len(new) > 1 else None
+            return IterState(new[0], p_new, active, r, cum, rem, frozen_kv, frozen, st.loads), aux
         # halting head on the context stream (§4.7)
         h = torch.sigmoid(self.halt(torch.cat([uc, e.expand(b, t, -1)], dim=-1))).squeeze(-1)
-        r = st.r + st.active.long()
         if force_active:
             active = st.active
             cum = st.cum_halt
