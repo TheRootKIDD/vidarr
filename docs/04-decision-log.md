@@ -1532,6 +1532,25 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-10-31 (18:45) — `165` L6 and `166` L6c done (scored after `168`); `167` L5d $r$ = 4: **+0.0158 vs `162` (+0.47 %) for −50 % middle-block FLOPs**, the L5d depth curve is flatter than L5's; `168` running
+
+**`165-l6-screen`** ended 04:17 at **3.3452** with $ar r$ = 7.38 (8.19 h, 33.2 k tok/s, 3.93 GiB):
+ADR-041's $\lambda_p$ = 3·10⁻³ did not collapse the policy to $r_{min}$, but it kept most tokens near
+$r_{max}$. **`166-l6c-screen`** ended 13:01 at **3.3541** with $ar r$ = 5.52 against ADR-042's
+schedule mean 5.55 (8.74 h, 32.3 k tok/s, 3.93 GiB; dead experts only before step 42, final loads
+0.120–0.132). Neither is scored yet: ADR-041 §4 interpolates the L5d curve at each arm's $ar r$,
+and both $ar r$ values sit next to the $r$ = 6 point. Their `results.md` stay templates
+until `168` ends.
+
+**`167-l5d-r4-screen`** ended 18:19 at **3.3601**: +0.0158 vs `162` ($r$ = 8, 1.3× 4σ), +0.0034 vs
+`114` (L5 $r$ = 4, inside noise). So a fixed schedule meets H7's stated numbers on L5d too
+(−50 % middle FLOPs at +0.47 %). The curve is flatter than L5's (iterations 5–8 are worth 0.0158 here
+and 0.0239 there), which leaves adaptive depth less to win. Shallow leads until ≈ 0.25 B tokens and
+deep wins after; the gap is still growing at 1 B. 53.1 k tok/s (1.56× `162`), 5.30 h, zero
+`n_thermal`, ≤ 75 °C. **`168-l5d-r6-screen`** started 18:19 (≈ 7 h, ETA ≈ 01:30 Nov 1); then
+`165`/`166` are written up, and after QUEUE DONE the `sim-m1` checks and merge (ADR-043 ordered before
+ADR-044). Next ladder id 169, rig id 033.
+
 ### 2026-10-30 (21:30) — ADR-044: the L3c `small` pair is dropped; H13 closed as weakened
 
 The user chose to drop the pair that ADR-039 §6's main-head trigger called for. **ADR-044** records it:
