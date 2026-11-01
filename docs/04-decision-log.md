@@ -486,7 +486,7 @@ per-iteration threshold rule costs P11's continuous scheduler is a `sim/` experi
 waits for the simulator. Bears on H7, H11; touches I24, ADR-016.
 
 ### ADR-043 — Simulator milestone 1: implementation decisions
-2026-10-29 · accepted on merge of branch `sim-m1` (Phase 2 starts; nothing calibrated yet)
+2026-10-29 · accepted 2026-11-01 on merge of branch `sim-m1` (Phase 2 starts; nothing calibrated yet)
 Context: Phase 2 needs `sim/` calibrated by S0 and I1 before any S-result counts (`02 §14`). `02 §5`
 specifies the entities and the queue rule but leaves the workload, routing, owner-side cost,
 link model, batch threshold and timeout open. Milestone 1 builds the minimum that can face S0's
@@ -512,6 +512,33 @@ source lines). The tests run in a queue gate, never beside DDP. S0 needs a measu
 inference script on the GPUs (`sim/README.md` §S0 says what it must record) under its own rig id.
 `model/config.py`'s `derive_width` holds hardware numbers inline for the tile floor; noted, not
 changed here. Bears on H1, H5, H11; touches `02 §5`, I13, I18, I35, S0.
+
+### ADR-044 — The L3c `small` pair is dropped; H13 closes as weakened at this scale
+2026-10-30 · accepted (the user's decision: "write the ADR to drop the pair")
+Context: ADR-039 §6 runs an L3c `small` pair if `164` beats L3 by > 4σ on the main head *or* on
+acceptance at every head. `164` met the main-head condition (−0.0494 vs `108`, 4.1× 4σ) and failed the
+acceptance one (34.5 / 16.1 / 8.4 % against L3's I34-corrected 38.6 / 22.0 / 15.2 %, lower at every
+head). The trigger was written to catch a route that might reach H13's bounds. It did not anticipate
+the two clauses moving apart. H13 needs both: acceptance ≥ 70 / 55 / 45 % *and* main-head Δ ≤ 2σ
+against L2. On `164`, acceptance would have to roughly double at module 2 and quintuple at module 4,
+and the main-head cost against L2 (+0.0497, 8.3× 2σ) would have to vanish. Every earlier MTP arm
+shrank its `screen` cost by at most ≈ 20 % at `small` (L3: +0.0991 → +0.0832). The pair costs ≈ 2 × 23 h.
+Decision:
+1. **The L3c `small` pair is not run.** ADR-039 §6's trigger is superseded for `164`; ADR-031 allows
+   a leftover to be dropped by its own ADR.
+2. **H13 is closed as weakened at this scale**, on the L3 pair (`122`/`131`), the L3b pair
+   (`156`/`157`) and L3c at `screen` (`164`). No MTP route is left in the plan. MTP stays off the
+   rest of the ladder (ADR-030 already branches L5 onwards from L2 without heads).
+3. **What is kept:** `164`'s main-head result (sequential modules halve L3's main-head cost) is
+   recorded as a finding for the post-ladder brainstorm (I28), not as a route to H13. **I36** stays
+   open as an optional GPU probe (decode-faithful acceptance for L3/L3b/L3c). It can change the
+   acceptance numbers, not the main-head clause, so it cannot reopen H13 by itself.
+4. **Systems side:** S5's speculative-decode scenarios take acceptance as a scenario input. They use
+   the measured, I34-corrected L3 pair (41.6 / 24.1 / 16.0 %) with its source line, beside the note's
+   70 / 55 / 45 % as the design target, never the target alone.
+Consequences: ≈ 46 GPU-hours are not spent; nothing is queued. `03`'s H13 row reads "closed:
+weakened". If I36's probe is ever built, its numbers are an addendum to `164`, not a new verdict.
+Bears on H13; touches ADR-012, ADR-030, ADR-031, ADR-039, I28, I36.
 
 ## Proposed / pending
 - **ADR-028** — Unit model revisions from the author's hardware document (`docs/07 §4`): (a) two compute classes per chip — an FF core with a large array ($s_{min,ff}$ = 256–1024) and attention cores with small arrays ($s_{min,attn}$ ≈ 64), hence $\phi_{ff}$, $\phi_{attn}$ as separate scenario inputs; (b) the tile floor is a *row* floor, $N$ = $M$ × (LHS bw / RHS bw) rows per weight tile, with each token contributing 1 + $m$ rows under $m$-token speculation — the scheduler's queues count rows; (c) the reduce leg of the local fabric carries ≥ 16-bit partial sums: `02 §2` traffic becomes $b d\, b_{act} + b d\, b_{sum}$, $b_{sum}$ ≥ 2; (d) full pipelining inside the unit doubles tokens in flight and per-token latency — the Little's-law budget $Z$ of `02 §5.5` carries the factor; (e) router-based unit fabrics are ≤ 50 % link-efficient (avg. 2 hops), torus collectives 100 %: `02 §1`'s "switch" option is not equivalent to a torus; (f) the asymmetric 4×4×4 torus all-gather costs ≈ 3X/(8B) vs ≈ X/(2B) on a flat ring (our derivation from the author's algorithm) — the number S1/S3 must reproduce; (g) the failure domain is the 4-chip ring board, and a failed rail port is bypassed through torus neighbours at ¼ load (`02 §11`); (h) the replica-rounding utilisation floor $\ell / \lceil \ell \rceil$ reported beside the Little's-law model in S4. Also fills `note64.yaml` with the sourced ratios of `docs/07 §6`; absolute $\phi$, $\beta_C$, $\lambda_C$, $\nu_C$ stay placeholders (I4). Bears on H1, H5, H8, H9, H10, H11, H16; changes `02 §1, §2, §5, §11`.
@@ -649,9 +676,10 @@ Cost units from `docs/06 §4`: one `screen` run ≈ 8 h (1 B tokens, 1 seed); on
 - **I29** *(2026-09-16)* **H6 lacks a parameter-matched arm.** `112` (L5-ne128, 193 M params) sits at +0.018 nats vs L1 (246.6 M), which reads *weakens* under ADR-013 at `screen` now that σ = 0.0018, but the arm is 68 % of L1's parameters and its curve crossed L1's at ≈ 1300 steps. Needed: L5-ne128 at `small` (two seeds; not in `queue_small_1`) or a preset at exactly L1's non-embedding count. Until then H6's `screen` verdict is provisional. *Update 2026-10-10:* the L5-ne128 `small` pair (`138`/`142`) weakens H6 with this caveat attached; the exactly matched preset is scheduled as **L5-pm** (ADR-031). Its design ADR must choose how the missing ≈ 32 % of parameters is added: more experts at the same $k$ and width keeps FLOPs matched, while wider experts raise FLOPs (≈ 1.45×, per an earlier session note). Only the first option keeps H6's "matched params *and* FLOPs" wording. *Update 2026-10-14:* ADR-035 picks more experts at the same $k$ and width: **L5-pm** = $N_e$ 204, $k$ 4, $d_{ff}$ 448, 247.0 M non-embedding (L1 246.6 M). *Update 2026-10-17:* `153` L5-pm `screen` = 3.1942, −0.0106 vs L1 `106` (3.9σ with σ 0.0027 over ten pairs: silent), −0.0290 vs `112` (a constant offset from 0.3 B tokens). Its lead over L1 shrinks monotonically through 1 B tokens, as `112`'s did. The `small` pair (ADR-035 §2, ≈ 2 × 62 h at 11.26 k tok/s) closes this item. *Closed 2026-10-29:* the L5-pm `small` pair `160`/`161` = 2.9349 / 2.9292 → 2.9321, **+0.0482 (+1.67 %) vs the L1 pair at matched params and FLOPs**, 4.1× 4σ (σ 0.0030 over twelve pairs) → **H6 weakened at two seeds without the parameter caveat**. The 76 extra experts recover 0.0266 of L5-ne128's +0.0748 (36 %), a constant offset from 0.4 B tokens; the curve crosses L1's at ≈ 0.58 B tokens.
 - **I30** *(2026-10-10)* **H15a's 8 k end needs a model trained at 8 k.** Every rung trains at context 2048 (RoPE θ = 10 k). The full-held-out 8 k eval of the L5/L5d pairs (session log 2026-10-10) is > 4 nats beyond position 2048 for both designs, so it measures length extrapolation, not the cost of final-vector global attention at a trained 8 k. H15a's statement covers "2 k–8 k", so its upper end is silent until **L5d-8k** (ADR-031) trains an L5/L5d pair at 8192. To settle before launch, as a sizing note in `06 §3`: (1) per-GPU memory at 8192, since L5's per-iteration global attention is 4× the score memory of 2 k and must stay under the 10 GB cap (micro-batch 1 with accumulation, and checkpointing, are the levers); (2) the token budget, keeping 1 B at `screen` with the same tokens per step, so that the rung differs from `111` in context only; (3) RoPE θ, either kept at 10 k so context is the only change, or raised, which would be a second change and needs its own arm; (4) whether a 2 k-trained comparator is needed beside it. It is not, because `110`/`111` are those runs. Bears on H15a; touches `06 §3`, L5d. *Update 2026-10-14:* answered by ADR-037 (sizing in `06 §3`); rig probe `031-ctx8k-sizing` measures memory and speed before the pair runs. *Update 2026-10-17:* `031` passed the memory gate (3.88 / 3.97 GiB at micro-batch 1) but L5d runs 3.2× slower than L5 at 8 k (11.7 k vs 37.6 k tok/s), so the pair costs ≈ 7.6 + 24 h, not 16–20 h. *Closed 2026-10-21:* `158` L5-8k 3.3359, `159` L5d-8k 3.3611, Δ +0.0252 (+0.76 %) against T = 0.0667, 2.2× 4σ → H15a's 8 k end supported at one seed. By position the cost is flat at ≈ +0.029 from 2 k to 8 k. Caveat: I33.
 - **I31** *(2026-10-11)* **L5c's gain is untied attention plus 11 M parameters, not separated.** `146` (L5c) beats `110` by 0.056 nats at the same FLOPs but with +20.8 % non-embedding parameters (63.9 M vs 52.9 M), and the rank-16 L5b (+0.66 M) recovers none of it. Per added parameter, L5c is ≈ 5× as efficient as L5-ne128's extra experts, which suggests most of the gain is attention, but that is an inference. A parameter-matched control would separate the two: L5 at ≈ 63.9 M non-embedding parameters and the same FLOPs, e.g. $N_e$ ≈ 13 at $k$ = 2, $d_{ff}$ 896. It runs at `screen` (≈ 6 h), and at `small` beside the L5c pair if the `screen` gap stays > 4σ. To decide: whether to schedule it (an ADR; it is a new Phase 1 arm), and whether L5-pm's design (I29) should share the same "more experts at the same $k$" construction. Bears on H6; touches ADR-031, ADR-032. *Update 2026-10-11:* scheduled as **L5-ne13** (`148`, ADR-033), before the L5c pair. *Answered 2026-10-13 (one seed):* `148` = 3.3043, +0.0275 vs L5c (2.5× 4σ) and −0.0285 vs L5, so ≈ half of the gain is untied attention; the L5c `small` pair runs (`149`/`150`). *Update 2026-10-15:* the pair = 3.0225, −0.0523 vs the L5 pair (5.0× 4σ, σ 0.0026 over nine pairs); an L5-ne13 pair is not needed for H6 (ADR-033).
-- **I32** *(2026-10-15)* **L5e's gain mixes a second weight set with +7 % FLOPs.** `151` (L5e) beats `110` by 0.0383 nats (3.6× 4σ). Against `148` (more added parameters, no added FLOPs) it is ahead by only 0.0098, which is inconclusive at one seed. The extra compute and the second weight set are not separated. A FLOP-matched control is L5 with $r$ raised until FLOPs match (≈ $r$ = 9), without H. `115` (flat depth curve past 8) suggests depth alone buys little, but that is an inference. To decide: whether the control is worth ≈ 6.5 h at `screen`, or whether the L5e `small` pair (ADR-031) is read without it. Bears on H6 and `08 §4`'s HRM-Text claim; touches ADR-034. *Update 2026-10-17:* the L5e pair `154`/`155` = 3.0454, −0.0294 vs the L5 pair (2.7× 4σ), flat from 0.4 B tokens, and +0.0229 behind the L5c pair at no added FLOPs. The pair was read without the control, so the separation stays open. Whether ≈ 6.5 h for the $r$ = 9 control is worth it is still the user's call. *Update 2026-10-21:* the user asked for it: ADR-040, `163-l5-r9-screen` (+7.4 % FLOPs vs L5e's +7.9 %), queued after `161`.
-- **I33** *(2026-10-21)* **L5d's router aux loss is summed over segments, not averaged.** In `model/model.py` the segment loop of the shared-block forward adds each 512-token segment's router aux to the total. So L5d trains with an effective load-balancing weight of (context / 512) × L5's: 4× at 2 k and 16× at 8 k. The logged router aux shows it: `111` 0.0322 vs `110` 0.0079; `159` 0.1280 vs `158` 0.0077. Every L5d comparison carries the confound (`111`, `134`/`135`, `159`). Expected direction: stronger balancing costs the main loss slightly, so L5d's measured cost is probably *overstated*, and H15a's *supports* would survive. That is unmeasured. To decide: (1) an ADR that averages the aux over segments (spec in `01`, then code and a unit test that L5d's aux equals L5's at one segment); (2) whether to size the effect with one control, L5d at 2 k with the averaged aux, ≈ 8.3 h at `screen` against `111`. Bears on H15a; touches ADR-021/022 (segment-recurrent training), ADR-037. *Update 2026-10-21:* the user asked for the fix and the control. ADR-038 averages over segments (knob `router.segment_aux`, `sum` reproduces old runs); control `162-l5d-segmean-screen` is queued after `161`.
-- **I34** *(2026-10-21)* **The acceptance verifier skips the main head's output norm.** `01 §7` / I27 define acceptance against *head 1's own greedy prediction*. Head 1 is `head(h)` = $\mathrm{RMSNorm}_{out}(h)\,E^\top$, but `model/mtp.py` (`_greedy_head1`) and `scripts/analysis/probe_mtp_acceptance.py` compute the verifier as $h\,E^\top$, without the output RMSNorm. Its per-row scale does not change the argmax; its learned per-dimension gain can. So every logged acceptance (L3, L3-full, L3b at both budgets) is against a slightly different verifier than the main head. The size is unknown. The code disagrees with the spec, so the spec wins: the verifier becomes `head(h)` (on branch `l3c-i33`, merged after `161`). The probe reports both verifiers, and the queue re-measures `122`/`131` (L3 pair), `156`/`157` (L3b pair), `152` and `113` on GPU before `164` runs. H13's verdicts are weakened by margins of 28–31 points on acceptance and by the main-head clause on its own, so no verdict can flip. The re-measured numbers replace the logged ones as L3c's comparators. Bears on H13; touches I27, ADR-012, ADR-039.
+- **I32** *(2026-10-15)* **L5e's gain mixes a second weight set with +7 % FLOPs.** `151` (L5e) beats `110` by 0.0383 nats (3.6× 4σ). Against `148` (more added parameters, no added FLOPs) it is ahead by only 0.0098, which is inconclusive at one seed. The extra compute and the second weight set are not separated. A FLOP-matched control is L5 with $r$ raised until FLOPs match (≈ $r$ = 9), without H. `115` (flat depth curve past 8) suggests depth alone buys little, but that is an inference. To decide: whether the control is worth ≈ 6.5 h at `screen`, or whether the L5e `small` pair (ADR-031) is read without it. Bears on H6 and `08 §4`'s HRM-Text claim; touches ADR-034. *Update 2026-10-17:* the L5e pair `154`/`155` = 3.0454, −0.0294 vs the L5 pair (2.7× 4σ), flat from 0.4 B tokens, and +0.0229 behind the L5c pair at no added FLOPs. The pair was read without the control, so the separation stays open. Whether ≈ 6.5 h for the $r$ = 9 control is worth it is still the user's call. *Update 2026-10-21:* the user asked for it: ADR-040, `163-l5-r9-screen` (+7.4 % FLOPs vs L5e's +7.9 %), queued after `161`. *Resolved 2026-10-30:* `163` = 3.3349, +0.0021 vs `110` (the extra compute buys nothing); `151` − `163` = −0.0404, 3.4× 4σ → the second weight set beats equal compute (ADR-040; HRM-Text's mechanism supported at one seed). Still open and not part of I32: `151` vs `148` (−0.0098, inconclusive), i.e. whether a dense H block beats the same parameters as experts; a `small` pair for that is the user's call.
+- **I33** *(2026-10-21)* **L5d's router aux loss is summed over segments, not averaged.** In `model/model.py` the segment loop of the shared-block forward adds each 512-token segment's router aux to the total. So L5d trains with an effective load-balancing weight of (context / 512) × L5's: 4× at 2 k and 16× at 8 k. The logged router aux shows it: `111` 0.0322 vs `110` 0.0079; `159` 0.1280 vs `158` 0.0077. Every L5d comparison carries the confound (`111`, `134`/`135`, `159`). Expected direction: stronger balancing costs the main loss slightly, so L5d's measured cost is probably *overstated*, and H15a's *supports* would survive. That is unmeasured. To decide: (1) an ADR that averages the aux over segments (spec in `01`, then code and a unit test that L5d's aux equals L5's at one segment); (2) whether to size the effect with one control, L5d at 2 k with the averaged aux, ≈ 8.3 h at `screen` against `111`. Bears on H15a; touches ADR-021/022 (segment-recurrent training), ADR-037. *Update 2026-10-21:* the user asked for the fix and the control. ADR-038 averages over segments (knob `router.segment_aux`, `sum` reproduces old runs); control `162-l5d-segmean-screen` is queued after `161`. *Closed 2026-10-30:* `162` = 3.3443 vs `111` 3.3477, Δ −0.0034 (1.1σ, inside ADR-038's 2σ band) → the confound is negligible and every L5d verdict stands as written; the direction is the predicted one (the 4× weight overstated L5d's cost: +0.35 % vs `110` instead of +0.45 %). The logged aux matches L5's (0.0076 vs 0.0079).
+- **I34** *(2026-10-21)* **The acceptance verifier skips the main head's output norm.** `01 §7` / I27 define acceptance against *head 1's own greedy prediction*. Head 1 is `head(h)` = $\mathrm{RMSNorm}_{out}(h)\,E^\top$, but `model/mtp.py` (`_greedy_head1`) and `scripts/analysis/probe_mtp_acceptance.py` compute the verifier as $h\,E^\top$, without the output RMSNorm. Its per-row scale does not change the argmax; its learned per-dimension gain can. So every logged acceptance (L3, L3-full, L3b at both budgets) is against a slightly different verifier than the main head. The size is unknown. The code disagrees with the spec, so the spec wins: the verifier becomes `head(h)` (on branch `l3c-i33`, merged after `161`). The probe reports both verifiers, and the queue re-measures `122`/`131` (L3 pair), `156`/`157` (L3b pair), `152` and `113` on GPU before `164` runs. H13's verdicts are weakened by margins of 28–31 points on acceptance and by the main-head clause on its own, so no verdict can flip. The re-measured numbers replace the logged ones as L3c's comparators. Bears on H13; touches I27, ADR-012, ADR-039. *Closed 2026-10-30:* `queue_screen_12` re-ran the seven probes with the fixed probe (`b96364b`). The corrected verifier lowers acceptance by 0.4–0.5 points at `screen` and 0.7–1.4 at `small` (table in `164`). Corrected pairs: L3 41.6 / 24.1 / 16.0 %, L3b 40.6 / 22.5 / 14.4 %. Every verdict stands.
+- **I36** *(2026-10-30)* **The held-out acceptance proxy conditions the verifier on the true context, which greedy decoding never does.** I27's metric accepts head $j$'s draft of $x_{t+j}$ when it equals head 1's greedy prediction at $t+j-1$ *given the true tokens up to $t+j-1$*. In self-speculative greedy decoding the verifier at $t+j-1$ is conditioned on the tokens just drafted and accepted, i.e. on head 1's own greedy outputs. For independent heads (L3, L3b) the two differ only through the verifier's context. For L3c's chain they also differ through the module's input: module 2 is fed head 1's greedy guess of $x_{t+1}$, which the proxy's verifier then ignores in favour of the true $x_{t+1}$ (right ≈ 40 % of the time at `screen`). So the proxy may understate L3c relative to L3. `164` measured 34.5 / 16.1 / 8.4 % chained against 70 / 65 / 63 % teacher-forced; how much of that gap is the metric is unknown. A decode-faithful measurement would greedily generate from held-out prompts and count accepted drafts along the generated sequence, for L3, L3b and L3c alike. To decide: whether it is worth building (an offline probe, GPU, no training) before H13 is closed for good. It cannot rescue H13's main-head clause (`164` +0.0497 vs L2). Bears on H13; touches I27, ADR-012, ADR-039.
 
 ## Session log
 
@@ -1533,6 +1561,120 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-11-01 (02:15) — `sim-m1` checked and merged; **ADR-043 accepted**; Phase 2's simulator exists (uncalibrated)
+
+With the GPUs idle after `queue_screen_12`: ruff clean on `sim/` and `tests/test_sim.py`, **11 of 11
+`tests/test_sim.py` pass**, and the smoke run `python -m sim.run --scenario local_3060 --rung L5 --z
+256 --tokens 20000` ends in 8.2 s with 0.68 M events. Sanity checks on its output: Little's law
+holds (X·L = 255.6 against Z = 256), 8.01 iterations per completed token at fixed $r$ = 8, fabric
+bytes per token per iteration 6144 = $2kd\,b_{act}$ (wire 4613, the remote share). **All 7422 expert
+batches fired by the 1 ms timeout and none by the 512-row threshold.** At Z = 256 the mean batch is
+43 rows, so the threshold never fills and the timeout sets the iteration latency (p50 1.5 ms). That is
+I35's open question (`w_max` has no value) showing up in the first run. No numbers from this run are
+results: nothing is calibrated until S0/I1 (`02 §14`). Nothing needed fixing. Merged `main` into
+`sim-m1` with ADR-043 placed before ADR-044 (the expected conflict), status set to accepted, then
+`main` fast-forwarded. The worktree is removed.
+
+### 2026-11-01 (01:45) — `168` L5d $r$ = 6 completes the L5d depth curve; **`165` L6 and `166` L6c both match the fixed-$r$ curve (−0.0006 / +0.0023, 0.2σ / 0.8σ): neither learned depth policy beats a fixed $r$ at `screen`; H7 silent**; `queue_screen_12` done
+
+**`168-l5d-r6-screen`** ended 01:08 at **3.3492**: +0.0049 vs `162` (0.8σ), −0.0109 vs `167`. The L5d
+fixed-$r$ curve is **3.3601 / 3.3492 / 3.3443 at $r$ = 4 / 6 / 8**. It is concave: iterations 5–6 are
+worth 0.0109 and iterations 7–8 are worth 0.0049. Step time is linear in $r$ (≈ 1.4 s per iteration
++ 4.3 s fixed). 6.81 h, zero `n_thermal`.
+
+**Scoring (ADR-041 §4, ADR-042 §5)**, linear interpolation of the curve at each arm's held-out $\bar r$:
+
+| arm | $\bar r$ | middle FLOPs vs `162` | val loss | control | Δ vs control | H7's letter (ADR-013) |
+|---|---|---|---|---|---|---|
+| `165` L6 (ACT, gated, $\lambda_p$ 3·10⁻³) | 7.38 | −7.8 % | 3.3452 | 3.3458 | **−0.0006 (0.2σ)** | depth clause fails (> 5.6); loss +0.0009 |
+| `166` L6c (threshold expert-choice) | 5.52 | −31.1 % | 3.3541 | 3.3518 | **+0.0023 (0.8σ)** | both clauses met (+0.29 %), silent at one seed |
+
+Both arms **match a fixed depth**, so the adaptivity bought nothing measurable. L6 vs L6c by distance
+from the curve: 0.0029 (1.0σ), so I24's expert-choice prior is not visible. **H7: silent at `screen`**
+on both arms. L6c meets H7's numbers, but so does fixed $r$ = 4 (`167`), and that is the I25 point.
+L6's policy collapsed to $r_{min}$ by step 50 (the ponder-only collapse ADR-041 described). It stayed
+there ≈ 300 steps, then climbed to 7.4 once the gated residual's gradient took over, so the gate
+works. The one $\lambda_p$ landed near $r_{max}$. L6c met its schedule on held-out (5.515 vs 5.55).
+**Open, the user's call:** an L6 $\lambda_p$ sweep to bring $\bar r$ into H7's range; a `small` pair
+for either arm (ADR-031's trigger, > 4σ beyond L5, is not met); or closing H7's learned-depth arms at
+`screen` by an ADR. I24's systems half waits for `sim/`.
+
+**`queue_screen_12` QUEUE DONE 01:08**; GPUs idle. Next: the `sim-m1` checks (ruff, `tests/test_sim.py`,
+the L5 smoke run) in its worktree, then the merge with ADR-043 ordered before ADR-044. Next ladder id
+169, rig id 033.
+
+### 2026-10-31 (18:45) — `165` L6 and `166` L6c done (scored after `168`); `167` L5d $r$ = 4: **+0.0158 vs `162` (+0.47 %) for −50 % middle-block FLOPs**, the L5d depth curve is flatter than L5's; `168` running
+
+**`165-l6-screen`** ended 04:17 at **3.3452** with $\bar r$ = 7.38 (8.19 h, 33.2 k tok/s, 3.93 GiB):
+ADR-041's $\lambda_p$ = 3·10⁻³ did not collapse the policy to $r_{min}$; the mean depth sits at 7.38 of
+$r_{max}$ = 8 (−7.8 % middle-block FLOPs). **`166-l6c-screen`** ended 13:01 at **3.3541** with $\bar r$ = 5.52 against ADR-042's
+schedule mean 5.55 (8.74 h, 32.3 k tok/s, 3.93 GiB; dead experts only before step 42, final loads
+0.120–0.132). Neither is scored yet: ADR-041 §4 interpolates the L5d curve at each arm's $\bar r$,
+and both $\bar r$ values sit next to the $r$ = 6 point. Their `results.md` stay templates
+until `168` ends.
+
+**`167-l5d-r4-screen`** ended 18:19 at **3.3601**: +0.0158 vs `162` ($r$ = 8, 1.3× 4σ), +0.0034 vs
+`114` (L5 $r$ = 4, inside noise). So a fixed schedule meets H7's stated numbers on L5d too
+(−50 % middle FLOPs at +0.47 %). The curve is flatter than L5's (iterations 5–8 are worth 0.0158 here
+and 0.0239 there), which leaves adaptive depth less to win. Shallow leads until ≈ 0.25 B tokens and
+deep wins after; the gap is still growing at 1 B. 53.1 k tok/s (1.56× `162`), 5.30 h, zero
+`n_thermal`, ≤ 75 °C. **`168-l5d-r6-screen`** started 18:19 (≈ 7 h, ETA ≈ 01:30 Nov 1); then
+`165`/`166` are written up, and after QUEUE DONE the `sim-m1` checks and merge (ADR-043 ordered before
+ADR-044). Next ladder id 169, rig id 033.
+
+### 2026-10-30 (21:30) — ADR-044: the L3c `small` pair is dropped; H13 closed as weakened
+
+The user chose to drop the pair that ADR-039 §6's main-head trigger called for. **ADR-044** records it:
+the pair cannot reach H13's bounds on `164`'s numbers (acceptance below L3's at every head, +0.0497
+vs L2), so ≈ 46 GPU-hours are saved and **H13 closes as weakened at this scale**. I36 stays open as an
+optional probe that cannot reopen H13 by itself. S5 will price speculative decode with the measured
+L3-pair acceptance. Nothing queued; `165` L6 running (ETA ≈ 02:45). Note for the `sim-m1` merge:
+ADR-043 lives on that branch and is inserted at the same place as ADR-044, so the merge needs a
+trivial ordering fix.
+
+### 2026-10-30 (21:00) — `164` L3c: **main head −0.0494 vs L3 (4.1× 4σ) but +0.0497 vs L2; anchored-chain acceptance 34.5 / 16.1 / 8.4 %, below L3's at every head → H13 weakened at `screen` on both clauses**; I34 closed; I36 opened; ADR-039 §6's `small`-pair trigger fires (user's call); `queue_screen_12` gate passed, `165` L6 running
+
+`164-l3c-screen` ended 20:05 at **3.1992** nats on the main head. Against `108` L3: **−0.0494 (−1.52 %,
+4.1× 4σ)**, about half of L3's main-head cost recovered (L3b recovered 40 %). Against `107` L2: **+0.0497
+(+1.58 %)**, so H13's main-head clause misses by 8.3× its 2σ margin. Acceptance under the anchored greedy
+chain, with the corrected verifier: **34.5 / 16.1 / 8.4 %**, below L3's I34-corrected 38.6 / 22.0 / 15.2 %
+at every head; teacher-forced it is 70 / 65 / 63 %, so the drafts degrade as each module is fed the
+previous guess. **H13: weakened** (already weakened at `small`; L3c was the last route). **ADR-039 §6:**
+the `small` pair follows if `164` beats L3 by > 4σ on the main head or on acceptance at every head. The
+main-head condition is met. On these numbers the pair (≈ 2 × 23 h) cannot reach H13's bounds, so whether
+to run it or drop it by an ADR is the user's call; nothing is queued. **I36** asks whether the held-out
+acceptance proxy understates a chained drafter (the verifier sees the true context, decoding would not).
+Memory: training 7.97 GiB, the eval chain 9.96 GiB with allocator OOM-retry warnings in the final eval;
+under the cap in GiB by 0.04. Throughput 31.2 k tok/s (L3 43.3 k), 9.11 h, zero `n_thermal`, ≤ 78 °C.
+**I34 closed:** the seven re-measured probes are 0.4–1.4 points under the raw verifier; no verdict moves.
+**`queue_screen_12`:** merged `l6-adr041` → `5942ee1`, ruff + unit tests passed (20:05), probes done,
+`165-l6-screen` started 20:06. Next ladder id 169, rig id 033.
+
+### 2026-10-30 (11:30) — `163` L5-r9: **the ninth iteration buys nothing (+0.0021 vs `110`); L5e's gain is its weights, not its compute** (−0.0404 vs `163`, 3.4× 4σ); I32 resolved; `164` L3c running
+
+`163-l5-r9-screen` (ADR-040, L5 at fixed $r$ = 9, +7.4 % FLOPs, FLOP-matched to L5e's +7.9 %) ended
+10:58 at **3.3349** nats: **+0.0021 vs `110`** (0.7σ). `151` (L5e) − `163` = **−0.0404, 3.4× the 4σ
+line** → under ADR-040 the second weight set beats equal compute; `08 §4`'s HRM-Text mechanism is
+supported at one seed; H6 silent. **I32 resolved.** Not settled by it: L5e vs `148` (the same kind of
+parameter budget spent on experts at no added FLOPs, −0.0098, inconclusive), so "added weights help,
+added depth does not" is the safe statement; a `small` pair to separate the two is the user's call.
+The L5 depth curve is now $r$ 4 / 8 / 9 / 12 = 3.3567 / 3.3328 / 3.3349 / 3.3370: flat past 8. Zero
+`n_thermal`, ≤ 80 °C, 6.13 h, 45.8 k tok/s (−5.6 % vs `110`). `164-l3c-screen` (ADR-039, micro-batch 1)
+started 10:58, ≈ 8–10 h; then `queue_screen_12`.
+
+### 2026-10-30 (05:30) — `162` L5d-segmean: **I33's confound negligible** (−0.0034 vs `111`, 1.1σ); I33 closed; `163` L5-r9 running
+
+`162-l5d-segmean-screen` (ADR-038's control, router aux averaged over segments) ended 04:50 at
+**3.3443** nats against `111`'s 3.3477: **Δ −0.0034, 1.1σ**, inside ADR-038 §3's 2σ = 0.0059 band → the
+confound is negligible and **every L5d verdict stands as written** (H15a supported at 2 k on
+`134`/`135`, at 8 k on `158`/`159`). The direction is the one I33 predicted: the 4× balancing weight cost
+a little, so L5d's `screen` cost is +0.35 % vs `110` (+0.0115) rather than +0.45 %; against H15a's own
+T = 0.0667 that is 0.97× 4σ, so silent at one seed by the letter of ADR-013, in the *supports*
+direction. The aux sits at L5's value (0.0076 vs 0.0079; `111` 0.032). Curve: `162` leads `111` by up
+to 0.019 at step 500, decaying to noise by step 1000. Routing ends 8.00 of 8 effective experts. Zero
+`n_thermal`, ≤ 73 °C, 8.28 h, 33.9 k tok/s. `162` is also the $r$ = 8 point of ADR-041's L5d depth
+curve. **I33 closed.** `163-l5-r9-screen` (ADR-040, I32) started 04:50, ≈ 6.5 h; then `164` L3c.
+
 ### 2026-10-29 (21:00) — ADR-007/008 accepted; ADR-041 (L6) and ADR-042 (L6c) drafted, built on `l6-adr041`, queued as `queue_screen_12` (`165`–`168`) behind `164`
 
 The user asked for ADR-007/008 and I24/I25 for L6 and for the work to be queued behind the current queue.
@@ -1547,12 +1689,20 @@ $r$ = 8; I25). **ADR-042**: L6c is expert-choice depth by learned per-iteration 
 (Expert-Threshold routing). It is causal and identical in training and eval, avoiding the batch top-$k$
 leak; it uses MoR's score gate and survival schedule 1, 1, 0.88 … 0.30, mean depth 5.55. That resolves
 I24's quality half; its systems half waits for `sim/`. Code on branch `l6-adr041` (`cb7f964`, worktree
-`../vidarr-l6`): `halting.mode = expert`, `halting.gate`, preset `L6c`, eight new tests. **Tests and
-ruff ran nowhere yet beside ruff on the branch** (`162` is running; no CPU work beside DDP).
+`../vidarr-l6`): `halting.mode = expert`, `halting.gate`, preset `L6c`, eight new tests. **Only ruff has run on the
+branch; the tests run in the queue's gate** (`162` is running; no CPU work beside DDP).
 `/mnt/nvme/queue_screen_12.sh` is armed: it waits for `queue_screen_11`'s QUEUE DONE, then merges,
 gates (ruff + pytest), re-runs the seven I34 probes with the fixed probe, and runs **`165` L6, `166`
 L6c, `167` L5d-r4, `168` L5d-r6** (≈ 30 h; ends ≈ 2026-11-01). The hourly loop (session cron) writes
 up both queues. Next ladder id 169, rig id 033.
+
+**Simulator milestone 1 written (Phase 2), not yet run.** Branch `sim-m1` (`812d852`, `e2bffa2`; worktree
+`.claude/worktrees/agent-a06f90379f5e0445d`): `SimParams` and a source-checked scenario loader, a heap
+event loop, units/owners/expert queues/egress links for fixed-$r$ decode, a JSON CLI, and 11 tests. On
+the branch, **ADR-043** records its ten implementation decisions (accepted on merge) and **I35** asks
+for a value of the expert-queue timeout $w_{max}$, which sets per-iteration latency at L5 on this rig.
+Only ruff and a compile check have run. Tests and a first `local_3060` run come once
+`queue_screen_12` is done; then it merges. The measured side of S0 does not exist yet.
 
 ### 2026-10-29 (20:45) — L5-pm pair: **H6 weakened at matched params and FLOPs** (+1.67 % vs L1, two seeds); I29 closed; σ over twelve pairs 0.0030; `queue_screen_11` relaunched
 

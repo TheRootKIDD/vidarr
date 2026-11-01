@@ -21,11 +21,13 @@ parallelism lives only in the S0/S10 measurement scripts (ADR-015).
 **Implementation decisions not spelled out in `docs/01`** (recorded as ADR-029):
 1. The $\mathcal{G}$ entry is $W_k/W_v$ of the shared block applied to a dedicated RMSNorm of the final vector (no depth modulation); with `segment_memory_grad: stop` the *input* vector is detached so the norm and projections still train.
 2. In segment mode the early/final skeleton blocks attend causally within the current segment only; only $M$ sees $\mathcal{G}$ ("the final vector is the only thing far tokens ever attend to").
-3. `per_iteration` global source = plain causal attention over the whole context at each iteration (the L5 baseline); `final_vector` = window $W$ inside the segment plus $\mathcal{G}$, one softmax (ADR-008's gated alternative is not implemented).
+3. `per_iteration` global source = plain causal attention over the whole context at each iteration (the L5 baseline); `final_vector` = window $W$ inside the segment plus $\mathcal{G}$, one softmax (ADR-008: accepted as built; the gated form is an L9 ablation only).
 4. A halted token's K/V is frozen at the first iteration after halting (with that iteration's $e_j$ modulation) and reused unchanged afterwards.
 5. The halting head starts at a low probability (bias −2) and, in fixed-$r$ training, contributes a zero-weighted term so DDP sees every parameter.
 6. Idle experts run one zero-weighted token per step for the same reason.
 7. Training-time memory knobs (`checkpoint_iterations`, `ce_chunk_tokens`) do not change semantics.
+8. L6 (ADR-041): in `act` mode the update of iteration $j$ is scaled by $1 - H^{(j-1)}$ (`halting.gate`), so the main loss reaches the halting head.
+9. L6c (ADR-042): the halting linear layer doubles as the depth router (default init). The thresholds `depth_tau` are a buffer (saved in checkpoints). Each training forward queues its quantiles, and the next training forward applies them after an all-reduce, so a backward recompute sees the same $\tau$ as its forward. Evaluation never moves $\tau$. The scores travel in `IterState.cum_halt`.
 
 Not implemented in Phase 1 and refused by `ModelCfg.validate()`: the index (L9), knowledge memory (L8), tenant adapters (L11), per-iteration attention LoRA (L5b), ADR-022 window crossing, L6b K/V sharing.
 
