@@ -540,6 +540,37 @@ Consequences: ≈ 46 GPU-hours are not spent; nothing is queued. `03`'s H13 row 
 weakened". If I36's probe is ever built, its numbers are an addendum to `164`, not a new verdict.
 Bears on H13; touches ADR-012, ADR-030, ADR-031, ADR-039, I28, I36.
 
+### ADR-045 — L6 ponder-price sweep: $\lambda_p$ ∈ {0.01, 0.03}, scored on the existing L5d fixed-$r$ curve
+2026-11-01 · accepted (the user's decision: "draft the sweep ADR and queue it")
+Context: `165` (L6, $\lambda_p$ = 3·10⁻³) ended at $\bar r$ = 7.38 and matched the L5d fixed-$r$ curve
+(−0.0006 at 7.38, 0.2σ). At 0.92 $r_{max}$ it sits outside H7's depth clause ($\bar r \le 0.7\,r_{max}$
+= 5.6, ADR-013), so H7's claim was never tested on L6. ADR-041 §2 chose a low price because a higher
+one was expected to collapse the policy to $r_{min}$ for good. `165` shows that the gated residual
+recovers from exactly that collapse: $\bar r$ was 2.1 at steps 50–300 and 7.4 at the end. So a higher
+price is now worth running. How $\lambda_p$ maps to $\bar r$ is unknown: the ponder term is
+$\lambda_p \cdot \overline{N + R}$, which is not a per-iteration price (`165` §Depth).
+Decision:
+1. **Two runs**, identical to `165` except `halting.ponder_cost`: **`169-l6-lp01-screen`**
+   ($\lambda_p$ = 0.01, the old preset value) and **`170-l6-lp03-screen`** ($\lambda_p$ = 0.03). Seed 0,
+   `screen`, 1 B tokens, micro-batch 4, on current `main` (no code change; the queue still gates on
+   ruff + the unit suite). The values are passed as plain decimals: YAML reads `1e-2` as a string, and
+   `validate()` does not catch it.
+2. **Scoring as ADR-041 §4.** Linearly interpolate the curve (`167` / `168` / `162` = 3.3601 /
+   3.3492 / 3.3443 at $r$ = 4 / 6 / 8) at each arm's `val_r_mean`. An arm counts as "adaptive
+   depth works" only if it is > 4σ below the curve. Within 2σ means it matched a fixed depth.
+   H7's own clause is reported beside it.
+3. **No extrapolation below $r$ = 4.** If either arm's `val_r_mean` < 4, the queue also runs
+   **`171-l5d-r2-screen`** (L5d fixed $r$ = 2 = $r_{min}$, $d_{ff}$ 896, the `167` construction,
+   ≈ 4 h), and that arm is scored on the 2–4 segment. Otherwise id 171 is not used and stays the
+   next free id.
+4. **Reading.** If some $\lambda_p$ is > 4σ below the curve, a `small` pair for that $\lambda_p$
+   follows, together with the `small` fixed-$r$ points it needs, by its own ADR (≈ 3–4 days). If both
+   are within 2σ, H7's learned-depth arms (L6 and L6c) close at `screen` by an ADR, H7 stays silent,
+   and the recommendation is a smaller fixed $r$. In between, it is the user's call. If $\bar r$ ends at
+   $r_{min}$, that is the result.
+Consequences: ≈ 16.4 h (+ ≈ 4 h if §3 fires). No code change. Scoring needs no new controls inside
+$r$ ∈ [4, 8]. Bears on H7; touches ADR-041, ADR-042, I25.
+
 ## Proposed / pending
 - **ADR-028** — Unit model revisions from the author's hardware document (`docs/07 §4`): (a) two compute classes per chip — an FF core with a large array ($s_{min,ff}$ = 256–1024) and attention cores with small arrays ($s_{min,attn}$ ≈ 64), hence $\phi_{ff}$, $\phi_{attn}$ as separate scenario inputs; (b) the tile floor is a *row* floor, $N$ = $M$ × (LHS bw / RHS bw) rows per weight tile, with each token contributing 1 + $m$ rows under $m$-token speculation — the scheduler's queues count rows; (c) the reduce leg of the local fabric carries ≥ 16-bit partial sums: `02 §2` traffic becomes $b d\, b_{act} + b d\, b_{sum}$, $b_{sum}$ ≥ 2; (d) full pipelining inside the unit doubles tokens in flight and per-token latency — the Little's-law budget $Z$ of `02 §5.5` carries the factor; (e) router-based unit fabrics are ≤ 50 % link-efficient (avg. 2 hops), torus collectives 100 %: `02 §1`'s "switch" option is not equivalent to a torus; (f) the asymmetric 4×4×4 torus all-gather costs ≈ 3X/(8B) vs ≈ X/(2B) on a flat ring (our derivation from the author's algorithm) — the number S1/S3 must reproduce; (g) the failure domain is the 4-chip ring board, and a failed rail port is bypassed through torus neighbours at ¼ load (`02 §11`); (h) the replica-rounding utilisation floor $\ell / \lceil \ell \rceil$ reported beside the Little's-law model in S4. Also fills `note64.yaml` with the sourced ratios of `docs/07 §6`; absolute $\phi$, $\beta_C$, $\lambda_C$, $\nu_C$ stay placeholders (I4). Bears on H1, H5, H8, H9, H10, H11, H16; changes `02 §1, §2, §5, §11`.
 - **ADR-024** — Parallel prefill mode for long prompts (the author's "less effective mode"): (a) all segments at once with local attention only, global cache filled afterwards from context-poor final vectors; (b) pipelined segments, segment $k+1$ at iteration $j$ attending globally to segment $k$'s iteration-$j$ caches (transient per-iteration global cache during prefill, in-flight depth up to $r$ segments). Both are inference-time modes of a sequentially trained model; E-Q12 evaluates both against sequential prefill on continuation loss and TTFT (S5). If both degrade, a mixed-mode training variant becomes a later ladder step.
@@ -1560,6 +1591,18 @@ and an ADR first, L6c likewise; the `small` programme (L0, L1, L2, L3, L5, L5d a
 the ladder's own next step and needs no new code. The choice between "more `screen` variants" and
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
+
+### 2026-11-01 (03:00) — ADR-045: L6 ponder-price sweep queued (`queue_screen_13`: `169` $\lambda_p$ = 0.01, `170` 0.03, conditional `171`)
+
+The user chose the $\lambda_p$ sweep, the cheapest of the three H7 options listed after `165`/`166`.
+The other two were a `small` pair, which needs `small` fixed-$r$ points that do not exist (≈ 3–4
+days), and closing by ADR. **ADR-045** fixes two values, the scoring (ADR-041 §4 on the existing
+curve), a conditional L5d $r$ = 2 control if an arm lands below $\bar r$ = 4, and the reading. No code
+change; the overrides were checked to parse as floats (`1e-2` would arrive as a string). The worktree
+`../vidarr-l6` (branch `l6-adr041`, merged in `5942ee1`) is removed. `/mnt/nvme/queue_screen_13.sh`
+gates on ruff + the unit suite, then runs `169` and `170` (≈ 8.2 h each; masked halting does not
+shorten the step). ETA ≈ 11:15 and ≈ 19:30 today; the conditional `171` (≈ 4 h) would end ≈ 23:30.
+Next ladder id after the queue: 171 if §3 does not fire, else 172. Rig id 033.
 
 ### 2026-11-01 (02:15) — `sim-m1` checked and merged; **ADR-043 accepted**; Phase 2's simulator exists (uncalibrated)
 
