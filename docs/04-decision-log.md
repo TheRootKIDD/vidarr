@@ -1592,7 +1592,7 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
-### 2026-11-01 (03:00) — ADR-045: L6 ponder-price sweep queued (`queue_screen_13`: `169` $\lambda_p$ = 0.01, `170` 0.03, conditional `171`)
+### 2026-11-01 (18:20) — ADR-045: L6 ponder-price sweep queued (`queue_screen_13`: `169` $\lambda_p$ = 0.01, `170` 0.03, conditional `171`)
 
 The user chose the $\lambda_p$ sweep, the cheapest of the three H7 options listed after `165`/`166`.
 The other two were a `small` pair, which needs `small` fixed-$r$ points that do not exist (≈ 3–4
@@ -1601,7 +1601,7 @@ curve), a conditional L5d $r$ = 2 control if an arm lands below $\bar r$ = 4, an
 change; the overrides were checked to parse as floats (`1e-2` would arrive as a string). The worktree
 `../vidarr-l6` (branch `l6-adr041`, merged in `5942ee1`) is removed. `/mnt/nvme/queue_screen_13.sh`
 gates on ruff + the unit suite, then runs `169` and `170` (≈ 8.2 h each; masked halting does not
-shorten the step). ETA ≈ 11:15 and ≈ 19:30 today; the conditional `171` (≈ 4 h) would end ≈ 23:30.
+shorten the step). Gate passed 18:19 (`76d1965`), `169` started 18:19. ETA ≈ 02:35 and ≈ 10:50 on 2 Nov; the conditional `171` (≈ 4 h) would end ≈ 15:00.
 Next ladder id after the queue: 171 if §3 does not fire, else 172. Rig id 033.
 
 ### 2026-11-01 (02:15) — `sim-m1` checked and merged; **ADR-043 accepted**; Phase 2's simulator exists (uncalibrated)
