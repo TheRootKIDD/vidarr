@@ -1532,6 +1532,34 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-11-01 (01:45) — `168` L5d $r$ = 6 completes the L5d depth curve; **`165` L6 and `166` L6c both match the fixed-$r$ curve (−0.0006 / +0.0023, 0.2σ / 0.8σ): neither learned depth policy beats a fixed $r$ at `screen`; H7 silent**; `queue_screen_12` done
+
+**`168-l5d-r6-screen`** ended 01:08 at **3.3492**: +0.0049 vs `162` (0.8σ), −0.0109 vs `167`. The L5d
+fixed-$r$ curve is **3.3601 / 3.3492 / 3.3443 at $r$ = 4 / 6 / 8**. It is concave: iterations 5–6 are
+worth 0.0109 and iterations 7–8 are worth 0.0049. Step time is linear in $r$ (≈ 1.4 s per iteration
++ 4.3 s fixed). 6.81 h, zero `n_thermal`.
+
+**Scoring (ADR-041 §4, ADR-042 §5)**, linear interpolation of the curve at each arm's held-out $\bar r$:
+
+| arm | $\bar r$ | middle FLOPs vs `162` | val loss | control | Δ vs control | H7's letter (ADR-013) |
+|---|---|---|---|---|---|---|
+| `165` L6 (ACT, gated, $\lambda_p$ 3·10⁻³) | 7.38 | −7.8 % | 3.3452 | 3.3458 | **−0.0006 (0.2σ)** | depth clause fails (> 5.6); loss +0.0009 |
+| `166` L6c (threshold expert-choice) | 5.52 | −31.1 % | 3.3541 | 3.3518 | **+0.0023 (0.8σ)** | both clauses met (+0.29 %), silent at one seed |
+
+Both arms **match a fixed depth**, so the adaptivity bought nothing measurable. L6 vs L6c by distance
+from the curve: 0.0029 (1.0σ), so I24's expert-choice prior is not visible. **H7: silent at `screen`**
+on both arms. L6c meets H7's numbers, but so does fixed $r$ = 4 (`167`), and that is the I25 point.
+L6's policy collapsed to $r_{min}$ by step 50 (the ponder-only collapse ADR-041 described). It stayed
+there ≈ 300 steps, then climbed to 7.4 once the gated residual's gradient took over, so the gate
+works. The one $\lambda_p$ landed near $r_{max}$. L6c met its schedule on held-out (5.515 vs 5.55).
+**Open, the user's call:** an L6 $\lambda_p$ sweep to bring $\bar r$ into H7's range; a `small` pair
+for either arm (ADR-031's trigger, > 4σ beyond L5, is not met); or closing H7's learned-depth arms at
+`screen` by an ADR. I24's systems half waits for `sim/`.
+
+**`queue_screen_12` QUEUE DONE 01:08**; GPUs idle. Next: the `sim-m1` checks (ruff, `tests/test_sim.py`,
+the L5 smoke run) in its worktree, then the merge with ADR-043 ordered before ADR-044. Next ladder id
+169, rig id 033.
+
 ### 2026-10-31 (18:45) — `165` L6 and `166` L6c done (scored after `168`); `167` L5d $r$ = 4: **+0.0158 vs `162` (+0.47 %) for −50 % middle-block FLOPs**, the L5d depth curve is flatter than L5's; `168` running
 
 **`165-l6-screen`** ended 04:17 at **3.3452** with $\bar r$ = 7.38 (8.19 h, 33.2 k tok/s, 3.93 GiB):
