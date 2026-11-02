@@ -1592,6 +1592,22 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-11-02 (01:30) — `169` L6 $\lambda_p$ = 0.01: 3.3685 at $\bar r$ 3.81, below the curve → ADR-045 §3 fires, verdict waits for `171`
+
+`169` ended 01:21 (exit 0, 7.03 h, 0/190 `n_thermal`, max 74 °C). Held-out $\bar r$ = **3.815**,
+below the curve's $r$ = 4 point, so per ADR-045 §3 the queue will run `171` L5d $r$ = 2 after `170`,
+and `169` is scored on the 2–4 segment only then. Nothing extrapolated. Measured now: **+0.0084 vs
+`167` ($r$ = 4; 2.8σ) with 0.19 fewer iterations**; H7's ADR-013 clause met (−52.3 % middle-block
+FLOPs, +0.0242 = +0.72 % vs `162` ≤ 0.0334), but `167` meets it too (I25). The policy sat at
+$r_{min}$ = 2.00 until step ≈ 550 (`165`: ≈ 300), then climbed slowly. It trails `167` at every eval
+from step 500 on. The bands once `171` lands: matches if 3.3871 ≤ L₁₇₁ ≤ 3.5145, worse by > 2σ if
+L₁₇₁ < 3.3871, > 4σ better only if L₁₇₁ > 3.5793.
+
+**Correction to the 18:20 entry:** masked halting does shorten the step, partly. It was 9.8 s per step
+near $r$ = 2 and 15.8 s at $\bar r$ ≈ 3.8, against 15.5 s for `165` at 7.4 and 9.9 s for fixed
+$r$ = 4. `169` took 7.03 h, not 8.2 h. `170` (λp 0.03) started 01:21. If it also runs shallow, it ends
+≈ 06:30–09:30, and `171` (≈ 3.8 h, step ≈ 1.4 s × 2 + 4.3 s) ≈ 10:30–13:30.
+
 ### 2026-11-01 (18:20) — ADR-045: L6 ponder-price sweep queued (`queue_screen_13`: `169` $\lambda_p$ = 0.01, `170` 0.03, conditional `171`)
 
 The user chose the $\lambda_p$ sweep, the cheapest of the three H7 options listed after `165`/`166`.
