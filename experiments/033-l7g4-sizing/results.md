@@ -4,7 +4,7 @@
 the 119-test suite passed on it just before) · driver 615.71.09 ·
 `python -m scripts.train.train --rung L7-g4 --id 033-l7g4-sizing --tokens 1e9 --micro-batch 4 --seed 0 --smoke-steps 6 --out-dir /mnt/nvme/ckpt/033-l7g4-sizing`.
 Six optimiser steps of 524,288 tokens (16 × 4 × 2048 × 4), DDP on 4 × RTX 3060, then one full
-held-out eval. `config.yaml`, `log.jsonl`, `summary.json` and `train.log` are copied here. The
+held-out eval. `config.yaml`, `log.jsonl` and `summary.json` are copied here (`train.log` is gitignored and stays at `/mnt/nvme/ckpt/033-l7g4-sizing/`). The
 checkpoint stays off-repo.
 
 **Bears on:** nothing directly. This is rig sizing for ADR-047 §4 (H4's arm). Rig series id `033`.
