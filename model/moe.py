@@ -1,8 +1,9 @@
 """Dropless MoE: route, gather per expert, run, scatter-add gated outputs.
 
-`docs/01 §4.5`. The granularity knob g (L7) turns N_e experts of width d_ff into
-N_e*g sub-experts of width d_ff/g with the same k — per-chip batch 1/g, same
-fabric bytes. The loop over experts is deliberate (readability; N_e <= 128).
+`docs/01 §4.5`. The granularity knob g (L7, ADR-047) turns N_e experts of width d_ff into
+N_e*g sub-experts of width d_ff/g with k*g of them active, so active FLOPs, total
+expert params and the unit count match g = 1 (fine-grained segmentation). The loop
+over experts is deliberate (readability; N_e <= 128).
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ class MoE(nn.Module):
         g = cfg.experts.granularity
         self.n_experts = cfg.router.n_experts * g
         self.d_ff = cfg.expert_width() // g
-        self.router = Router(cfg.d, cfg.router, self.n_experts, depth_dim)
+        self.router = Router(cfg.d, cfg.router, self.n_experts, depth_dim, k=cfg.router.k * g)
         self.experts = nn.ModuleList(
             Expert(cfg.d, self.d_ff, cfg.experts.layers) for _ in range(self.n_experts)
         )

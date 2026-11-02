@@ -84,6 +84,29 @@ def test_derived_widths_follow_adr_025_027() -> None:
     assert ladder("L1").expert_width() == 1024  # dense 2048 / k = 2
 
 
+def test_l7_granularity_matches_l5() -> None:
+    """ADR-047: g = 4 picks k*g sub-experts of width d_ff/g — same FLOPs, params, unit count."""
+    from model.moe import MoE
+
+    l5, l7 = ladder("L5"), ladder("L7-g4")
+    assert l7.router.n_experts == l5.router.n_experts  # unit count
+    d = l7.to_dict()["derived"]
+    assert d["active_sub_experts"] == 8 and d["n_sub_experts"] == 32
+    # active expert width per token: k * d_ff == (k g) * (d_ff / g)
+    assert d["active_sub_experts"] * d["sub_expert_width"] == l5.router.k * l5.expert_width()
+    with torch.device("meta"):
+        m5, m7 = MoE(l5, depth_dim=0), MoE(l7, depth_dim=0)
+    n5 = sum(p.numel() for p in m5.experts.parameters())
+    n7 = sum(p.numel() for p in m7.experts.parameters())
+    assert n5 == n7  # total expert params
+    torch.manual_seed(0)
+    moe = MoE(l7, depth_dim=0)
+    route = moe.router(torch.randn(16, l7.d))
+    assert route.idx.shape == (16, 8)
+    assert all(len(set(row.tolist())) == 8 for row in route.idx)  # distinct sub-experts
+    assert torch.allclose(route.gate.sum(-1), torch.ones(16))
+
+
 def test_param_counts_match_costmodel() -> None:
     with torch.device("meta"):
         l5 = BigMoE(ladder("L5")).n_params()

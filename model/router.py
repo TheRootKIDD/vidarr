@@ -26,9 +26,12 @@ class RouteResult:
 
 
 class Router(nn.Module):
-    def __init__(self, d: int, cfg: RouterCfg, n_experts: int, depth_dim: int = 0) -> None:
+    def __init__(
+        self, d: int, cfg: RouterCfg, n_experts: int, depth_dim: int = 0, k: int | None = None
+    ) -> None:
         super().__init__()
         self.cfg, self.n_experts = cfg, n_experts
+        self.k = cfg.k if k is None else k  # active (sub-)experts; k*g under L7 (ADR-047)
         d_in = d + (depth_dim if cfg.use_depth_embed else 0)
         self.wq = nn.Linear(d_in, cfg.d_r, bias=False)
         self.keys = nn.Parameter(torch.randn(n_experts, cfg.d_r) / cfg.d_r**0.5)
@@ -47,7 +50,7 @@ class Router(nn.Module):
         self, u: Tensor, e: Tensor | None = None, tenant_mask: Tensor | None = None
     ) -> RouteResult:
         """u: [N, d] flattened tokens. Returns top-k indices, gates, load, aux loss."""
-        k = self.cfg.k
+        k = self.k
         raw = self.logits(u, e).float()
         select = raw + self.bias
         if tenant_mask is not None:

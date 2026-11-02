@@ -64,7 +64,7 @@ class ExpertsCfg:
     tile_min: int = 256  # s_min, measured (003-gemm)
     d_ff: int | None = None  # derived unless overridden
     layers: int = 1  # L_e in {1, 2}
-    granularity: int = 1  # g sub-experts per unit (L7): N_e*g experts of width d_ff/g
+    granularity: int = 1  # g sub-experts per unit (L7): N_e*g of width d_ff/g, k*g active (ADR-047)
 
 
 @dataclass(frozen=True)
@@ -241,8 +241,10 @@ class ModelCfg:
                 raise NotImplementedError("L5e with L5d's G or with L5b/L5c: one feature (ADR-034)")
         if a.prev_segment_local or a.kv_share_every != 1:
             raise NotImplementedError("ADR-022 crossing / L6b KV sharing are not implemented yet")
-        if r.k > r.n_experts * e.granularity:
-            raise ValueError("k exceeds the number of (sub-)experts")
+        if r.k > r.n_experts:  # k*g active of N_e*g sub-experts (ADR-047)
+            raise ValueError("k exceeds the number of experts")
+        if e.granularity < 1 or self.expert_width() % e.granularity:
+            raise ValueError("granularity must divide d_ff (ADR-047)")
         if e.layers not in (1, 2):
             raise ValueError("L_e must be 1 or 2")
         if self.mtp.m < 1:
@@ -265,6 +267,7 @@ class ModelCfg:
             "expert_width": self.expert_width(),
             "sub_expert_width": self.expert_width() // self.experts.granularity,
             "n_sub_experts": self.router.n_experts * self.experts.granularity,
+            "active_sub_experts": self.router.k * self.experts.granularity,
             "skeleton_width": self.skeleton_width,
             "tile_floor": self.tile_floor,
             "n_streams": self.n_streams,
@@ -347,6 +350,7 @@ def ladder(step: str, **overrides: Any) -> ModelCfg:
             attention=AttentionCfg(global_source="final_vector"),
             halting=HaltingCfg(mode="expert"),
         ),
+        # ADR-047: 32 sub-experts of width 224, 8 active -> L5's FLOPs, params and unit count
         "L7-g4": replace(rec, experts=ExpertsCfg(granularity=4)),
         "L7b": replace(rec, experts=ExpertsCfg(layers=2)),
         "L10a": replace(rec, numerics=NumericsCfg(sparsity_2_4=True)),
