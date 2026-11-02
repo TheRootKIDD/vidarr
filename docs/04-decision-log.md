@@ -1592,6 +1592,24 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-11-02 (06:30) — `170` L6 $\lambda_p$ = 0.03: 3.3987 at $\bar r$ 2.06, collapsed to $r_{min}$ and stayed → verdict waits for `171`, which is running
+
+`170` ended 06:17 (exit 0, 4.93 h, 0/190 `n_thermal`, max 73 °C). Held-out $\bar r$ = **2.060**.
+The policy fell to $r_{min}$ by step 50 and stayed there (2.000 through step 500, drifting to 2.06 by
+the end). The queue logged `val_r_mean 169 = 3.815, 170 = 2.060`, ADR-045 §3 fired, and **`171` L5d
+$r$ = 2 started 06:17** (ETA ≈ 10:05 at the ≈ 7.1 s step `170` had near $r$ = 2). Measured now:
++0.0386 vs `167`, +0.0302 vs `169`. **H7's loss clause fails** (+0.0544 = +1.63 % vs `162`, over
+0.0334) while the FLOPs clause is met (−74.2 %). The bands once `171` lands: the control at 2.06 is
+0.970 × L₁₇₁ + 0.030 × 3.3601, so `170` matches if 3.3938 ≤ L₁₇₁ ≤ 3.4060, is worse by > 2σ if
+L₁₇₁ < 3.3938, and > 4σ better only if L₁₇₁ > 3.4122. The sweep sets depth monotonically:
+λp 0.003 / 0.01 / 0.03 → $\bar r$ 7.38 / 3.81 / 2.06. `170`'s step time grew from 7.1 s to 11.7 s
+while $\bar r$ moved only 0.06. That is consistent with a micro-batch iterating while any of its
+tokens runs (unprofiled).
+
+**Correction to the 01:30 entry:** `169`'s bands were computed from its gap to `167` rounded to 0.0084.
+Exact: matches if 3.3876 ≤ L₁₇₁ ≤ 3.5150, > 4σ better only if L₁₇₁ > 3.5798 (fixed in place there and
+in `169`'s results.md).
+
 ### 2026-11-02 (01:30) — `169` L6 $\lambda_p$ = 0.01: 3.3685 at $\bar r$ 3.81, below the curve → ADR-045 §3 fires, verdict waits for `171`
 
 `169` ended 01:21 (exit 0, 7.03 h, 0/190 `n_thermal`, max 74 °C). Held-out $\bar r$ = **3.815**,
@@ -1600,8 +1618,8 @@ and `169` is scored on the 2–4 segment only then. Nothing extrapolated. Measur
 `167` ($r$ = 4; 2.8σ) with 0.19 fewer iterations**; H7's ADR-013 clause met (−52.3 % middle-block
 FLOPs, +0.0242 = +0.72 % vs `162` ≤ 0.0334), but `167` meets it too (I25). The policy sat at
 $r_{min}$ = 2.00 until step ≈ 550 (`165`: ≈ 300), then climbed slowly. It trails `167` at every eval
-from step 500 on. The bands once `171` lands: matches if 3.3871 ≤ L₁₇₁ ≤ 3.5145, worse by > 2σ if
-L₁₇₁ < 3.3871, > 4σ better only if L₁₇₁ > 3.5793.
+from step 500 on. The bands once `171` lands: matches if 3.3876 ≤ L₁₇₁ ≤ 3.5150, worse by > 2σ if
+L₁₇₁ < 3.3876, > 4σ better only if L₁₇₁ > 3.5798.
 
 **Correction to the 18:20 entry:** masked halting does shorten the step, partly. It was 9.8 s per step
 near $r$ = 2 and 15.8 s at $\bar r$ ≈ 3.8, against 15.5 s for `165` at 7.4 and 9.9 s for fixed

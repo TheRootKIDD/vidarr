@@ -10,9 +10,9 @@ ADR-041 §4 against the I25 control and under ADR-013's own H7 clause.
   segment once it exists. **No verdict until then; nothing is extrapolated.**
 - **What `171` will decide.** The control at 3.815 is 3.3601 + 0.0926 × (L₁₇₁ − 3.3601), with
   (4 − 3.815) / 2 = 0.0926. Against `169`'s 3.3685, the bands fall at:
-  - matches a fixed depth (|Δ| ≤ 2σ = 0.0059) if 3.3871 ≤ L₁₇₁ ≤ 3.5145;
-  - above the curve by > 2σ (worse than a fixed depth) if L₁₇₁ < 3.3871;
-  - adaptive depth works (> 4σ = 0.0119 below) only if L₁₇₁ > 3.5793, i.e. if $r$ = 2 costs
+  - matches a fixed depth (|Δ| ≤ 2σ = 0.0059) if 3.3876 ≤ L₁₇₁ ≤ 3.5150;
+  - above the curve by > 2σ (worse than a fixed depth) if L₁₇₁ < 3.3876;
+  - adaptive depth works (> 4σ = 0.0119 below) only if L₁₇₁ > 3.5798, i.e. if $r$ = 2 costs
     > 0.22 nats against $r$ = 4. `167` → `162` is 0.0158 for four more iterations, so that would take
     a very steep bottom of the curve.
 - **What is measured without `171`:** `169` is **+0.0084 (2.8σ, 0.7× 4σ) behind `167`**, which ran
@@ -101,7 +101,7 @@ At $\lambda_p$ = 0.01, L6's gated ACT stays collapsed at $r_{min}$ for over a qu
 climbs to $\bar r$ = 3.81 on held-out. It lands at 3.3685 nats, meets both of H7's stated numbers
 (−52 % middle-block FLOPs at +0.72 % vs `162`), and is 0.0084 nats (2.8σ) behind fixed $r$ = 4 with
 0.19 fewer iterations. Its mean depth is below the measured curve, so per ADR-045 §3 the I25 control
-needs `171` (L5d $r$ = 2). **H7: verdict open until `171`.** Matching a fixed depth needs 3.3871 ≤ L₁₇₁
-≤ 3.5145; beating it by 4σ needs L₁₇₁ > 3.5793. Raising the ponder price moved L6 down the depth axis (7.38 → 3.81). Whether it also moved it off
+needs `171` (L5d $r$ = 2). **H7: verdict open until `171`.** Matching a fixed depth needs 3.3876 ≤ L₁₇₁
+≤ 3.5150; beating it by 4σ needs L₁₇₁ > 3.5798. Raising the ponder price moved L6 down the depth axis (7.38 → 3.81). Whether it also moved it off
 the fixed-depth curve is what `171` decides.
 `170` ($\lambda_p$ = 0.03) is running.
