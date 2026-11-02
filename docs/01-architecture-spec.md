@@ -130,6 +130,8 @@ $$q_m = W_m [u; e_j], \qquad \mathcal{N} = \text{top-}k_m\ \text{of}\ q_m^\top \
 - The table is "correct but not complete": training must not depend on coverage. Coverage is measured separately from model quality.
 
 ### 4.7 Iteration count $r_t$ (note P7)
+**Status (ADR-046, 2026-11-02):** neither learned rule below (ACT, L6; expert-choice, L6c) beat a fixed $r$ at matched mean depth at `screen`, so both are closed there and the ladder trains with fixed $r$. The design and the ragged-depth semantics stay as written. They are P7, binding for `sim/` and for any reopening by ADR.
+
 Halting head on the context stream at each iteration:
 $$h_t^{(j)} = \sigma\big(w_h^\top [u; e_j]\big), \qquad r_t = \min\Big\{ j : \sum_{j' \le j} h_t^{(j')} \ge 1-\epsilon \Big\}\ \text{clipped to}\ [r_{min}, r_{max}] .$$
 **Gradient path (ADR-041).** With the output fixed to the last state (ADR-010), a halting decision reaches the loss only through the integer $r_t$, so the halting head would learn from the ponder cost alone and collapse to $r_{min}$. The update of iteration $j$ is therefore scaled by the probability that the token is still running:

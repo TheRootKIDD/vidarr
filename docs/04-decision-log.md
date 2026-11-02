@@ -571,6 +571,60 @@ Decision:
 Consequences: ≈ 16.4 h (+ ≈ 4 h if §3 fires). No code change. Scoring needs no new controls inside
 $r$ ∈ [4, 8]. Bears on H7; touches ADR-041, ADR-042, I25.
 
+### ADR-046 — H7's learned-depth arms (L6, L6c) close at `screen`; the ladder keeps fixed $r$
+2026-11-02 · accepted (the user's decision: "yes, draft the closing ADR")
+Context: ADR-045 §4 landed in its "in between" case, which leaves the next step to the user. The
+evidence, all at `screen`, one seed, scored against the L5d fixed-$r$ curve (ADR-041 §4, I25;
+`171` / `167` / `168` / `162` = 3.3820 / 3.3601 / 3.3492 / 3.3443 at $r$ = 2 / 4 / 6 / 8):
+
+| arm | $\bar r$ | Δ vs the curve at $\bar r$ |
+|---|---|---|
+| `165` L6, $\lambda_p$ 0.003 | 7.38 | −0.0006 (0.2σ) |
+| `166` L6c (ADR-042) | 5.52 | +0.0023 (0.8σ) |
+| `169` L6, $\lambda_p$ 0.01 | 3.81 | +0.0064 (2.1σ) |
+| `170` L6, $\lambda_p$ 0.03 | 2.06 | +0.0174 (5.8σ) |
+
+No arm is below the curve. Every deviation outside 2σ is on the *worse* side. The ponder price sets
+L6's depth monotonically, and the shallower it pushes L6, the further above the curve it lands. At
+equal depth the ACT machinery itself costs loss (`170` trails `171` at every eval from step 300) and
+wall-clock (−21 % tok/s against fixed $r$ = 2, because a micro-batch iterates until its deepest token
+halts). A fixed schedule meets H7's stated numbers on its own (`167`: −50 % middle-block FLOPs at
++0.47 %). ADR-045 §4 sends a `small` pair only to an arm > 4σ *below* the curve. No arm came close,
+and a pair plus the `small` fixed-$r$ points it needs would cost ≈ 3–4 days for a result `screen`
+gives no reason to expect. Precedent for closing at `screen`: ADR-044 (H13).
+Decision:
+1. **L6 and L6c close at `screen`.** No further $\lambda_p$ values, no L6 or L6c `small` runs (L6
+   leaves `03 §2`'s list of decisive `small` steps), and `01 §4.7`'s training regime 3 (RL
+   fine-tuning of the halting policy) is not scheduled. **L6b** (KV sharing across iterations for the
+   transient local caches) does not depend on learned depth. It stays an unscheduled optional item.
+2. **H7 closes silent at `screen`** under ADR-013's letter: no learned depth policy is > 4σ below the
+   I25 control. L6 at $\lambda_p$ = 0.03 is *weakened* (5.8σ above it); the other three arms are
+   silent. The record reads "learned depth bought nothing over a fixed $r$ at this scale", not
+   "H7 weakened" as a whole.
+3. **The ladder keeps fixed $r$ = 8**, the recurrent default (`03 §2`), for L7 onwards, so every later
+   rung stays comparable to the existing baselines. The measured depth-for-cost trade-off (fixed
+   $r$ = 4: −50 % middle-block FLOPs at +0.47 %; $r$ = 2: +1.13 %, outside H7's 1 %) is recorded
+   as the input for any later `small`/`medium` configuration choice. **Changing the default $r$ is its
+   own ADR** and is not decided here.
+4. **Spec and code.** `01 §4.7` keeps the design: it is the note's P7, and the ragged-depth semantics
+   stay binding for `sim/` and for any reopening. A status line points here. The code
+   (`halting.mode: act | expert`) and its unit tests stay. No code change.
+5. **I24:** the quality half is closed: expert-choice's advantage was not visible (`166` vs `165`,
+   1.0σ). The systems half no longer gates a ladder step. `sim/` may still model ragged $r_t$ as a
+   scenario input for P11's continuous scheduler, but it is not owed. **I25:** its control was built
+   and used (`167` / `168` / `162` / `171`). Closed.
+6. **Kept for the findings brainstorm (Phase 3.9, I28):** (a) at equal depth, ACT with the gated
+   residual loses ≈ 0.017 nats to a fixed schedule. One untested candidate is the ponder gradient
+   reaching the shared block through the gate. (b) Masked halting's wall-clock follows the deepest
+   token per micro-batch, not $\bar r$. (c) The L5d depth curve is concave, and each pair of
+   iterations is worth about half the previous pair.
+7. **Reopening** takes a new ADR. Candidates: `medium` ($r_{max}$ = 16), where the depth curve and
+   the value of a late iteration may differ, or a depth mechanism that skips halted tokens instead of
+   masking them, which is the only way the notional FLOPs saving reaches wall-clock here.
+Consequences: no runs are queued. The `small` programme loses its L6 entry (≈ 3–4 days not spent).
+Phase 3's L6/L6c items are done. Phase 3 continues with L7–L9 and S5–S7. Bears on H7; touches
+ADR-041, ADR-042, ADR-045, I24, I25, `01 §4.7`, `03 §2` and `03 §5`.
+
 ## Proposed / pending
 - **ADR-028** — Unit model revisions from the author's hardware document (`docs/07 §4`): (a) two compute classes per chip — an FF core with a large array ($s_{min,ff}$ = 256–1024) and attention cores with small arrays ($s_{min,attn}$ ≈ 64), hence $\phi_{ff}$, $\phi_{attn}$ as separate scenario inputs; (b) the tile floor is a *row* floor, $N$ = $M$ × (LHS bw / RHS bw) rows per weight tile, with each token contributing 1 + $m$ rows under $m$-token speculation — the scheduler's queues count rows; (c) the reduce leg of the local fabric carries ≥ 16-bit partial sums: `02 §2` traffic becomes $b d\, b_{act} + b d\, b_{sum}$, $b_{sum}$ ≥ 2; (d) full pipelining inside the unit doubles tokens in flight and per-token latency — the Little's-law budget $Z$ of `02 §5.5` carries the factor; (e) router-based unit fabrics are ≤ 50 % link-efficient (avg. 2 hops), torus collectives 100 %: `02 §1`'s "switch" option is not equivalent to a torus; (f) the asymmetric 4×4×4 torus all-gather costs ≈ 3X/(8B) vs ≈ X/(2B) on a flat ring (our derivation from the author's algorithm) — the number S1/S3 must reproduce; (g) the failure domain is the 4-chip ring board, and a failed rail port is bypassed through torus neighbours at ¼ load (`02 §11`); (h) the replica-rounding utilisation floor $\ell / \lceil \ell \rceil$ reported beside the Little's-law model in S4. Also fills `note64.yaml` with the sourced ratios of `docs/07 §6`; absolute $\phi$, $\beta_C$, $\lambda_C$, $\nu_C$ stay placeholders (I4). Bears on H1, H5, H8, H9, H10, H11, H16; changes `02 §1, §2, §5, §11`.
 - **ADR-024** — Parallel prefill mode for long prompts (the author's "less effective mode"): (a) all segments at once with local attention only, global cache filled afterwards from context-poor final vectors; (b) pipelined segments, segment $k+1$ at iteration $j$ attending globally to segment $k$'s iteration-$j$ caches (transient per-iteration global cache during prefill, in-flight depth up to $r$ segments). Both are inference-time modes of a sequentially trained model; E-Q12 evaluates both against sequential prefill on continuation loss and TTFT (S5). If both degrade, a mixed-mode training variant becomes a later ladder step.
@@ -654,11 +708,11 @@ $r$ ∈ [4, 8]. Bears on H7; touches ADR-041, ADR-042, I25.
 
   Resolution: state the interaction explicitly in `01 §7` once H13 is decided at `small` (ADR-030), and price it in S5 if a sequential L3b is ever built. **Not blocking** — nothing before L9 touches it. Bears on H13, H15b; touches `01 §4.3`, `01 §7`, L3b. *Resolved for L3c 2026-10-21 (ADR-039):* drafts enter DeepSeek-style modules as embeddings at the anchor position and are never attended positions, and a module's state at an earlier anchor is the one computed when it was the anchor. So the invisibility gap does not arise. It would arise for EAGLE-style drafters that append drafts as positions, or for tree verification, which stay out of scope.
 
-- **I25** **H7's comparator is the wrong control.** H7 reads *"learned $r_t$ saves ≥ 30 % middle-block FLOPs at ≤ 1 % loss **vs fixed $r_{max}$**"*. Beating fixed $r_{max}$ is not the interesting claim: a learned policy that settles at a mean depth of, say, 5.6 is competing against $r$ = 8, so it is being credited for the FLOPs saved by *being shallower*, which any fixed $r$ = 6 run would also save. **The honest control is fixed $r$ at the same mean depth**, and the ladder does not currently have one — `03 §2` runs L5 at fixed $r$ = 8 only. Without it, "adaptive depth works" and "this model wanted to be shallower" are indistinguishable, and the ARC Prize HRM ablation (`05` line 92) is a live example of exactly that confusion resolving the boring way: a same-size plain transformer within ~5 pp, *"the outer refinement loop, not the hierarchy, carries it"*. Found while answering the HRM brief (`08 §5`), not from the brief itself.
+- **I25** **H7's comparator is the wrong control.** H7 reads *"learned $r_t$ saves ≥ 30 % middle-block FLOPs at ≤ 1 % loss **vs fixed $r_{max}$**"*. Beating fixed $r_{max}$ is not the interesting claim: a learned policy that settles at a mean depth of, say, 5.6 is competing against $r$ = 8, so it is being credited for the FLOPs saved by *being shallower*, which any fixed $r$ = 6 run would also save. **The honest control is fixed $r$ at the same mean depth**, and the ladder does not currently have one — `03 §2` runs L5 at fixed $r$ = 8 only. Without it, "adaptive depth works" and "this model wanted to be shallower" are indistinguishable, and the ARC Prize HRM ablation (`05` line 92) is a live example of exactly that confusion resolving the boring way: a same-size plain transformer within ~5 pp, *"the outer refinement loop, not the hierarchy, carries it"*. Found while answering the HRM brief (`08 §5`), not from the brief itself. **Closed 2026-11-02 (ADR-046):** the control was built (L5d $r$ = 2 / 4 / 6 / 8, `171` / `167` / `168` / `162`) and used to score `165`, `166`, `169` and `170`. None beat it.
 
   **Resolution — a fixed-$r$ sweep as a control, not a feature**: L5 at $r$ ∈ {4, 8, 12}, one seed each at `screen`, ≈ 16 h total at the measured rate. It gives H7 a loss-vs-mean-depth curve to compare a learned policy against, and it is independently useful — it is the first measurement of whether this architecture wants more or less depth at all, which H6 also benefits from. **H7 should not be scored before it exists.** Cheap, and the cheapest thing on `08 §9`'s list. Bears on H7, H6; touches `03 §1`, `03 §2`. *Update 2026-10-29:* the L5 sweep ran (`114`/`110`/`115`, flat past 8), but L6 sits on L5d with ADR-038's aux, so ADR-041 adds the matching L5d curve (`167` $r$ = 4, `168` $r$ = 6, `162` $r$ = 8) and fixes the scoring: L6/L6c against the interpolated curve at their own $\bar r$, > 4σ below it to count. **Resolved for L6/L6c by ADR-041 §3–4.**
 
-- **I24** **H7's depth mechanism is token-choice; its strongest prior says expert-choice is better.** `01 §4.7` specifies per-token depth as an **ACT halting head**: each token accumulates $h_t^{(j)}$ and stops when the sum crosses $1-\epsilon$. That is a *token-choice* decision — each token decides for itself, locally. Mixture-of-Recursions (Bae et al. 2025, arXiv:2507.10524), which `docs/05` records as **the strongest prior for both H6 and H7**, instead uses an *expert-choice* router: at each recursion the router picks which tokens continue, under a capacity constraint. The same entry records that **expert-choice beats token-choice by 2.6 points** in their ablation. So the mechanism the spec commits to is the one its own best prior measured as worse, and no ladder step currently compares them. Raised by Annemette 2026-09-11 (as "let the router decide how many times each token goes around").
+- **I24** **H7's depth mechanism is token-choice; its strongest prior says expert-choice is better.** `01 §4.7` specifies per-token depth as an **ACT halting head**: each token accumulates $h_t^{(j)}$ and stops when the sum crosses $1-\epsilon$. That is a *token-choice* decision — each token decides for itself, locally. Mixture-of-Recursions (Bae et al. 2025, arXiv:2507.10524), which `docs/05` records as **the strongest prior for both H6 and H7**, instead uses an *expert-choice* router: at each recursion the router picks which tokens continue, under a capacity constraint. The same entry records that **expert-choice beats token-choice by 2.6 points** in their ablation. So the mechanism the spec commits to is the one its own best prior measured as worse, and no ladder step currently compares them. Raised by Annemette 2026-09-11 (as "let the router decide how many times each token goes around"). **Quality half closed 2026-11-02 (ADR-046):** `166` L6c vs `165` L6 differ by 1.0σ in distance from the fixed-$r$ curve, so expert-choice's advantage is not visible at `screen`. The systems half no longer gates a ladder step (optional `sim/` scenario).
 
   **Why the spec may be right anyway, and why this is a trade rather than a fix.** Expert-choice depth routing needs batch-level information — you cannot select the top tokens to continue without seeing the others — so it is a *synchronisation point*. The note's P11 execution model is continuous and non-lockstep at inference, with tokens flowing through units independently (`02 §5`); ACT halting is a purely local decision and composes with that, while expert-choice does not, or not without a capacity rule evaluated over whatever happens to be in flight. Training is lockstep either way (ADR-016), so the conflict is inference-only — but inference is where the note's whole scheduling argument lives. **If expert-choice wins on quality but costs the continuous execution model, that is a trade to price, not a free upgrade.**
 
@@ -1591,6 +1645,16 @@ and an ADR first, L6c likewise; the `small` programme (L0, L1, L2, L3, L5, L5d a
 the ladder's own next step and needs no new code. The choice between "more `screen` variants" and
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
+
+### 2026-11-02 (15:30) — **ADR-046: H7's learned-depth arms (L6, L6c) close at `screen`**; the ladder keeps fixed $r$ = 8
+
+The user chose to close (after ADR-045 §4 landed "in between"). **ADR-046** closes L6 and L6c at
+`screen` with no `small` runs. H7 closes silent (L6 at $\lambda_p$ 0.03 weakened), I25 is closed,
+and I24's quality half is closed. The ladder default stays fixed $r$ = 8 for comparability; a change
+of default $r$ (fixed $r$ = 4 meets H7's numbers alone) is left to its own ADR. `01 §4.7` gets a
+status line, and `03` gets the H7 and L6 rows, the `small` list and Phase 3. No code change, nothing
+queued. Next ladder id 172, rig id 033. What runs next is the user's call: Phase 3 continues with
+L7–L9 and S5–S7, and Phase 2's `sim/` calibration (S0/I1) is also open.
 
 ### 2026-11-02 (10:30) — `171` L5d $r$ = 2 = 3.3820 completes the curve; **`169` +0.0064 (2.1σ) and `170` +0.0174 (5.8σ) above it — no learned-depth arm beats a fixed depth**; `queue_screen_13` done; ADR-045 §4 lands "in between"
 
