@@ -1646,6 +1646,19 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-11-02 (16:00) — **Phase 1 exit reached**; next is Phase 2 (`sim/` calibration, S0 first) or Phase 3's L7
+
+ADR-046 is pushed (`be2b290`). Checked against `03 §5`'s exit rule, every ADR-031 leftover has
+run: L5-ne1 / L5c / L5b (`145`–`147`), L5e (`151`) and its pair (`154`/`155`), the L5c pair
+(`149`/`150`), L5-pm (`153`) and its pair (`160`/`161`), L3b (`152`) and its pair (`156`/`157`), and
+L5d-8k (`158`/`159`). The conditional `small` confirmations are settled: L5c and L5e were paired,
+L5-ne1 was worse than L5 and L5b matched it. Every Phase 1 hypothesis verdict (H2, H6, H8, H13,
+H15a) is in `03 §1`, and so is H7's, from the L6/L6c arms run early. Q11 is optional and does not
+gate. **Phase 1 is done.** Open for what comes next: Phase 2 needs S0, a *measured* expert-parallel
+inference run of the `small` model on the four cards (`sim/README.md` §S0; rig id 033). Its script
+does not exist yet. ADR-028 (proposed) revises the unit model for `note64` and blocks S1 onwards,
+not S0. Phase 3 continues with L7 (H4's $g$ sweep, L7c). Next ladder id 172.
+
 ### 2026-11-02 (15:30) — **ADR-046: H7's learned-depth arms (L6, L6c) close at `screen`**; the ladder keeps fixed $r$ = 8
 
 The user chose to close (after ADR-045 §4 landed "in between"). **ADR-046** closes L6 and L6c at
