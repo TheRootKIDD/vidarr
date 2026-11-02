@@ -118,7 +118,7 @@ $$\mathrm{Exp}_i(u) = W^{down}_i\big(\mathrm{SiLU}(W^{gate}_i u)\odot W^{up}_i u
 $$d_{ff} = \max\big(U \cdot s_{min},\ d_{ff}^{quality}\big),$$
 the smallest width whose per-chip tensor-parallel slice $d_{ff}/U$ fills a tile, or a multiple. The systems layer never executes fewer weights than one expert at a time. In Tier A, $U$ and $s_{min}$ are simulated: they set $d_{ff}$ and the reported utilisation; no kernel changes.
 
-**Granularity knob $g$.** One unit may host $g$ sub-experts of width $d_{ff}/g$, executed expert-parallel inside the unit (each chip = one sub-expert) instead of one tensor-parallel expert. Fabric traffic is identical; per-chip batch is $1/g$. This is the H4 experiment (L7).
+**Granularity knob $g$ (ADR-047).** One unit may host $g$ sub-experts of width $d_{ff}/g$, executed expert-parallel inside the unit (each chip = one sub-expert) instead of one tensor-parallel expert. The router scores all $N_e g$ sub-experts and selects the top-$k g$, so active expert FLOPs ($3 k d\, d_{ff}$), total expert parameters and the unit count $N_e$ are those of $g$ = 1 (fine-grained segmentation). Selection is not limited to $k$ units: a token's $k g$ sub-experts can lie in up to $\min(k g, N_e)$ units, so clos traffic is identical to $g$ = 1 only under unit-limited routing, a separate variant (ADR-047 §2). This is the H4 experiment (L7).
 
 Parameters per expert ($L_e = 1$, SwiGLU): $3\, d\, d_{ff}$. With 2:4 sparsity the dense-equivalent width is $2 d_{ff}$ at equal FLOPs (§8).
 

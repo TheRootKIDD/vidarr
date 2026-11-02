@@ -625,6 +625,51 @@ Consequences: no runs are queued. The `small` programme loses its L6 entry (≈ 
 Phase 3's L6/L6c items are done. Phase 3 continues with L7–L9 and S5–S7. Bears on H7; touches
 ADR-041, ADR-042, ADR-045, I24, I25, `01 §4.7`, `03 §2` and `03 §5`.
 
+### ADR-047 — L7 as built: $g$ sub-experts per unit with $k \cdot g$ active (fine-grained segmentation), matched FLOPs, params and unit count
+2026-11-02 · accepted (the user's decision: "yes, draft the L7 ADR with option 1")
+Context: H4 compares coarse experts sized to the unit ($g$ = 1) with $g$ sub-experts "at matched FLOPs
+and unit count" (`03 §1`). `01 §4.5` and the `L7-g4` preset split each of the $N_e$ = 8 experts
+(width 896) into $g$ = 4 sub-experts of width 224 but keep $k$ = 2. A token then runs
+$2 \times 224$ of expert width instead of $2 \times 896$, a quarter of L5's active expert FLOPs. That
+arm would measure a smaller model, not granularity. Found 2026-11-02 before anything was queued.
+`01 §4.5`'s "fabric traffic identical; per-chip batch $1/g$" describes that unmatched arm. The
+granularity prior (I20, `05`: the fine-grained MoE scaling laws) is about DeepSeekMoE-style
+segmentation, which scales the active count with the split.
+Decision:
+1. **Semantics.** $k$ keeps its meaning in `01 §1`: units' worth of expert compute per token per
+   iteration. With $g$ > 1 the router scores $N_e g$ sub-experts and selects the top-$k g$. Gates are
+   the bias-free softmax over the selected set, as in `01 §4.4`. Each sub-expert has width $d_{ff}/g$.
+   Per token per iteration, active expert FLOPs ($k g \cdot 3 d\, d_{ff}/g = 3 k d\, d_{ff}$), total
+   expert parameters ($N_e g \cdot 3 d\, d_{ff}/g$) and the unit count $N_e$ all equal $g$ = 1's. The
+   router's key matrix grows from $N_e$ to $N_e g$ rows (+3,072 params; $2 d_r \times 24$ ≈ 6 k extra FLOPs
+   per token per iteration, ≈ 0.01 % of the budget), and that is reported, not compensated. $d_{ff}$ is derived exactly
+   as for $g$ = 1, since the budget solver sees the same FLOPs.
+2. **Unconstrained selection.** The top-$k g$ may fall in up to $\min(k g, N_e)$ units. At the
+   fabric level that is up to $g$× the destinations of $g$ = 1, with $1/g$ of the work at each, so
+   **clos traffic is no longer identical** to $g$ = 1. Unit-limited routing (pick $k$ units, then $g$
+   sub-experts inside each, DeepSeek-V3's node-limited form) would restore identical traffic. It is a
+   second feature, a candidate `L7-g4u` by its own ADR, and it is not in this run. The systems
+   side, bytes per token and per-chip batch under both forms, is S3's and `sim/` milestone 2's
+   (`sim/params.py` refuses $g$ > 1 until then).
+3. **Tile floor.** Sub-experts are 224 wide, below `local_3060`'s $s_{min}$ = 256. In Tier A, $U$ and
+   $s_{min}$ are simulated (`01 §4.5`), so this is reported as a utilisation figure (224/256 = 87.5 %),
+   not enforced.
+4. **The run:** `172-l7-g4-screen`, preset `L7-g4` ($g$ = 4, $k$ = 2 → 8 of 32 sub-experts active,
+   width 224, everything else = L5), `screen`, seed 0, 1 B tokens. Comparator `110` (L5, $g$ = 1).
+   Baselines `100` (L0 dense) and `106` (L1 fine-grained layered MoE) as for every `screen` arm.
+   Before queueing, a short step-time and memory probe under rig id `033`, because the reference
+   implementation loops over experts and 32 of them will be slower than L5's 8.
+5. **Reading** (ADR-013, one seed): H4 says $g$ = 1 is within 1 % of $g$ = $U$, i.e. |Δ| ≤ 2σ
+   (`L7-g4` − `110`). If `L7-g4` is better by > 4σ, the granularity prior holds here: H4 is
+   *weakened* at `screen` and a `small` pair follows by ADR-031's rule. Within 2σ, H4 is *silent* at
+   `screen`, in the supports direction. Worse by > 4σ is unexpected and is reported as such.
+6. **Code.** `Router` takes the active count from the caller. `MoE` passes $k g$. A unit test
+   checks active sub-experts = $k g$ and that L7-g4's expert parameters and active expert FLOPs
+   equal L5's. `01 §4.5` and `02 §2` are rewritten to match. No other rung changes ($g$ = 1
+   everywhere else).
+Consequences: one `screen` run (≈ 5–8 h, to be set by the `033` probe). Bears on H4; touches `01 §4.5`,
+`02 §2`, `03 §2` (L7 row), I20, S3, `sim/` milestone 2.
+
 ## Proposed / pending
 - **ADR-028** — Unit model revisions from the author's hardware document (`docs/07 §4`): (a) two compute classes per chip — an FF core with a large array ($s_{min,ff}$ = 256–1024) and attention cores with small arrays ($s_{min,attn}$ ≈ 64), hence $\phi_{ff}$, $\phi_{attn}$ as separate scenario inputs; (b) the tile floor is a *row* floor, $N$ = $M$ × (LHS bw / RHS bw) rows per weight tile, with each token contributing 1 + $m$ rows under $m$-token speculation — the scheduler's queues count rows; (c) the reduce leg of the local fabric carries ≥ 16-bit partial sums: `02 §2` traffic becomes $b d\, b_{act} + b d\, b_{sum}$, $b_{sum}$ ≥ 2; (d) full pipelining inside the unit doubles tokens in flight and per-token latency — the Little's-law budget $Z$ of `02 §5.5` carries the factor; (e) router-based unit fabrics are ≤ 50 % link-efficient (avg. 2 hops), torus collectives 100 %: `02 §1`'s "switch" option is not equivalent to a torus; (f) the asymmetric 4×4×4 torus all-gather costs ≈ 3X/(8B) vs ≈ X/(2B) on a flat ring (our derivation from the author's algorithm) — the number S1/S3 must reproduce; (g) the failure domain is the 4-chip ring board, and a failed rail port is bypassed through torus neighbours at ¼ load (`02 §11`); (h) the replica-rounding utilisation floor $\ell / \lceil \ell \rceil$ reported beside the Little's-law model in S4. Also fills `note64.yaml` with the sourced ratios of `docs/07 §6`; absolute $\phi$, $\beta_C$, $\lambda_C$, $\nu_C$ stay placeholders (I4). Bears on H1, H5, H8, H9, H10, H11, H16; changes `02 §1, §2, §5, §11`.
 - **ADR-024** — Parallel prefill mode for long prompts (the author's "less effective mode"): (a) all segments at once with local attention only, global cache filled afterwards from context-poor final vectors; (b) pipelined segments, segment $k+1$ at iteration $j$ attending globally to segment $k$'s iteration-$j$ caches (transient per-iteration global cache during prefill, in-flight depth up to $r$ segments). Both are inference-time modes of a sequentially trained model; E-Q12 evaluates both against sequential prefill on continuation loss and TTFT (S5). If both degrade, a mixed-mode training variant becomes a later ladder step.

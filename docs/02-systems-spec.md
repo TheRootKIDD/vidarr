@@ -21,7 +21,7 @@ Both live in `costmodel.expert_step()`; the simulator's per-expert queue uses $b
 
 **Local traffic per step**: $2\, b\, d\, b_{act}$ bytes over the local fabric (broadcast + reduce); ring time $\approx 2 b d\, b_{act} / \lambda_C$ must be $\ll$ compute time $2 b \cdot 3 d (d_{ff}/U) L_e / \phi$ — i.e. $\lambda_C \gg \phi\, b_{act} / (3 (d_{ff}/U) L_e)$. Check per scenario.
 
-**Alternative (granularity $g$)**: expert-parallel inside the unit — chip $i$ holds sub-expert $i$ whole; batch per chip $b/g$; no all-reduce, one extra dispatch hop instead. Same clos traffic. The simulator models both.
+**Alternative (granularity $g$, ADR-047)**: expert-parallel inside the unit. Chip $i$ holds sub-expert $i$ whole; there is no all-reduce, but one extra dispatch hop. Each token selects $k g$ of the $N_e g$ sub-experts (`01 §4.5`), so under balanced load a sub-expert's batch equals a coarse expert's $b$, at $1/g$ of the width. Clos traffic matches $g$ = 1 only with unit-limited routing (each token's sub-experts inside $k$ units). Unconstrained, a token reaches up to $\min(k g, N_e)$ units. The simulator models both (milestone 2; S3).
 
 ## 3. Fabric: rail-optimized clos, multicast, reduction
 - Traffic unit: a token's stream vector ($d\, b_{act}$ bytes) plus metadata (expert ids and gates, tenant, sequence id, iteration, deadline).
