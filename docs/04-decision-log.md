@@ -1691,6 +1691,32 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-11-03 (00:30) — **`172` L7-g4 = 3.3473, +0.0145 vs L5 `110` (4.8σ worse)**: the fine split loses at `screen` (ADR-047 §5's "unexpected" band; H4 not weakened, silent at one seed); `queue_screen_14` done
+
+`queue_screen_14` ended 00:02:52 (`172` exit 0, 20 evals). **`172-l7-g4-screen`** (ADR-047: $g$ = 4,
+8 of 32 sub-experts of width 224, FLOPs, expert params and unit count matched to L5) = **3.3473**,
+**Δ = +0.0145 vs `110`** (+0.44 %, 4.8σ at σ = 0.0030). The fine-grained prior, which ADR-047 §5
+set as the way H4 would fail, does not hold: **H4 is not weakened**. The result is outside §5's
+"silent, supports direction" band too (|Δ| ≤ 2σ), so it is reported as *unexpected*. H4 stays
+silent at one seed, with the evidence leaning its way. vs `100` dense +0.011 (3.8σ, inconclusive);
+vs `106` L1 +0.1425 (L5 is +0.128).
+The gap is −0.069 at step 100, +0.023 at step 500, and holds at +0.0145 from step 1000 to the end.
+Routing ends healthy: 31.99 of 32 effective sub-experts, load 0.029–0.032, 0 dead. Early on it loses
+up to 12 of 32 sub-experts (step 15) and recovers by step 47; `110` never lost more than one. The
+`probe_routing` run, on idle GPU 0 after the queue, gives a mean correlation between iterations'
+histograms of 0.65 (`110` 0.71), so 32 sub-experts do not partition by depth the way 128 experts
+did (`138` 0.35). Untested candidate causes:
+
+- the 224 width is below the 256 tile floor (ADR-047 §3);
+- the early dead-sub-expert transient;
+- an aux weight tuned at $N_e$ = 8;
+- unconstrained selection (L7-g4u not built).
+
+Throughput 33,298 tok/s = 0.686× `110` (`033` said 0.63×). Wall 8.45 h, against the 9.2 h estimate.
+`n_thermal` 0 in 190 records, max 75 °C. Next ladder id 173, rig id 034. **Nothing running.** Next
+step is the user's call. The run did not beat L5 by > 4σ, so ADR-031's `small` pair rule does not
+fire.
+
 ### 2026-11-02 (15:40) — **ADR-047 (L7 as built)**; rig probe `033`: L7-g4 at 0.63× L5's speed; `queue_screen_14` launched (`172-l7-g4-screen`, ≈ 9.2 h)
 
 The user chose Phase 3's L7 over S0 and then ADR-047's option 1. Checking the preset before
