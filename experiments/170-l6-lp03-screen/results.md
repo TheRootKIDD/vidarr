@@ -1,4 +1,4 @@
-# 170-l6-lp03-screen — L6 at $\lambda_p$ = 0.03 (ADR-045) at `screen`: 3.3987 nats at $\bar r$ = 2.06 → **the policy collapsed to $r_{min}$ and never left it; below the curve, so the verdict waits for `171` (L5d $r$ = 2)**; fails H7's loss clause (+1.63 % vs `162`, over the 1 % bound)
+# 170-l6-lp03-screen — L6 at $\lambda_p$ = 0.03 (ADR-045) at `screen`: 3.3987 nats at $\bar r$ = 2.06 → **the policy collapsed to $r_{min}$ and never left it; scored after `171`: +0.0174 vs the curve at 2.06 (5.8σ) — worse than a fixed depth**; fails H7's loss clause (+1.63 % vs `162`, over the 1 % bound)
 
 `python -m scripts.train.train --rung L6 --id 170-l6-lp03-screen --tokens 1e+09 --micro-batch 4 --seed 0 --set halting.ponder_cost=0.03` · 4 × RTX 3060, DDP, host-bounced NCCL · batch 524,288 tokens (16 × 4 × 2048 × 4) · config in `config.yaml` (identical to `165` / `169` except `halting.ponder_cost: 0.03`; `halting.mode: act`, `gate: true`, $r_{min}$ 2, $r_{max}$ 8, `router.segment_aux: mean`), per-step log in `log.jsonl`. Code at the `queue_screen_13` gate commit `76d1965`.
 
@@ -7,6 +7,10 @@ ADR-041 §4 against the I25 control and under ADR-013's own H7 clause.
 - **Against the fixed-$r$ curve** (`167` / `168` / `162` = 3.3601 / 3.3492 / 3.3443 at $r$ = 4 / 6 /
   8): held-out $\bar r$ = 2.060 lies **below $r$ = 4, outside the measured curve.** ADR-045 §3 fired
   at 06:17 and `171` L5d $r$ = 2 is running. **No verdict until it is done; nothing is extrapolated.**
+- **Scored 2026-11-02 after `171` (3.3820 at $r$ = 2):** control at 2.060 = 3.3820 + 0.0301 ×
+  (3.3601 − 3.3820) = **3.3814**, Δ = **+0.0174 (5.8σ, 1.46× 4σ)**. **Resolvably worse than running
+  every token at a fixed $r$ ≈ 2.** H7: the learned policy at this price *weakens* H7's
+  learned-depth arm at `screen`. The loss clause fails too.
 - **What `171` will decide.** At $\bar r$ = 2.060 the control is 0.970 × L₁₇₁ + 0.030 × 3.3601, which
   is almost `171` itself. Against `170`'s 3.3987:
   - matches a fixed depth (|Δ| ≤ 2σ) if 3.3938 ≤ L₁₇₁ ≤ 3.4060;
@@ -40,12 +44,12 @@ ADR-041 §4 against the I25 control and under ADR-013's own H7 clause.
 
 | | $\bar r$ | val loss | control at $\bar r$ | Δ vs control | reading |
 |---|---|---|---|---|---|
-| `171` L5d fixed | 2 | *running* | — | | curve point (ADR-045 §3) |
+| `171` L5d fixed | 2 | 3.3820 | — | | curve point (ADR-045 §3) |
 | `167` L5d fixed | 4 | 3.3601 | — | | curve point |
 | `168` L5d fixed | 6 | 3.3492 | — | | curve point |
 | `162` L5d fixed | 8 | 3.3443 | — | | curve point, $r_{max}$ |
-| **`170` L6, $\lambda_p$ 0.03** | **2.06** | **3.3987** | on the 2–4 segment, *pending `171`* | *pending* | **open** |
-| `169` L6, $\lambda_p$ 0.01 | 3.81 | 3.3685 | on the 2–4 segment, *pending `171`* | *pending* | open |
+| **`170` L6, $\lambda_p$ 0.03** | **2.06** | **3.3987** | 3.3820 + 0.0301 × (3.3601 − 3.3820) = **3.3814** | **+0.0174 (5.8σ)** | **worse than a fixed depth** |
+| `169` L6, $\lambda_p$ 0.01 | 3.81 | 3.3685 | 3.3621 | +0.0064 (2.1σ) | above the curve (2σ < Δ < 4σ) |
 | `165` L6, $\lambda_p$ 0.003 | 7.38 | 3.3452 | 3.3458 | −0.0006 (0.2σ) | matches a fixed depth |
 | `166` L6c | 5.52 | 3.3541 | 3.3518 | +0.0023 (0.8σ) | matches a fixed depth |
 
@@ -97,7 +101,10 @@ the first 50 steps and stays there. Held-out $\bar r$ ends at 2.06, the gate's g
 (ADR-041 §1) moves it only slightly within 1 B tokens, and the loss is 3.3987 nats. That is +1.63 %
 against `162`, so H7's loss clause fails while its FLOPs clause is met three times over (−74 %).
 Its mean depth is below the measured curve, so per ADR-045 §3 the I25 control is `171`. With
-$\bar r$ = 2.06 that control is essentially `171`'s own loss. **H7: verdict open until `171`.** Across
-the sweep, $\lambda_p$ = 0.003 / 0.01 / 0.03 lands L6 at $\bar r$ = 7.38 / 3.81 / 2.06. The ponder
-price sets the depth monotonically. Whether any of them beats a fixed depth is what `171` settles
-for the two shallow arms.
+$\bar r$ = 2.06 that control is essentially `171`'s own loss, 3.3814, and **Δ = +0.0174 (5.8σ):
+L6 at this price is worse than a fixed $r$ = 2 at the same depth.** `170` trails `171` at every eval
+from step 300 on, so the cost is the ACT machinery, not depth (`171`'s results.md). **H7 at
+`screen`: weakened for L6 at $\lambda_p$ = 0.03 against the I25 control, and H7's own loss clause
+fails.** Across the sweep, $\lambda_p$ = 0.003 / 0.01 / 0.03 lands L6 at $\bar r$ = 7.38 / 3.81 /
+2.06 and at −0.0006 / +0.0064 / +0.0174 from the fixed-depth curve. The ponder price sets the depth
+monotonically, and the further it pushes L6 down, the further above the curve L6 lands.

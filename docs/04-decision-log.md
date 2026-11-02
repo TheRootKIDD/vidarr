@@ -1592,6 +1592,34 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-11-02 (10:30) — `171` L5d $r$ = 2 = 3.3820 completes the curve; **`169` +0.0064 (2.1σ) and `170` +0.0174 (5.8σ) above it — no learned-depth arm beats a fixed depth**; `queue_screen_13` done; ADR-045 §4 lands "in between"
+
+`171` ended 10:05 (exit 0, 3.79 h, 74.2 k tok/s, 0/190 `n_thermal`, max 75 °C); QUEUE DONE 10:05. The
+L5d fixed-$r$ curve is now 2 / 4 / 6 / 8 → **3.3820 / 3.3601 / 3.3492 / 3.3443**. It is concave, and
+each pair of iterations is worth about half the previous pair (0.0219 / 0.0109 / 0.0049). Fixed
+$r$ = 2 is +1.13 % vs `162`, which misses H7's 1 % allowance; $r$ = 4 meets it.
+
+Scored on the 2–4 segment (ADR-045 §3):
+
+| | $\lambda_p$ | $\bar r$ | val loss | control | Δ | reading |
+|---|---|---|---|---|---|---|
+| `165` L6 | 0.003 | 7.38 | 3.3452 | 3.3458 | −0.0006 (0.2σ) | matches |
+| `166` L6c | — | 5.52 | 3.3541 | 3.3518 | +0.0023 (0.8σ) | matches |
+| `169` L6 | 0.01 | 3.81 | 3.3685 | 3.3621 | +0.0064 (2.1σ) | above, 2σ < Δ < 4σ |
+| `170` L6 | 0.03 | 2.06 | 3.3987 | 3.3814 | +0.0174 (5.8σ) | **worse than fixed** |
+
+**H7: silent at `screen`** (no arm below the curve). L6 at $\lambda_p$ = 0.03 is *weakened* against
+the I25 control. The higher the ponder price, the shallower the depth and the further above the
+curve L6 lands. `170` trails `171` at every eval from step 300 at almost the same depth, so the cost
+is the ACT machinery, not depth (one untested candidate: the ponder gradient through the gated
+residual). **Masked-ACT wall-clock tax:** `170` ran at 58.6 k tok/s against `171`'s 74.2 k (−21 %) at
+$\bar r$ 2.06 vs 2. Step time follows the deepest token per micro-batch, not the mean.
+
+**ADR-045 §4:** no arm is > 4σ below, so the `small` pair does not apply. Not all arms are within
+2σ either (`169` 2.1σ, `170` 5.8σ, both on the *worse* side), so this is the "in between" case and
+the user decides. The proposal was put to the user, and no ADR was written. Hourly cron `aa53ba27`
+deleted. Nothing running. Next ladder id 172, rig id 033.
+
 ### 2026-11-02 (06:30) — `170` L6 $\lambda_p$ = 0.03: 3.3987 at $\bar r$ 2.06, collapsed to $r_{min}$ and stayed → verdict waits for `171`, which is running
 
 `170` ended 06:17 (exit 0, 4.93 h, 0/190 `n_thermal`, max 73 °C). Held-out $\bar r$ = **2.060**.

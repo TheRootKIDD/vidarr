@@ -1,4 +1,4 @@
-# 169-l6-lp01-screen — L6 at $\lambda_p$ = 0.01 (ADR-045) at `screen`: 3.3685 nats at $\bar r$ = 3.81 → **below the curve's lowest point ($r$ = 4), so ADR-045 §3 fires and the verdict waits for `171` (L5d $r$ = 2)**; meets H7's numbers (−52 % middle-block FLOPs at +0.72 %), but is +0.0084 behind fixed $r$ = 4 with 0.19 fewer iterations
+# 169-l6-lp01-screen — L6 at $\lambda_p$ = 0.01 (ADR-045) at `screen`: 3.3685 nats at $\bar r$ = 3.81 → **scored on the 2–4 segment after `171`: +0.0064 vs the curve at 3.81 (2.1σ) — above it, just outside the 2σ \"matches\" band; no gain from adaptive depth; H7 silent**; meets H7's numbers (−52 % middle-block FLOPs at +0.72 %), but so does fixed $r$ = 4
 
 `python -m scripts.train.train --rung L6 --id 169-l6-lp01-screen --tokens 1e+09 --micro-batch 4 --seed 0 --set halting.ponder_cost=0.01` · 4 × RTX 3060, DDP, host-bounced NCCL · batch 524,288 tokens (16 × 4 × 2048 × 4) · config in `config.yaml` (identical to `165` except `halting.ponder_cost: 0.01`; `halting.mode: act`, `gate: true`, $r_{min}$ 2, $r_{max}$ 8, `router.segment_aux: mean`), per-step log in `log.jsonl`. Code at the `queue_screen_13` gate commit `76d1965`.
 
@@ -8,6 +8,10 @@ ADR-041 §4 against the I25 control and under ADR-013's own H7 clause.
   8): held-out $\bar r$ = 3.815 lies **below $r$ = 4, outside the measured curve.** ADR-045 §3
   fires: `171` L5d $r$ = 2 runs after `170`, and the control at 3.815 is interpolated on the 2–4
   segment once it exists. **No verdict until then; nothing is extrapolated.**
+- **Scored 2026-11-02 after `171` (3.3820 at $r$ = 2):** control at 3.815 = 3.3820 + 0.9074 ×
+  (3.3601 − 3.3820) = **3.3621**, Δ = **+0.0064 (2.1σ, 0.54× 4σ)**. Above the curve, outside 2σ
+  by 0.0005, inside 4σ: **not "matches", not resolvably worse, and certainly not "adaptive depth
+  works".** H7: **silent at `screen`** (|Δ| < 4σ), in the *weakens* direction for L6.
 - **What `171` will decide.** The control at 3.815 is 3.3601 + 0.0926 × (L₁₇₁ − 3.3601), with
   (4 − 3.815) / 2 = 0.0926. Against `169`'s 3.3685, the bands fall at:
   - matches a fixed depth (|Δ| ≤ 2σ = 0.0059) if 3.3876 ≤ L₁₇₁ ≤ 3.5150;
@@ -45,11 +49,11 @@ ADR-041 §4 against the I25 control and under ADR-013's own H7 clause.
 
 | | $\bar r$ | val loss | control at $\bar r$ | Δ vs control | reading |
 |---|---|---|---|---|---|
-| `171` L5d fixed | 2 | *pending* | — | | curve point (ADR-045 §3) |
+| `171` L5d fixed | 2 | 3.3820 | — | | curve point (ADR-045 §3) |
 | `167` L5d fixed | 4 | 3.3601 | — | | curve point |
 | `168` L5d fixed | 6 | 3.3492 | — | | curve point |
 | `162` L5d fixed | 8 | 3.3443 | — | | curve point, $r_{max}$ |
-| **`169` L6, $\lambda_p$ 0.01** | **3.81** | **3.3685** | on the 2–4 segment, *pending `171`* | *pending* | **open** |
+| **`169` L6, $\lambda_p$ 0.01** | **3.81** | **3.3685** | 3.3820 + 0.9074 × (3.3601 − 3.3820) = **3.3621** | **+0.0064 (2.1σ)** | **above the curve (2σ < Δ < 4σ)** |
 | `165` L6, $\lambda_p$ 0.003 | 7.38 | 3.3452 | 3.3458 | −0.0006 (0.2σ) | matches a fixed depth |
 | `166` L6c | 5.52 | 3.3541 | 3.3518 | +0.0023 (0.8σ) | matches a fixed depth |
 
@@ -101,7 +105,8 @@ At $\lambda_p$ = 0.01, L6's gated ACT stays collapsed at $r_{min}$ for over a qu
 climbs to $\bar r$ = 3.81 on held-out. It lands at 3.3685 nats, meets both of H7's stated numbers
 (−52 % middle-block FLOPs at +0.72 % vs `162`), and is 0.0084 nats (2.8σ) behind fixed $r$ = 4 with
 0.19 fewer iterations. Its mean depth is below the measured curve, so per ADR-045 §3 the I25 control
-needs `171` (L5d $r$ = 2). **H7: verdict open until `171`.** Matching a fixed depth needs 3.3876 ≤ L₁₇₁
-≤ 3.5150; beating it by 4σ needs L₁₇₁ > 3.5798. Raising the ponder price moved L6 down the depth axis (7.38 → 3.81). Whether it also moved it off
-the fixed-depth curve is what `171` decides.
-`170` ($\lambda_p$ = 0.03) is running.
+needs `171` (L5d $r$ = 2). With `171` at 3.3820 the control is 3.3621 and **Δ = +0.0064 (2.1σ)**:
+above the fixed-depth curve, just outside the 2σ band, inside 4σ. **H7: silent at `screen`**, with
+L6 at this price no better, and probably slightly worse, than a fixed depth. Raising the ponder
+price moved L6 down the depth axis (7.38 → 3.81) and off the curve in the wrong direction. `170`
+($\lambda_p$ = 0.03, +0.0174) continues the trend.
