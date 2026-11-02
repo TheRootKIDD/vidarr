@@ -1691,6 +1691,18 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-11-02 (15:40) — **ADR-047 (L7 as built)**; rig probe `033`: L7-g4 at 0.63× L5's speed; `queue_screen_14` launched (`172-l7-g4-screen`, ≈ 9.2 h)
+
+The user chose Phase 3's L7 over S0 and then ADR-047's option 1. Checking the preset before
+queueing showed that `L7-g4` kept $k$ = 2 over 32 sub-experts of width 224, a quarter of L5's active
+expert FLOPs. **ADR-047** makes it $k g$ = 8 active, so FLOPs, expert params and unit count match L5,
+with selection not limited to $k$ units. `01 §4.5` and `02 §2` are rewritten. The model change is
+`09d68be` and comes with a new unit test. ruff is clean and 119 tests pass. **`033-l7g4-sizing`**: 3.86 GiB per GPU, 17.1 s
+per step, 30.6 k tok/s against `110`'s 48.6 k (the Python loop over 32 experts), +3,072 params (router
+keys) → `172` ≈ 9.2 h. `/mnt/nvme/queue_screen_14.sh` gates on ruff + the suite, then runs `172`
+against `110` (reading per ADR-047 §5). Next ladder id 173, rig id 034. Correction: the entry below,
+headed 16:00, was written at ≈ 15:25.
+
 ### 2026-11-02 (16:00) — **Phase 1 exit reached**; next is Phase 2 (`sim/` calibration, S0 first) or Phase 3's L7
 
 ADR-046 is pushed (`be2b290`). Checked against `03 §5`'s exit rule, every ADR-031 leftover has
