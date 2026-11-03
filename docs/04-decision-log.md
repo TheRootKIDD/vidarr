@@ -746,6 +746,65 @@ Decision:
 
 Consequences: `model/` gains a decode path and test, `sim/` gains m1.1 and a test, and one new bench script. GPU time ≈ 1–2 h on an idle rig (four $z$ values, prefill included). Touches `01 §4.8`, `02 §5.1`, `06 §6`, sim/README. Bears on H11 (indirectly) and on every S-result through `02 §14`.
 
+### ADR-050 — A fixed cost per job enters `sim/` as a measured scenario input (I37, option 1); S0 is re-scored against `034` with it
+2026-11-03 · accepted (the user's decision: "yes, draft the I37 ADR with option 1")
+Context: S0 (`034-s0-ep-decode`, ADR-049) failed at every $z$. The sim was 2.6–12.4× high on
+throughput, and its iteration p50 was 0.08–0.38× of measured. The time split shows costs that do not
+scale with the work:
+- a hosted expert's call takes 0.43–0.44 ms per round from 5 to 305 rows;
+- the owner stage takes 1.16 ms at 4 tokens, and the gate-weighted sum 0.10 ms at every $z$;
+- three host-bounced `all_to_all`s take 0.22 ms per round, against the sim's 0.09.
+
+ADR-043's rooflines (decisions 1 and 6) have no term that is independent of the work. Of I37's
+three moves, the user chose to **measure** these costs and add them as sourced scenario inputs, not
+to shrink them in the harness. A fixed cost per job (kernel issue and dispatch overhead per expert
+step, collective setup) is a real property of any system, `note64` included, so this adds a
+missing parameter. It is not a local correction.
+Decision:
+1. **The model of a job** (`02 §1`, `sim/README` decision 12). Every job on a unit's compute server
+   costs $t = \mathrm{compose}(t_{0,\kappa},\ \mathrm{roofline}_\kappa(b))$ for job kind $\kappa$:
+   - owner kinds: `skel_in`, `attn` (DepthNorm, attention and router), `post` (the gate-weighted
+     sum and residual), `skel_out`;
+   - `expert`, one call of one expert.
+
+   $t_{0,\kappa}$ is the measured time of a kind at $b$ = 1, where the roofline is negligible.
+   `compose` is `max` if the bench's curve $t(b)$ follows $\max(t_0, \mathrm{roofline})$ (CPU
+   issue overlapped with asynchronous GPU work), and `sum` if it follows $t_0 + \mathrm{roofline}$.
+   The bench decides which, by the smaller worst-case relative error over its own sweep, and the
+   rule is recorded there. **S0 is not consulted.** `post` becomes an owner job in both policies,
+   which supersedes ADR-043 decision 8's "free" for this term.
+2. **Collectives** (round policy only). One dispatch leg is two collectives (counts, then rows) and
+   the return leg is one, as the harness runs them. Each collective costs
+   $t_{coll} + \text{bytes}/\lambda_{link}$, where $t_{coll}$ is the measured latency of a 4-rank
+   `all_to_all_single` at the harness's message sizes. In the queue policy, the per-message latency
+   floor (`002-nccl`) stays as it is.
+3. **The bench** `scripts/bench/bench_job_overhead.py`, rig id `035`, on an idle rig:
+   - one process per card, all four at once, so CPU contention matches the harness's;
+   - `132`'s weights in bf16, through the same `model/decode.py` calls the harness makes;
+   - $b$ ∈ {1, 2, 4, …, 1024} rows per kind, at 1792 keys for the attention stage;
+   - collectives at the harness's sizes, from $z$ = 16 to 1024;
+   - median of ≥ 50 timed calls after warm-up, each with `cuda.synchronize`, as the harness times
+     its phases.
+
+   It reports $t(b)$ per kind and card, $t_{0,\kappa}$, $t_{coll}$, the `compose` choice with its
+   error, and `n_thermal`.
+4. **Scenario.** `local_3060.yaml` gains a `software` section with $t_{0,\kappa}$ and $t_{coll}$,
+   each sourced to `035`. It names the stack: PyTorch eager plus `model/`'s reference decode. These
+   are inputs of this rig and software, not of the chip. Scenarios without the section get
+   $t_0$ = 0 ("not modelled"). `note64` will need its own values (I4) before any S-result there.
+5. **The re-score.** It is recorded under its own rig id `036`. The `sim/` runs of ADR-049 §5 (round
+   policy, measured routing and uniform, 1792 keys) are repeated with the `software` inputs, against
+   `034`'s measured numbers unchanged. `034` is not re-run unless `model/` or the harness changes.
+   Pass rule as `02 §14`: ±20 % on throughput and iteration p50 at every $z$. **Pass**: S0's
+   calibration point (a) holds for `local_3060` with the named stack. I37 closes, and I1 (point b,
+   a published deployment) is next. **Miss**: the time split names the next term, and a new ADR is
+   needed. Nothing is fitted to `034`.
+
+Consequences: `02 §1` and `§5.1`, `06 §6` (bench table), `sim/README` (decision 12; decision 8
+amended), and `sim/` code: job kinds, $t_0$, `compose`, the collective term, `post` as a job. Plus
+one new bench and a unit test (a hand timeline with $t_0$ > 0 in both `compose` modes). GPU time
+≈ 15–30 min. Touches I37, I35 (still open: the round policy has no timeout) and I4.
+
 ## Proposed / pending
 - **ADR-028** — Unit model revisions from the author's hardware document (`docs/07 §4`): (a) two compute classes per chip — an FF core with a large array ($s_{min,ff}$ = 256–1024) and attention cores with small arrays ($s_{min,attn}$ ≈ 64), hence $\phi_{ff}$, $\phi_{attn}$ as separate scenario inputs; (b) the tile floor is a *row* floor, $N$ = $M$ × (LHS bw / RHS bw) rows per weight tile, with each token contributing 1 + $m$ rows under $m$-token speculation — the scheduler's queues count rows; (c) the reduce leg of the local fabric carries ≥ 16-bit partial sums: `02 §2` traffic becomes $b d\, b_{act} + b d\, b_{sum}$, $b_{sum}$ ≥ 2; (d) full pipelining inside the unit doubles tokens in flight and per-token latency — the Little's-law budget $Z$ of `02 §5.5` carries the factor; (e) router-based unit fabrics are ≤ 50 % link-efficient (avg. 2 hops), torus collectives 100 %: `02 §1`'s "switch" option is not equivalent to a torus; (f) the asymmetric 4×4×4 torus all-gather costs ≈ 3X/(8B) vs ≈ X/(2B) on a flat ring (our derivation from the author's algorithm) — the number S1/S3 must reproduce; (g) the failure domain is the 4-chip ring board, and a failed rail port is bypassed through torus neighbours at ¼ load (`02 §11`); (h) the replica-rounding utilisation floor $\ell / \lceil \ell \rceil$ reported beside the Little's-law model in S4. Also fills `note64.yaml` with the sourced ratios of `docs/07 §6`; absolute $\phi$, $\beta_C$, $\lambda_C$, $\nu_C$ stay placeholders (I4). Bears on H1, H5, H8, H9, H10, H11, H16; changes `02 §1, §2, §5, §11`.
 - **ADR-024** — Parallel prefill mode for long prompts (the author's "less effective mode"): (a) all segments at once with local attention only, global cache filled afterwards from context-poor final vectors; (b) pipelined segments, segment $k+1$ at iteration $j$ attending globally to segment $k$'s iteration-$j$ caches (transient per-iteration global cache during prefill, in-flight depth up to $r$ segments). Both are inference-time modes of a sequentially trained model; E-Q12 evaluates both against sequential prefill on continuation loss and TTFT (S5). If both degrade, a mixed-mode training variant becomes a later ladder step.
@@ -886,7 +945,7 @@ Cost units from `docs/06 §4`: one `screen` run ≈ 8 h (1 B tokens, 1 seed); on
 - **I33** *(2026-10-21)* **L5d's router aux loss is summed over segments, not averaged.** In `model/model.py` the segment loop of the shared-block forward adds each 512-token segment's router aux to the total. So L5d trains with an effective load-balancing weight of (context / 512) × L5's: 4× at 2 k and 16× at 8 k. The logged router aux shows it: `111` 0.0322 vs `110` 0.0079; `159` 0.1280 vs `158` 0.0077. Every L5d comparison carries the confound (`111`, `134`/`135`, `159`). Expected direction: stronger balancing costs the main loss slightly, so L5d's measured cost is probably *overstated*, and H15a's *supports* would survive. That is unmeasured. To decide: (1) an ADR that averages the aux over segments (spec in `01`, then code and a unit test that L5d's aux equals L5's at one segment); (2) whether to size the effect with one control, L5d at 2 k with the averaged aux, ≈ 8.3 h at `screen` against `111`. Bears on H15a; touches ADR-021/022 (segment-recurrent training), ADR-037. *Update 2026-10-21:* the user asked for the fix and the control. ADR-038 averages over segments (knob `router.segment_aux`, `sum` reproduces old runs); control `162-l5d-segmean-screen` is queued after `161`. *Closed 2026-10-30:* `162` = 3.3443 vs `111` 3.3477, Δ −0.0034 (1.1σ, inside ADR-038's 2σ band) → the confound is negligible and every L5d verdict stands as written; the direction is the predicted one (the 4× weight overstated L5d's cost: +0.35 % vs `110` instead of +0.45 %). The logged aux matches L5's (0.0076 vs 0.0079).
 - **I34** *(2026-10-21)* **The acceptance verifier skips the main head's output norm.** `01 §7` / I27 define acceptance against *head 1's own greedy prediction*. Head 1 is `head(h)` = $\mathrm{RMSNorm}_{out}(h)\,E^\top$, but `model/mtp.py` (`_greedy_head1`) and `scripts/analysis/probe_mtp_acceptance.py` compute the verifier as $h\,E^\top$, without the output RMSNorm. Its per-row scale does not change the argmax; its learned per-dimension gain can. So every logged acceptance (L3, L3-full, L3b at both budgets) is against a slightly different verifier than the main head. The size is unknown. The code disagrees with the spec, so the spec wins: the verifier becomes `head(h)` (on branch `l3c-i33`, merged after `161`). The probe reports both verifiers, and the queue re-measures `122`/`131` (L3 pair), `156`/`157` (L3b pair), `152` and `113` on GPU before `164` runs. H13's verdicts are weakened by margins of 28–31 points on acceptance and by the main-head clause on its own, so no verdict can flip. The re-measured numbers replace the logged ones as L3c's comparators. Bears on H13; touches I27, ADR-012, ADR-039. *Closed 2026-10-30:* `queue_screen_12` re-ran the seven probes with the fixed probe (`b96364b`). The corrected verifier lowers acceptance by 0.4–0.5 points at `screen` and 0.7–1.4 at `small` (table in `164`). Corrected pairs: L3 41.6 / 24.1 / 16.0 %, L3b 40.6 / 22.5 / 14.4 %. Every verdict stands.
 - **I36** *(2026-10-30)* **The held-out acceptance proxy conditions the verifier on the true context, which greedy decoding never does.** I27's metric accepts head $j$'s draft of $x_{t+j}$ when it equals head 1's greedy prediction at $t+j-1$ *given the true tokens up to $t+j-1$*. In self-speculative greedy decoding the verifier at $t+j-1$ is conditioned on the tokens just drafted and accepted, i.e. on head 1's own greedy outputs. For independent heads (L3, L3b) the two differ only through the verifier's context. For L3c's chain they also differ through the module's input: module 2 is fed head 1's greedy guess of $x_{t+1}$, which the proxy's verifier then ignores in favour of the true $x_{t+1}$ (right ≈ 40 % of the time at `screen`). So the proxy may understate L3c relative to L3. `164` measured 34.5 / 16.1 / 8.4 % chained against 70 / 65 / 63 % teacher-forced; how much of that gap is the metric is unknown. A decode-faithful measurement would greedily generate from held-out prompts and count accepted drafts along the generated sequence, for L3, L3b and L3c alike. To decide: whether it is worth building (an offline probe, GPU, no training) before H13 is closed for good. It cannot rescue H13's main-head clause (`164` +0.0497 vs L2). Bears on H13; touches I27, ADR-012, ADR-039.
-- **I37** *(2026-11-03, `034`)* **`sim/` has no fixed cost per job, and on this rig that cost dominates.** S0 (`034-s0-ep-decode`) failed at every $z$: the sim's throughput was 2.6–12.4× too high and its per-iteration p50 0.08–0.38× of measured. The expert phase costs 0.43 ms per round from 5 to 305 rows per expert, and the owner phase 1.16 ms at 4 tokens, about 40× what the rooflines of ADR-043 decisions 1 and 6 charge. The likely source is the reference implementation's Python and kernel-launch overhead. The question is which of three moves restores a calibration that means something: measure the per-job costs and the per-collective latency with their own bench and add them to `local_3060.yaml` as sourced inputs (`note64` then needs its own value); shrink them on the harness side (CUDA graphs, fused experts) toward the roofline system; or both. Each needs an ADR, and none may be fitted to S0 (ADR-049 §6).
+- **I37** *(2026-11-03, `034`; option 1 chosen by ADR-050, open until the `036` re-score)* **`sim/` has no fixed cost per job, and on this rig that cost dominates.** S0 (`034-s0-ep-decode`) failed at every $z$: the sim's throughput was 2.6–12.4× too high and its per-iteration p50 0.08–0.38× of measured. The expert phase costs 0.43 ms per round from 5 to 305 rows per expert, and the owner phase 1.16 ms at 4 tokens, about 40× what the rooflines of ADR-043 decisions 1 and 6 charge. The likely source is the reference implementation's Python and kernel-launch overhead. The question is which of three moves restores a calibration that means something: measure the per-job costs and the per-collective latency with their own bench and add them to `local_3060.yaml` as sourced inputs (`note64` then needs its own value); shrink them on the harness side (CUDA graphs, fused experts) toward the roofline system; or both. Each needs an ADR, and none may be fitted to S0 (ADR-049 §6).
 
 ## Session log
 
@@ -1767,6 +1826,21 @@ and an ADR first, L6c likewise; the `small` programme (L0, L1, L2, L3, L5, L5d a
 the ladder's own next step and needs no new code. The choice between "more `screen` variants" and
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
+
+### 2026-11-03 (12:40) — **ADR-050** (I37 option 1): a measured fixed cost per job enters `sim/`; bench `035`, re-score `036`
+
+The user chose I37's option 1. **ADR-050** (accepted):
+- every job costs `compose`($t_{0,\kappa}$, roofline) per kind (`skel_in`, `attn`, `post`,
+  `skel_out`, `expert`); `max` or `sum` is chosen by the bench's own curve, never by S0;
+- the round policy charges $t_{coll}$ + bytes/$\lambda_{link}$ per collective (two out, one back);
+- `post` becomes an owner job, which supersedes ADR-043 decision 8;
+- the bench `bench_job_overhead.py` (rig `035`) runs four cards at once on `132`'s decode calls
+  and writes the `software` section of `local_3060.yaml`;
+- the re-score (`036`) runs the sim against `034`'s unchanged measurements with the ±20 % rule
+  and nothing fitted.
+
+`02 §1`/`§5.1`, `06 §6` and `sim/README` are updated with it. Code next. Nothing running. Next ladder id 173,
+next rig id 035.
 
 ### 2026-11-03 (02:30) — **ADR-049 accepted and built; S0 run as `034-s0-ep-decode`: not passed at any $z$**. The sim's rooflines lack a fixed cost per job (I37)
 

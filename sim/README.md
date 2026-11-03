@@ -71,7 +71,7 @@ beyond the `costmodel` local-traffic term; expert-choice balancing in time (`02 
 7. **Routing**: $k$ distinct experts per token per iteration, drawn without replacement from a
    fixed distribution, uniform or Zipf($s$) over expert index; no co-activation structure and no
    dependence on $j$ in m1.
-8. **The owner's $g$-weighted sum of returns is free**: $k d$ FLOPs per token per iteration,
+8. **The owner's $g$-weighted sum of returns is free** *(amended by decision 12: it is the `post` job)*: $k d$ FLOPs per token per iteration,
    negligible against the expert step.
 9. **`w_max_s` = 1 ms by default, uncalibrated.** `02 §5.1` gives no value. S0's measured
    side must fix the same policy, so the value is an open question (I35), not a result.
@@ -85,6 +85,12 @@ beyond the `costmodel` local-traffic term; expert-choice balancing in time (`02 
     per owner per iteration, from its attention job's start to its last return, as the harness
     measures it. `tokens` and `warmup_tokens` must be multiples of $z$. Routing `empirical`
     takes per-expert weights (`route_probs`) from the harness's histogram.
+12. **Fixed cost per job** (ADR-050): every compute-server job of kind $\kappa$ (`skel_in`,
+    `attn`, `post`, `skel_out`, `expert`) costs `compose`($t_{0,\kappa}$, roofline), with
+    $t_{0,\kappa}$ and `compose` ∈ {max, sum} from the scenario's `software` section (`035` on
+    `local_3060`; absent = 0, not modelled). The owner's gate-weighted sum is now the `post` job,
+    which amends decision 8. Under the round policy each collective of the harness costs
+    $t_{coll}$ + bytes/$\lambda_{link}$: two for dispatch (counts, rows) and one for the return.
 
 ## S0: the calibration still to do
 

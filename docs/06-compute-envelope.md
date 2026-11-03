@@ -107,6 +107,7 @@ Noise floor: at `small`, seed-to-seed spread in eval loss is typically 0.005–0
 | `bench_nccl.py` | all-reduce / all-gather / all-to-all bandwidth and latency, 1 KB–1 GB, 4 GPUs, host-bounced | $\lambda_{link}$, $\beta_{link}$ for `local_3060`; DDP/FSDP overhead check |
 | `bench_tiers.py` | VRAM↔host (pinned/pageable) and host↔NVMe bandwidth and latency at KV-block sizes, storage at queue depths 1–64 (`--queue-depth`) | KV tier table `02 §7`, S6 |
 | `bench_faiss.py` | CPU IVF-PQ build time and QPS at 1 M–100 M vectors | §5.1 numbers; L8b offline precompute budget |
+| `bench_job_overhead.py` | time per job vs rows for each decode job kind (`skel_in`, `attn`, `post`, `skel_out`, one expert call) on four cards at once; 4-rank `all_to_all` latency at S0's sizes (ADR-050) | $t_{0,\kappa}$, `compose`, $t_{coll}$ in `local_3060.yaml`'s `software` section; S0 re-score `036` |
 | `bench_train_step.py` | end-to-end tokens/s for `small` dense and recurrent-MoE configs | replaces the 8 / 5 TFLOPS assumptions in §4 |
 
 **S0 (calibration, before any S-result):** run the `small` model in expert-parallel inference across the four cards (4 units, $U$ = 1) under the continuous scheduler of `02 §5`; the simulator loaded with `local_3060` must reproduce measured throughput and per-iteration latency within ± 20 %. Together with the published-deployment check (I1) this is the simulator's two-point calibration. **As built (ADR-049):** `scripts/bench/s0_ep_decode.py`.
