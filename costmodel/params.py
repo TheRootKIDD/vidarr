@@ -55,19 +55,18 @@ def router_params(model: Model) -> int:
 
 
 def memory_params(model: Model) -> int:
-    """Product-key knowledge memory (`docs/01 §4.6`). Zero when disabled.
+    """Trainable parameters of the knowledge memory (ADR-053). Zero when disabled.
 
-    Values dominate: $N_m d_v$. Keys are product-key factorised, so the key
-    table is $\\sqrt{N_m} d_m$ rather than $N_m d_m$.
+    $W_m$: $(d + d_e) d_m$; the two key maps $h^{1,2}$: $2 (d_{enc}/2)(d_m/2)$;
+    $W_v$: $d_{enc} d$. The table and its codebooks are frozen data, not parameters.
     """
     m = model.mem
     if not m.enabled:
         return 0
     q_proj = (model.d + model.depth_embed) * m.d_m
-    keys = 2 * math.isqrt(_ceil_square(m.n_m)) * (m.d_m // 2)
-    values = m.n_m * m.d_v
-    out_proj = m.d_v * model.d
-    return q_proj + keys + values + out_proj
+    key_maps = 2 * (m.d_enc // 2) * (m.d_m // 2)
+    read_out = m.d_enc * model.d
+    return q_proj + key_maps + read_out
 
 
 def middle_block_params(model: Model, d_ff: int | None = None) -> int:

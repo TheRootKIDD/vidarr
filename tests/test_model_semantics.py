@@ -9,13 +9,14 @@ import dataclasses as dc
 
 import pytest
 import torch
+from torch import nn
 
 from costmodel.config import Attention as CmAttention
 from costmodel.config import Experts as CmExperts
 from costmodel.config import Model as CmModel
 from costmodel.params import dense_baseline_params, total_params
 from model.block import Block
-from model.config import HaltingCfg, ModelCfg, StreamsCfg, ladder
+from model.config import HaltingCfg, MemoryCfg, ModelCfg, StreamsCfg, ladder
 from model.layers import Expert, causal_mask, local_window_mask
 from model.middle import IterState
 from model.model import BigMoE
@@ -41,8 +42,12 @@ STEPS = [
     "L6c",
     "L7-g4",
     "L7b",
+    "L8",
     "L4",
 ]
+
+# L8 at toy size: a 4 x 4 random grid of 16-d vectors, 4 of 9 candidates read (ADR-053)
+TOY_MEM = MemoryCfg(enabled=True, grid=4, key_dim=8, topk=4, half_topk=3, encoder_dim=16)
 
 
 def tiny(step: str, **kw) -> ModelCfg:
@@ -58,6 +63,7 @@ def tiny(step: str, **kw) -> ModelCfg:
         experts=dc.replace(c.experts, d_ff=32),
         # L5e: K = 4 so that H runs inside the tiny loop, once, after iteration 2
         middle=dc.replace(c.middle, r_max=3, depth_embed=8, h_every=4 if c.middle.h_every else 0),
+        memory=TOY_MEM if c.memory.enabled else c.memory,
     )
     c = dc.replace(c, **kw)
     c.validate()
@@ -159,7 +165,7 @@ def test_masks() -> None:
     assert off.int().tolist() == [[1, 1, 1, 1, 0], [1, 1, 1, 1, 1]]
 
 
-@pytest.mark.parametrize("step", ["L0", "L2", "L5", "L5b", "L5c", "L5d", "L5e"])
+@pytest.mark.parametrize("step", ["L0", "L2", "L5", "L5b", "L5c", "L5d", "L5e", "L8"])
 def test_no_future_leakage(step: str) -> None:
     """Perturbing token t must not change hidden states at positions < t."""
     torch.manual_seed(0)
@@ -864,3 +870,97 @@ def test_l3c_trains_every_module_and_the_trunk() -> None:
         assert g is not None and g.abs().sum() > 0
     assert m.blocks[0].attn.parameters().__next__().grad is not None  # MTP trains the trunk
     assert sorted(int(k[-1]) for k in out.metrics if k.startswith("mtp_loss_h")) == [2, 3, 4]
+
+
+# ---- L8: the knowledge memory (ADR-053) ------------------------------------------------
+def _l8_with_live_readout(seed: int = 0) -> tuple[ModelCfg, BigMoE]:
+    torch.manual_seed(seed)
+    cfg = tiny("L8")
+    m = BigMoE(cfg)
+    nn.init.normal_(m.middle.mem.out.weight, std=0.1)  # W_v off zero so the branch is live
+    return cfg, m
+
+
+def test_l8_lookup_shapes_and_product_grid_matches_exhaustive() -> None:
+    """Top-k over the half_topk^2 candidates equals the exact top-k over all grid^2 cells
+    whenever half_topk >= topk (every member of the exact top-k is in both halves' top lists)."""
+    from model.memory import KnowledgeMemory
+
+    torch.manual_seed(0)
+    mc = MemoryCfg(enabled=True, grid=16, key_dim=8, topk=4, half_topk=4, encoder_dim=16)
+    mem = KnowledgeMemory(mc, d=12, depth_dim=4)
+    u, e = torch.randn(3, 5, 12), torch.randn(4)
+    cells, score = mem.lookup(u, e)
+    assert cells.shape == score.shape == (3, 5, 4)
+    assert (cells >= 0).all() and (cells < 256).all()
+    q = mem.q(torch.cat([u, e.expand(3, 5, -1)], -1))
+    k1, k2 = mem.sub_keys()
+    q1, q2 = q.chunk(2, -1)
+    full = ((q1 @ k1.T)[..., :, None] + (q2 @ k2.T)[..., None, :]).flatten(-2)  # [3, 5, 256]
+    ref_score, ref_cells = full.topk(4, dim=-1)
+    assert torch.allclose(score, ref_score, atol=1e-5)
+    assert torch.equal(cells.sort(-1).values, ref_cells.sort(-1).values)
+
+
+def test_l8_starts_as_a_no_op() -> None:
+    """W_v = 0: L8 at initialisation computes exactly what L5 does with the same weights."""
+    torch.manual_seed(0)
+    l8 = BigMoE(tiny("L8")).eval()
+    torch.manual_seed(0)
+    l5 = BigMoE(tiny("L5")).eval()
+    l5.load_state_dict(l8.state_dict(), strict=False)
+    toks = torch.randint(0, 97, (2, 64))
+    with torch.no_grad():
+        h8, _ = l8.forward_hidden(toks, r=3)
+        h5, _ = l5.forward_hidden(toks, r=3)
+    assert torch.allclose(h8, h5, atol=1e-6)
+
+
+def test_l8_readout_is_the_weighted_sum_and_table_gets_no_gradient() -> None:
+    cfg, m = _l8_with_live_readout()
+    mem = m.middle.mem
+    assert not any(n.endswith(("table", "mu1", "mu2")) for n, _ in mem.named_parameters())
+    assert not {"table", "mu1", "mu2"} & {k.split(".")[-1] for k in m.state_dict()}
+    u, e = torch.randn(2, 3, cfg.d), torch.randn(cfg.middle.depth_embed)
+    cells, score = mem.lookup(u, e)
+    alpha = torch.softmax(score, -1)
+    ref = mem.out((alpha[..., None] * mem.table[cells].float()).sum(-2))
+    assert torch.allclose(mem(u, e), ref, atol=1e-2)  # bf16 table
+    toks = torch.randint(0, cfg.vocab, (2, cfg.context + 1))
+    m.loss(toks, r=cfg.middle.r_max).loss.backward()
+    assert not mem.table.requires_grad and mem.table.grad is None
+    for p in (mem.q.weight, mem.h1.weight, mem.h2.weight, mem.out.weight):
+        assert p.grad is not None and p.grad.abs().sum() > 0  # the query and keys learn (k_m > 1)
+
+
+def test_l8_probe_knobs() -> None:
+    cfg, m = _l8_with_live_readout()
+    m.eval()
+    mem = m.middle.mem
+    toks = torch.randint(0, cfg.vocab, (1, cfg.context))
+    mem.record = True
+    with torch.no_grad():
+        h1, _ = m.forward_hidden(toks, r=3)
+    assert len(mem.records) == 3  # one call per iteration
+    assert mem.records[0][0].shape == (1, cfg.context, TOY_MEM.topk)
+    mem.record, mem.random_cells = False, True
+    with torch.no_grad():
+        h2, _ = m.forward_hidden(toks, r=3)
+    assert not torch.allclose(h1, h2)
+
+
+def test_l8_width_and_flops_follow_costmodel() -> None:
+    """ADR-053 §6: 1.70 MFLOP per token-iteration inside the budget; the width is re-solved."""
+    from costmodel.config import Model as CmM
+    from costmodel.flops import memory_flops
+    from costmodel.params import memory_params
+
+    l8 = ladder("L8")
+    assert l8.expert_width() == 704  # 712.6 exact, snapped to 64 (L5: 896)
+    d, de = l8.d, l8.middle.depth_embed
+    model = CmM(d=d, depth_embed=de, mem=l8.cm_memory())
+    assert memory_flops(model) == 2 * 832 * 128 + 2 * 128 * 1024 + 2 * 32 * 768 + 2 * 768 * 768
+    assert abs(memory_flops(model) - 1.70e6) < 0.01e6
+    with torch.device("meta"):
+        mem = BigMoE(dc.replace(l8, memory=dc.replace(l8.memory, table=None))).middle.mem
+    assert sum(p.numel() for p in mem.parameters()) == memory_params(model)

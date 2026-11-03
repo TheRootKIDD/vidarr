@@ -209,7 +209,7 @@ $m$ heads on $p_t^{out}$ ($c_t^{out}$ single-stream): head 1 predicts $x_{t+1}$ 
 - Attention scores: $2 \cdot 2\, d\,(W + |\mathcal{G}_{visible}|)$ per stream, with $|\mathcal{G}_{visible}| = K_{idx} B_{idx}$ once indexed. **Budget convention (ADR-027):** at the training context un-indexed, $W + |\mathcal{G}_{visible}|$ averages $(L+1)/2$ = 1024 keys at $L$ = 2048; that is the figure every `06 §3` anchor uses.
 - KV bytes: persistent $2 H_{kv} d_h b_{kv}$ per token (one $\mathcal{G}$ entry); transient $\le W \cdot r_{max} \cdot 2 H_{kv} d_h b_{kv}$ per in-flight sequence.
 - MoE: $2 \cdot k \cdot 3\, d\, d_{ff}\, L_e$ per stream; router $O(d_r \sqrt{N_e})$.
-- Memory (ADR-053): $2 (d + d_e) d_m + 2 d_m \sqrt{N_m} + 2 k_m d_{enc} + 2 d_{enc} d$ per stream (query, sub-key scores, weighted sum, read-out; the 1,024-candidate top-$k$ is not counted) — ≈ 1.70 MFLOP per token-iteration at `small`/`screen`. The table is data, not parameters; the trainable parameters are $(d + d_e) d_m + d_{enc} d_m + d_{enc} d$.
+- Memory (ADR-053): $2 (d + d_e) d_m + 2 d_m \sqrt{N_m} + 2 k_m d_{enc} + 2 d_{enc} d$ per stream (query, sub-key scores, weighted sum, read-out; the 1,024-candidate top-$k$ is not counted) — ≈ 1.70 MFLOP per token-iteration at `small`/`screen`. The table is data, not parameters; the trainable parameters are $(d + d_e) d_m + d_{enc} d_m / 2 + d_{enc} d$ ($W_m$, $h^{1,2}_\theta$, $W_v$).
 - Prefill: $c$ only → drop the per-stream doubling → ≈ ½ of decode per token.
 - Fabric bytes per token per iteration (activations): $2 \cdot k \cdot d \cdot b_{act}$ **per stream** (dispatch + combine; two streams double it — ADR-027), before multicast/reduction dedup.
 

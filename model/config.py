@@ -1,7 +1,7 @@
 """Model configuration — a dataclass mirror of `docs/01 §11`.
 
 Every knob of the spec is here, including ones the reference implementation
-does not execute yet (index, memory, tenants): those are validated and refused
+does not execute yet (index, tenants): those are validated and refused
 so a config cannot silently ask for a feature that is not implemented.
 
 `d_ff` is *derived* from the FLOPs budget through `costmodel/` (ADR-025/027)
@@ -20,6 +20,7 @@ import yaml
 from costmodel.config import Attention as CmAttention
 from costmodel.config import Experts as CmExperts
 from costmodel.config import Hardware as CmHardware
+from costmodel.config import Memory as CmMemory
 from costmodel.config import Model as CmModel
 from costmodel.solve import budget_n_keys, solve_d_ff
 
@@ -119,6 +120,25 @@ class MTPCfg:
 
 
 @dataclass(frozen=True)
+class MemoryCfg:
+    """L8, the knowledge memory as built (ADR-053, `docs/01 §4.6`)."""
+
+    enabled: bool = False
+    grid: int = 1024  # sqrt(N_m): one entry per cell of a grid x grid product grid
+    key_dim: int = 128  # d_m, two halves of d_m / 2
+    topk: int = 32  # k_m values read (1 gives no gradient)
+    half_topk: int = 32  # sub-keys kept per half; half_topk**2 candidate cells
+    encoder_dim: int = 768  # d_enc of the frozen encoder
+    encoder: str = "BAAI/bge-base-en-v1.5"
+    source: str = "wiki-20231101-lead"
+    table: str | None = None  # directory from build_wiki_memory.py; None = random toy (tests)
+
+    @property
+    def n_entries(self) -> int:
+        return self.grid * self.grid
+
+
+@dataclass(frozen=True)
 class NumericsCfg:
     dtype: Literal["bf16", "fp32"] = "bf16"
     sparsity_2_4: bool = False  # L10a; mask fixed after 1 % of tokens (ADR-019)
@@ -151,7 +171,7 @@ class ModelCfg:
     halting: HaltingCfg = field(default_factory=HaltingCfg)
     mtp: MTPCfg = field(default_factory=MTPCfg)
     numerics: NumericsCfg = field(default_factory=NumericsCfg)
-    memory_enabled: bool = False  # L8; not implemented in Phase 1
+    memory: MemoryCfg = field(default_factory=MemoryCfg)  # L8 (ADR-053)
     tenant_lora_rank: int = 0  # L11; not implemented in Phase 1
     # training-time memory knobs (no effect on semantics): docs/02 §13.4, docs/06 §3
     checkpoint_iterations: bool = True  # recompute each middle-block iteration in backward
@@ -198,6 +218,7 @@ class ModelCfg:
             experts=CmExperts(
                 n_e=self.router.n_experts, k=self.router.k, d_ff=None, L_e=self.experts.layers
             ),
+            mem=self.cm_memory(),
         )
         hw = CmHardware(
             phi=27.1e12,
@@ -215,12 +236,30 @@ class ModelCfg:
             hw=hw,
         )
 
+    def cm_memory(self) -> CmMemory:
+        """The memory's costmodel view; inside the FLOPs budget at matched FLOPs (ADR-053 §6)."""
+        mc = self.memory
+        return CmMemory(
+            enabled=mc.enabled,
+            n_m=mc.n_entries,
+            d_m=mc.key_dim,
+            d_enc=mc.encoder_dim,
+            k_m=mc.topk,
+        )
+
     def validate(self) -> None:
-        a, r, e = self.attention, self.router, self.experts
+        a, r, e, mc = self.attention, self.router, self.experts, self.memory
         if a.heads % a.kv_heads:
             raise ValueError("heads must be a multiple of kv_heads")
-        if a.index_enabled or self.memory_enabled or self.tenant_lora_rank:
-            raise NotImplementedError("index (L9), memory (L8) and tenants (L11) are Phase 3")
+        if a.index_enabled or self.tenant_lora_rank:
+            raise NotImplementedError("index (L9) and tenants (L11) are Phase 3")
+        if mc.enabled:
+            if self.arch != "recurrent":
+                raise NotImplementedError("L8 is a middle-block branch (ADR-053)")
+            if mc.key_dim % 2 or mc.encoder_dim % 2:
+                raise ValueError("memory key_dim and encoder_dim split into two halves")
+            if not (1 < mc.topk <= mc.half_topk**2 and mc.half_topk <= mc.grid):
+                raise ValueError("memory needs 1 < topk <= half_topk**2 and half_topk <= grid")
         if self.halting.mode == "expert" and not (
             self.arch == "recurrent" and self.middle.r_max > self.middle.r_min
         ):
@@ -287,7 +326,10 @@ class ModelCfg:
             "halting": HaltingCfg,
             "mtp": MTPCfg,
             "numerics": NumericsCfg,
+            "memory": MemoryCfg,
         }
+        if d.pop("memory_enabled", False):  # configs before ADR-053 carry this flag, always off
+            raise ValueError("memory_enabled: true predates ADR-053; use memory.enabled")
         for key, typ in sub.items():
             if key in d and isinstance(d[key], dict):
                 v = dict(d[key])
@@ -353,6 +395,10 @@ def ladder(step: str, **overrides: Any) -> ModelCfg:
         # ADR-047: 32 sub-experts of width 224, 8 active -> L5's FLOPs, params and unit count
         "L7-g4": replace(rec, experts=ExpertsCfg(granularity=4)),
         "L7b": replace(rec, experts=ExpertsCfg(layers=2)),
+        # ADR-053: the Wikipedia lead-sentence memory in every middle iteration, FLOPs matched
+        "L8": replace(
+            rec, memory=MemoryCfg(enabled=True, table="/mnt/nvme/memory/wiki-20231101-lead")
+        ),
         "L10a": replace(rec, numerics=NumericsCfg(sparsity_2_4=True)),
         "L4": replace(
             rec, streams=StreamsCfg(two_stream=True), budget_flops_per_token=1.2e9

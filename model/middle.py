@@ -2,7 +2,7 @@
 
     u      = DepthNorm(x, e_j)
     x^(j)  = x + Attn(u; local per-iteration K/V + global final-vector cache)
-               + MoE(u, e_j)                                   (parallel branches, §4.1)
+               + MoE(u, e_j) [+ Mem(u, e_j), L8]               (parallel branches, §4.1)
 
 Depth conditioning through e_j (ADR-003); local range W over the current
 segment's per-iteration caches and, with `global_source = final_vector`, the
@@ -25,6 +25,7 @@ from torch import Tensor, nn
 
 from model.config import ModelCfg
 from model.layers import Attention, DepthNorm, local_window_mask
+from model.memory import KnowledgeMemory
 from model.moe import MoE
 
 
@@ -64,6 +65,10 @@ class MiddleBlock(nn.Module):
             )
         )
         self.moe = MoE(cfg, depth_dim=m.depth_embed)
+        # L8 (ADR-053): one memory shared by every iteration, a fourth parallel branch
+        self.mem = (
+            KnowledgeMemory(cfg.memory, cfg.d, m.depth_embed) if cfg.memory.enabled else None
+        )
         # norm applied to final vectors before the G K/V; only exists when G is used (L5d+)
         self.g_norm = nn.RMSNorm(cfg.d) if a.global_source == "final_vector" else None
         self.halt = nn.Linear(cfg.d + m.depth_embed, 1)
@@ -230,6 +235,8 @@ class MiddleBlock(nn.Module):
             y, lm = self.moe(u, e)
             aux = aux + lm
             upd = a + y
+            if self.mem is not None:
+                upd = upd + self.mem(u, e)
             if cfg.halting.gate and not force_active:
                 if mode == "act":  # ADR-041: P(still running) = 1 - H^(j-1), Graves's mean field
                     upd = upd * (1 - st.cum_halt)[..., None].to(upd.dtype)

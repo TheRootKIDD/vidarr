@@ -68,15 +68,18 @@ def router_flops(model: Model) -> float:
 
 
 def memory_flops(model: Model, n_streams: int | None = None) -> float:
-    """$O(d_m \\sqrt{N_m}) + 2 k_m d_v d$ per stream (`docs/01 §10`)."""
+    """ADR-053 / `docs/01 §10`, per stream: query $2 (d + d_e) d_m$, sub-key scores
+    $2 d_m \\sqrt{N_m}$, weighted sum $2 k_m d_{enc}$, read-out $2 d_{enc} d$.
+    The top-$k$ selections and the per-batch key maps are not counted."""
     s = model.n_streams if n_streams is None else n_streams
     m = model.mem
     if not m.enabled:
         return 0.0
     q_proj = 2 * (model.d + model.depth_embed) * m.d_m
     lookup = 2 * m.d_m * math.isqrt(_ceil_square(m.n_m))
-    combine = 2 * m.k_m * m.d_v * model.d
-    return float((q_proj + lookup + combine) * s)
+    weighted_sum = 2 * m.k_m * m.d_enc
+    read_out = 2 * m.d_enc * model.d
+    return float((q_proj + lookup + weighted_sum + read_out) * s)
 
 
 def middle_iteration_flops(

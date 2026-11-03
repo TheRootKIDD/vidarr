@@ -11,7 +11,7 @@ dependencies = [
 
 [project.optional-dependencies]
 bench = ["faiss-cpu>=1.9"]
-data = ["huggingface_hub[hf_xet]>=0.30", "pyarrow>=17", "tokenizers>=0.20"]
+data = ["huggingface_hub[hf_xet]>=0.30", "pyarrow>=17", "tokenizers>=0.20", "transformers>=4.45", "safetensors>=0.4"]  # transformers: the L8 encoder (ADR-053)
 dev = ["ruff>=0.6", "pytest>=8.0"]
 
 [build-system]

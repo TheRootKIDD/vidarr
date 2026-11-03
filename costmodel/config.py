@@ -66,17 +66,17 @@ class Experts:
 
 @dataclass(frozen=True)
 class Memory:
-    """`docs/01 §4.6` — GPU-resident product-key knowledge memory (L8)."""
+    """`docs/01 §4.6` — GPU-resident product-key knowledge memory (L8, ADR-053)."""
 
     enabled: bool = False
     n_m: int = 1 << 20
-    """$N_m$ — table entries."""
+    """$N_m$ — table entries, one per cell of a $\\sqrt{N_m} \\times \\sqrt{N_m}$ grid."""
     d_m: int = 128
-    """$d_m$ — key dimension."""
-    d_v: int = 768
-    """$d_v$ — value dimension."""
-    k_m: int = 1
-    """$k_m$ — values retrieved."""
+    """$d_m$ — key dimension (two halves of $d_m / 2$)."""
+    d_enc: int = 768
+    """$d_{enc}$ — frozen encoder vector width (the value read before $W_v$)."""
+    k_m: int = 32
+    """$k_m$ — values retrieved (ADR-053: 1 gives no gradient)."""
 
 
 @dataclass(frozen=True)
