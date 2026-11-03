@@ -183,7 +183,8 @@ def test_software_section_is_read_and_absent_means_none() -> None:
     p = small()  # local_3060 carries the section (035, ADR-050 §4)
     assert p.t0("attn") > 0 and p.collective_s > 0 and p.compose in ("max", "sum")
     doc = load_scenario("local_3060")["software"]
-    assert doc["source"].startswith("experiments/035")
+    assert doc["source"].startswith("experiments/037")
+    assert dict(p.owner_eff)["attn"][-1] == (256, pytest.approx(0.62, abs=0.01))
 
 
 def test_round_policy_needs_whole_rounds_and_empirical_needs_probs() -> None:

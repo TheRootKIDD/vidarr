@@ -83,22 +83,31 @@ fabric:
   lambda_c_source: same as lambda_link (U=1 rig; see note)
 
 software:
-  # ADR-050: the fixed cost per job of S0's stack (PyTorch eager + model/decode.py reference
-  # decode, bf16, NCCL_P2P_DISABLE=1, four processes at once). A property of this rig AND this
-  # software, not of the chip; a scenario without this section models no fixed cost.
-  stack: PyTorch 2.13.0+cu130 eager + model/decode.py (tree 48c3ed2), bf16
+  # ADR-050/051: the fixed cost per job and the owner stages' efficiency against batch of S0's
+  # stack (PyTorch eager + model/decode.py reference decode, bf16, NCCL_P2P_DISABLE=1, four
+  # processes at once). A property of this rig AND this software at 132's shapes, not of the
+  # chip; a scenario without this section models no fixed cost and eta = 1.
+  stack: PyTorch 2.13.0+cu130 eager + model/decode.py (tree 0b48da1), bf16
   t0_s:
-    skel_in: 0.001368
-    attn: 0.001107
-    post: 8.372e-05
-    skel_out: 0.001508
-    expert: 0.0001899
+    skel_in: 0.001363
+    attn: 0.001115
+    post: 8.362e-05
+    skel_out: 0.001516
+    expert: 0.0001905
   t0_note: median time of each job kind at one row/sequence, four cards at once (attention kinds at 1792 keys)
   compose: sum
   compose_note: worst relative error over the bench's own sweep, max 0.59 vs sum 0.31
-  t_coll_s: 5.262e-05
+  t_coll_s: 5.143e-05
   t_coll_note: one all_to_all_single as the harness runs it (return phase at z = 16), median over cards
-  source: experiments/035-job-overhead
+  owner_efficiency:
+    skel_in: {1: 1.0, 2: 1.0, 4: 1.0, 8: 1.0, 16: 1.0, 32: 1.0, 48: 1.0, 64: 0.921, 96: 0.764, 128: 0.699, 192: 0.62, 256: 0.605}
+    attn: {1: 1.0, 2: 1.0, 4: 1.0, 8: 1.0, 16: 1.0, 32: 1.0, 48: 1.0, 64: 0.874, 96: 0.751, 128: 0.675, 192: 0.635, 256: 0.62}
+    post: {1: 1.0, 2: 0.117, 4: 0.2, 8: 0.776, 16: 0.661, 32: 1.0, 48: 1.0, 64: 1.0, 96: 1.0, 128: 1.0, 192: 1.0, 256: 1.0}
+    skel_out: {1: 1.0, 2: 1.0, 4: 1.0, 8: 1.0, 16: 1.0, 32: 1.0, 48: 1.0, 64: 1.0, 96: 0.809, 128: 0.732, 192: 0.61, 256: 0.595}
+  owner_efficiency_note: >-
+    eta(n) = min(1, sim roofline / (t(n) - t0)) per owner kind at n sequences (ADR-051 §2), as
+    measured; post's points at 2-16 are timing noise on a ~0 work term (their effect is < 1 us)
+  source: experiments/037-job-overhead-eta
 
 tiers:
   hot:

@@ -1,0 +1,325 @@
+{
+  "result_id": "038-s0-rescore-eta",
+  "provenance": {
+    "date_utc": "2026-11-03T14:07:58+00:00",
+    "git_hash": "0b48da14c55ae23044e2dfe74ee2591b67bb3a8f",
+    "git_dirty": true,
+    "driver_version": "615.71.09",
+    "torch_version": "2.13.0+cu130",
+    "torch_cuda_version": "13.0",
+    "python_version": "3.12.13",
+    "platform": "Linux-7.2.5-200.fc44.x86_64-x86_64-with-glibc2.43",
+    "gpus": [
+      {
+        "index": 0,
+        "name": "NVIDIA GeForce RTX 3060",
+        "uuid": "GPU-4673cc7d-9e44-4578-a9ca-48215bc5ddc8",
+        "sm": "8.6",
+        "multi_processor_count": 28,
+        "total_memory_bytes": 12543590400
+      },
+      {
+        "index": 1,
+        "name": "NVIDIA GeForce RTX 3060",
+        "uuid": "GPU-88074816-a56d-dc95-d744-6096efc59bfc",
+        "sm": "8.6",
+        "multi_processor_count": 28,
+        "total_memory_bytes": 12543590400
+      },
+      {
+        "index": 2,
+        "name": "NVIDIA GeForce RTX 3060",
+        "uuid": "GPU-8cb4f7cc-d2a2-fb38-c9ee-14dc7f1515ab",
+        "sm": "8.6",
+        "multi_processor_count": 28,
+        "total_memory_bytes": 12543590400
+      },
+      {
+        "index": 3,
+        "name": "NVIDIA GeForce RTX 3060",
+        "uuid": "GPU-56c7aa62-b07a-0d35-3792-44b0a78ef58d",
+        "sm": "8.6",
+        "multi_processor_count": 28,
+        "total_memory_bytes": 12543590400
+      }
+    ]
+  },
+  "bench": "s0_compare",
+  "adr": "ADR-050, ADR-051",
+  "measured": "034-s0-ep-decode",
+  "measured_git_hash": "847e7e739a5a0e7fed321be4915181558752db22",
+  "scenario": "local_3060",
+  "scenario_sha256": "a26183c618a83904817b1aac6247c786969f1cd038d1b74cd63bfa3c19c74208",
+  "tolerance": 0.2,
+  "with_software": [
+    {
+      "z": 16,
+      "context_tokens": 1824,
+      "measured_tok_s": 801.9640557983743,
+      "measured_iter_p50_s": 0.0019267636816948652,
+      "measured_token_p50_s": 0.019583192886784673,
+      "empirical": {
+        "tok_s": 904.9097016373905,
+        "iter_p50_s": 0.0017963031912229255,
+        "token_p50_s": 0.017681171512683225,
+        "tok_ratio": 1.1283669075873126,
+        "iter_ratio": 0.932290352101104
+      },
+      "uniform": {
+        "tok_s": 904.9449587737118,
+        "iter_p50_s": 0.001795875336070285,
+        "token_p50_s": 0.017680743657529696,
+        "tok_ratio": 1.1284108710742873,
+        "iter_ratio": 0.9320682931341921
+      },
+      "pass": true
+    },
+    {
+      "z": 64,
+      "context_tokens": 1824,
+      "measured_tok_s": 3152.842330318873,
+      "measured_iter_p50_s": 0.001950809033587575,
+      "measured_token_p50_s": 0.01996739092282951,
+      "empirical": {
+        "tok_s": 3439.437946290292,
+        "iter_p50_s": 0.001879028953260642,
+        "token_p50_s": 0.018607688739900485,
+        "tok_ratio": 1.0909007130535555,
+        "iter_ratio": 0.9632049682510809
+      },
+      "uniform": {
+        "tok_s": 3440.4434597439054,
+        "iter_p50_s": 0.0018786010981073353,
+        "token_p50_s": 0.018602126622908166,
+        "tok_ratio": 1.0912196359010269,
+        "iter_ratio": 0.9629856463461993
+      },
+      "pass": true
+    },
+    {
+      "z": 256,
+      "context_tokens": 1824,
+      "measured_tok_s": 9832.392775798307,
+      "measured_iter_p50_s": 0.0025150354485958815,
+      "measured_token_p50_s": 0.02594536985270679,
+      "empirical": {
+        "tok_s": 11214.3763968346,
+        "iter_p50_s": 0.002266741342245693,
+        "token_p50_s": 0.022828046979895156,
+        "tok_ratio": 1.1405541512171828,
+        "iter_ratio": 0.9012761007051376
+      },
+      "uniform": {
+        "tok_s": 11228.54016516109,
+        "iter_p50_s": 0.0022632501282157103,
+        "token_p50_s": 0.022798690713010217,
+        "tok_ratio": 1.1419946722225431,
+        "iter_ratio": 0.8998879635987873
+      },
+      "pass": true
+    },
+    {
+      "z": 1024,
+      "context_tokens": 1824,
+      "measured_tok_s": 18618.254353770382,
+      "measured_iter_p50_s": 0.005044970894232392,
+      "measured_token_p50_s": 0.05479479697532952,
+      "empirical": {
+        "tok_s": 21125.120010442475,
+        "iter_p50_s": 0.00446190209692543,
+        "token_p50_s": 0.04847314474272313,
+        "tok_ratio": 1.1346455800333626,
+        "iter_ratio": 0.8844257361378339
+      },
+      "uniform": {
+        "tok_s": 21239.494627196178,
+        "iter_p50_s": 0.004428788096125569,
+        "token_p50_s": 0.04821296804133013,
+        "tok_ratio": 1.140788723991998,
+        "iter_ratio": 0.8778619716495752
+      },
+      "pass": true
+    }
+  ],
+  "without_owner_efficiency": [
+    {
+      "z": 16,
+      "context_tokens": 1824,
+      "measured_tok_s": 801.9640557983743,
+      "measured_iter_p50_s": 0.0019267636816948652,
+      "measured_token_p50_s": 0.019583192886784673,
+      "empirical": {
+        "tok_s": 905.0274031547547,
+        "iter_p50_s": 0.0017960157526264453,
+        "token_p50_s": 0.017678872003911383,
+        "tok_ratio": 1.1285136741618407,
+        "iter_ratio": 0.9321411700300432
+      },
+      "uniform": {
+        "tok_s": 905.062669463636,
+        "iter_p50_s": 0.0017955878974738049,
+        "token_p50_s": 0.017678444148757855,
+        "tok_ratio": 1.128557649086435,
+        "iter_ratio": 0.9319191110631313
+      },
+      "pass": true
+    },
+    {
+      "z": 64,
+      "context_tokens": 1824,
+      "measured_tok_s": 3152.842330318873,
+      "measured_iter_p50_s": 0.001950809033587575,
+      "measured_token_p50_s": 0.01996739092282951,
+      "empirical": {
+        "tok_s": 3439.6559459512887,
+        "iter_p50_s": 0.001878881537701993,
+        "token_p50_s": 0.018606509415432848,
+        "tok_ratio": 1.090969856904772,
+        "iter_ratio": 0.9631294018803542
+      },
+      "uniform": {
+        "tok_s": 3440.661586891188,
+        "iter_p50_s": 0.0018784536825484643,
+        "token_p50_s": 0.018600947298437198,
+        "tok_ratio": 1.0912888201875943,
+        "iter_ratio": 0.9629100799753588
+      },
+      "pass": true
+    },
+    {
+      "z": 256,
+      "context_tokens": 1824,
+      "measured_tok_s": 9832.392775798307,
+      "measured_iter_p50_s": 0.0025150354485958815,
+      "measured_token_p50_s": 0.02594536985270679,
+      "empirical": {
+        "tok_s": 11456.45663484509,
+        "iter_p50_s": 0.002215026074029347,
+        "token_p50_s": 0.022345684122810017,
+        "tok_ratio": 1.1651748354728355,
+        "iter_ratio": 0.8807136596289223
+      },
+      "uniform": {
+        "tok_s": 11471.238901397255,
+        "iter_p50_s": 0.0022115348599992535,
+        "token_p50_s": 0.022316327855925078,
+        "tok_ratio": 1.1666782606196169,
+        "iter_ratio": 0.8793255225225277
+      },
+      "pass": true
+    },
+    {
+      "z": 1024,
+      "context_tokens": 1824,
+      "measured_tok_s": 18618.254353770382,
+      "measured_iter_p50_s": 0.005044970894232392,
+      "measured_token_p50_s": 0.05479479697532952,
+      "empirical": {
+        "tok_s": 27225.990892140508,
+        "iter_p50_s": 0.003599363774344333,
+        "token_p50_s": 0.03761116694777389,
+        "tok_ratio": 1.4623277980208156,
+        "iter_ratio": 0.7134558057528669
+      },
+      "uniform": {
+        "tok_s": 27416.264372592104,
+        "iter_p50_s": 0.00356624977354425,
+        "token_p50_s": 0.03735099024637645,
+        "tok_ratio": 1.472547525221667,
+        "iter_ratio": 0.7068920412645643
+      },
+      "pass": false
+    }
+  ],
+  "without_software": [
+    {
+      "z": 16,
+      "context_tokens": 1824,
+      "measured_tok_s": 801.9640557983743,
+      "measured_iter_p50_s": 0.0019267636816948652,
+      "measured_token_p50_s": 0.019583192886784673,
+      "empirical": {
+        "tok_s": 8061.498369559481,
+        "iter_p50_s": 0.00019410575262662766,
+        "token_p50_s": 0.00198459200390938,
+        "tok_ratio": 10.052194124254195,
+        "iter_ratio": 0.10074185769158976
+      },
+      "uniform": {
+        "tok_s": 8064.297363314829,
+        "iter_p50_s": 0.00019367789747351538,
+        "token_p50_s": 0.001984164148756018,
+        "tok_ratio": 10.055684297828822,
+        "iter_ratio": 0.10051979872443302
+      },
+      "pass": false
+    },
+    {
+      "z": 64,
+      "context_tokens": 1824,
+      "measured_tok_s": 3152.842330318873,
+      "measured_iter_p50_s": 0.001950809033587575,
+      "measured_token_p50_s": 0.01996739092282951,
+      "empirical": {
+        "tok_s": 21976.27031875445,
+        "iter_p50_s": 0.0002769715377021198,
+        "token_p50_s": 0.002912229415432288,
+        "tok_ratio": 6.970304257660677,
+        "iter_ratio": 0.14197778097877878
+      },
+      "uniform": {
+        "tok_s": 22017.3858327513,
+        "iter_p50_s": 0.00027654368254892425,
+        "token_p50_s": 0.0029066672984406905,
+        "tok_ratio": 6.983345034740288,
+        "iter_ratio": 0.14175845907395412
+      },
+      "pass": false
+    },
+    {
+      "z": 256,
+      "context_tokens": 1824,
+      "measured_tok_s": 9832.392775798307,
+      "measured_iter_p50_s": 0.0025150354485958815,
+      "measured_token_p50_s": 0.02594536985270679,
+      "empirical": {
+        "tok_s": 38489.306582782876,
+        "iter_p50_s": 0.0006131160740298069,
+        "token_p50_s": 0.006651404122812621,
+        "tok_ratio": 3.914541196678127,
+        "iter_ratio": 0.2437802911971294
+      },
+      "uniform": {
+        "tok_s": 38656.66395497737,
+        "iter_p50_s": 0.0006096248599993803,
+        "token_p50_s": 0.006622047855927793,
+        "tok_ratio": 3.931562218519975,
+        "iter_ratio": 0.24239215409060244
+      },
+      "pass": false
+    },
+    {
+      "z": 1024,
+      "context_tokens": 1824,
+      "measured_tok_s": 18618.254353770382,
+      "measured_iter_p50_s": 0.005044970894232392,
+      "measured_token_p50_s": 0.05479479697532952,
+      "empirical": {
+        "tok_s": 46722.06477426566,
+        "iter_p50_s": 0.00199745377434446,
+        "token_p50_s": 0.021916886947780156,
+        "tok_ratio": 2.5094761241568264,
+        "iter_ratio": 0.3959296924047722
+      },
+      "uniform": {
+        "tok_s": 47285.22736333457,
+        "iter_p50_s": 0.001964339773545154,
+        "token_p50_s": 0.021656710246386712,
+        "tok_ratio": 2.53972399693631,
+        "iter_ratio": 0.38936592791662367
+      },
+      "pass": false
+    }
+  ],
+  "passed": true
+}
