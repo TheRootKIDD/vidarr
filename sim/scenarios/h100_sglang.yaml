@@ -1,0 +1,88 @@
+# h100_sglang — calibration point (b) (ADR-052, I1): SGLang's EP72 decode of DeepSeek-V3 on
+# 9 nodes x 8 H100 (LMSYS blog 2025-05-05, "large-scale EP"; reproduction in sglang#6017).
+#
+# Every value is a published figure with its source, or is marked `status: placeholder` / an
+# assumption listed in I39. The component figures (DeepGEMM, FlashMLA, DeepEP) are the READMEs
+# as of the post's date, measured on H800 SXM5, which has the H100 SXM's SMs, tensor cores and
+# HBM3 (it differs in NVLink, which the low-latency path at that version does not use).
+# No `software` section: SGLang's per-job fixed cost (CUDA graphs) is not measured here and is
+# not modelled (ADR-052 §6). Units are SI bytes and seconds.
+
+name: h100_sglang
+description: 9 nodes x 8 H100 (assumed SXM 80 GB, I39), InfiniBand, DeepEP low-latency (pure RDMA), DP attention 72, EP72
+date: 2026-11-03
+
+unit:
+  U: 1
+  n_units: 72          # decode: 9 nodes x 8 GPUs, tp/dp 72
+  source: lmsys.org/blog/2025-05-05-large-scale-ep (decode on 9 nodes, EP72); sglang#6017 (tp-size 72, dp-size 72)
+
+chip:
+  phi_flops: 1979e12
+  phi_note: dense FP8 tensor peak of H100 SXM (3,958 with 2:4 sparsity); the expert GEMMs' achieved rate is the grouped table below
+  phi_source: NVIDIA H100 Tensor Core GPU datasheet (SXM5)
+  phi_owner_flops: 565e12
+  phi_owner_note: >-
+    FLOP-weighted harmonic mean of DeepGEMM's FP8 dense GEMMs at M = 128 for DeepSeek-V3's own
+    owner shapes (q_a+kv_a 2112x7168 352, q_b 24576x1536 535, o 7168x16384 645, shared expert
+    4096x7168 533 and 7168x2048 510 TFLOPS). The owner runs M = 256 rows; 128 is the nearest
+    measured M below, so this is the conservative end. The M = 4096 rows give 1,220 (ADR-052 §7 sweep)
+  phi_owner_source: github.com/deepseek-ai/DeepGEMM README at 78cacf7 (2025-02-26), "Normal GEMMs for dense models", H800
+  phi_attn_flops: 660e12
+  beta_attn_bytes_per_s: 3000e9
+  attn_note: >-
+    FlashMLA decode, "up to 3000 GB/s in memory-bound configuration and 660 TFLOPS in
+    computation-bound configuration on H800 SXM5, using CUDA 12.8". The post does not name
+    SGLang's decode attention backend (I39); the sweep runs the nominal peaks instead
+  attn_source: github.com/deepseek-ai/FlashMLA README at a9444cd (2025-04-22)
+  beta_c_bytes_per_s: 3.35e12
+  beta_c_source: NVIDIA H100 Tensor Core GPU datasheet (SXM5, HBM3)
+  m_c_bytes: 80e9
+  m_c_source: NVIDIA H100 Tensor Core GPU datasheet (SXM5)
+  s_min: 128
+  s_min_note: tile row floor of the cost model; not used under the round policy (no threshold)
+  s_min_source: status placeholder, unused by ADR-052's runs
+  b_floor_empirical: 128
+  b_floor_note: queue-policy threshold only; unused under the round policy
+  b_floor_source: status placeholder, unused by ADR-052's runs
+  grouped_gemm:
+    # efficiency vs phi_flops of one expert call (gate/up N 4096 K 7168, then down N 7168
+    # K 2048, 2/3 and 1/3 of its FLOPs) at M rows per expert, from DeepGEMM's masked layout:
+    # 256 rows 932 / 815, 512 rows 1040 / 916, 1024 rows 1233 / 925 TFLOPS
+    efficiency_vs_dense_by_tokens_per_expert: {256: 0.4494, 512: 0.5028, 1024: 0.5608}
+    note: measured before DeepGEMM's 2025-04 speed-up ("up to 1550 TFLOPS", vs 1358 in this table's dense rows); the sweep runs x1.14
+    source: github.com/deepseek-ai/DeepGEMM README at 78cacf7 (2025-02-26), "Grouped GEMMs for MoE models (masked layout)", H800
+
+fabric:
+  kind: 8 GPUs per node; DeepEP low-latency dispatch / combine over InfiniBand RDMA (pure RDMA, also inside a node)
+  node_size: 8
+  intra_via_nic: true
+  intra_note: >-
+    DeepEP's README at the post's date: "Low-latency kernels with pure RDMA"; NVLink for the
+    low-latency kernels is struck from its roadmap ("conflict with hook-based overlapping")
+  intra_source: github.com/deepseek-ai/DeepEP README at 1a0c8f6 (2025-04-27)
+  lambda_link_bytes_per_s: 40e9
+  lambda_link_note: >-
+    DeepEP low-latency kernels at EP64 on H800 with one CX7 400 Gb/s NIC per GPU, 128 tokens,
+    7168 hidden, top-8, FP8 dispatch / BF16 combine: dispatch 186 us at 40 GB/s, combine 353 us
+    at 41 GB/s (EP128: 39 / 39). The bandwidth is bytes / end-to-end latency (128 x 8 x 7392 B
+    / 186 us = 40.7 GB/s), so the per-collective latency is inside it. The SGLang cluster's NIC
+    speed is not published: 400 Gb/s is a placeholder (I39)
+  lambda_link_source: github.com/deepseek-ai/DeepEP README at 1a0c8f6 (2025-04-27), "Low-latency kernels with pure RDMA"
+  latency_floor_s: 0.0
+  latency_floor_source: folded into lambda_link (see its note)
+  lambda_intra_bytes_per_s: 450e9
+  lambda_intra_note: NVLink 4 per direction (900 GB/s bidirectional); only the sweep's NVLink-inside-a-node arm uses it
+  lambda_intra_source: NVIDIA H100 Tensor Core GPU datasheet (SXM5)
+  lambda_c_bytes_per_s: 450e9
+  lambda_c_source: same as lambda_intra (U = 1)
+
+deployment:
+  batch_per_gpu: 256
+  slots: 288          # 256 routed experts + 32 redundant, 4 per GPU
+  input_tokens: 2000
+  output_tokens: 100
+  measured_tok_s_per_node_tbo: 22282   # main table; the TBO section says 22,310 for the same run
+  tbo_speedup: 0.255
+  scored_tok_s_per_node: 17777        # 22,310 / 1.255 (ADR-052 §1)
+  source: lmsys.org/blog/2025-05-05-large-scale-ep (decode table, TBO section); sglang#6017 (ep-num-redundant-experts 32, cuda-graph-bs 256, bench input 2000 output 100)

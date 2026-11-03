@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import dataclasses as dc
 
+import numpy as np
 import pytest
 
 from sim.engine import Engine
@@ -161,7 +162,7 @@ def test_round_policy_reproduces_the_hand_timeline(compose: str) -> None:
 
     sim = Simulation(p)
     sim.run()
-    v = 2 * p.vector_bytes / p.lambda_link
+    v = 2 * p.dispatch_bytes / p.lambda_link
     a_s, b_s, c_s, p_s = job("skel_in", 2), job("attn", 2), job("expert", 4), job("post", 2)
     d_s, r_s = 2 * T0["t_coll_s"] + v, T0["t_coll_s"] + v
     it = b_s + d_s + c_s + r_s + p_s
@@ -223,3 +224,116 @@ def test_owner_efficiency_divides_the_owner_roofline() -> None:
         small(owner_eff=(("expert", ((1, 0.5),)),))
     with pytest.raises(ValueError, match="0 < eta"):
         small(owner_eff=(("attn", ((1, 1.2),)),))
+
+
+# ---- layered round mode and two-tier fabric (decision 14, ADR-052) ----------------------------
+@pytest.mark.parametrize("via_nic", [False, True])
+def test_two_tier_round_reproduces_the_hand_timeline(via_nic: bool) -> None:
+    """Four units in two nodes of two, z = 4, k = 1, every token routed to expert 2 (unit 2).
+    Dispatch: units 0 and 1 send one row across nodes, unit 3 one row inside node 1, unit 2
+    keeps its own. Return: unit 2 sends two rows across and one inside. Each leg costs the
+    busiest sender's time, max(intra / lambda_intra, inter / lambda_link), or everything over
+    the NIC when `intra_via_nic`."""
+    lam, lam_in = 1e9, 4e9
+    kw = {
+        "z": 4,
+        "tokens": 8,
+        "warmup_tokens": 0,
+        "r": 2,
+        "k": 1,
+        "n_e": 4,
+        "n_units": 4,
+        "batch_policy": "round",
+        "routing": "empirical",
+        "route_probs": (0.0, 0.0, 1.0, 0.0),
+        "node_size": 2,
+        "lambda_link": lam,
+        "lambda_intra": lam_in,
+        "intra_via_nic": via_nic,
+        "compose": "sum",
+        **T0,
+    }
+    p = load_params("local_3060", "L5", **kw)
+    zero = {f"t0_{kd}_s": 0.0 for kd in ("skel_in", "attn", "post", "skel_out", "expert")}
+    bare = Simulation(load_params("local_3060", "L5", **{**kw, **zero}))
+
+    def job(kind: str, n: int) -> float:
+        roof = bare.expert_step_s(n)[0] if kind == "expert" else bare.owner_step_s(kind, n)[0]
+        return T0[f"t0_{kind}_s"] + roof
+
+    sim = Simulation(p)
+    sim.run()
+    out, back = p.dispatch_bytes, p.return_bytes
+    if via_nic:
+        d_wire, r_wire = out / lam, 3 * back / lam
+    else:
+        d_wire, r_wire = max(out / lam, out / lam_in), max(2 * back / lam, back / lam_in)
+    it = (
+        job("attn", 1)
+        + 2 * T0["t_coll_s"]
+        + d_wire
+        + job("expert", 4)
+        + T0["t_coll_s"]
+        + r_wire
+        + job("post", 1)
+    )
+    assert [x for _, x in sim.iter_lat[:4]] == pytest.approx([it] * 4, rel=1e-9)
+    assert sim.batch_sizes == [4] * (2 * p.r)
+
+
+def test_two_tier_fabric_is_validated() -> None:
+    with pytest.raises(NotImplementedError, match="round policy"):
+        small(node_size=2, lambda_intra=1e9)
+    with pytest.raises(ValueError, match="multiple of node_size"):
+        small(node_size=3, lambda_intra=1e9, batch_policy="round", tokens=304, warmup_tokens=48)
+    with pytest.raises(ValueError, match="lambda_intra"):
+        small(node_size=2, batch_policy="round", tokens=304, warmup_tokens=48)
+    with pytest.raises(TypeError, match="unknown SimParams fields"):
+        small(no_such_field=1)
+
+
+def test_bulk_route_draw_has_the_law_of_sequential_sampling() -> None:
+    """Gumbel-top-k against numpy's sequential choice without replacement: k distinct experts
+    per row, and the same per-expert inclusion rates under skewed weights."""
+    p = small(batch_policy="round", tokens=304, warmup_tokens=48, routing="zipf", n_e=8, k=3)
+    bulk = Simulation(dc.replace(p, route_draw="bulk"))
+    rows = bulk._bulk_routes(40_000)
+    assert all(len(set(r)) == 3 for r in rows[:1000])
+    seq = Simulation(p)
+    ref = np.array([seq.rng.choice(8, 3, replace=False, p=seq.route_p) for _ in range(40_000)])
+    f_bulk = np.bincount(rows.ravel(), minlength=8) / rows.size
+    f_seq = np.bincount(ref.ravel(), minlength=8) / ref.size
+    assert f_bulk == pytest.approx(f_seq, abs=0.01)
+    with pytest.raises(ValueError, match="round policy"):
+        small(route_draw="bulk")
+
+
+def test_deepseek_v3_shape_and_scenario() -> None:
+    """ADR-052 §3: 671 B total / ≈ 37 B active; MLA's 576-value cache; the h100_sglang
+    scenario loads with every value sourced, and the slot count overrides n_e."""
+    from costmodel import deepseek_v3 as ds
+
+    m = ds.DeepSeekV3()
+    assert ds.total_params(m) == pytest.approx(671e9, rel=0.005)
+    assert ds.active_params(m) == pytest.approx(37e9, rel=0.03)
+    assert m.kv_entry == 576 and m.moe_layers == 58
+    assert ds.attention_score_flops_per_key(m) == 2 * 128 * (576 + 512)
+    p = load_params(
+        "h100_sglang",
+        "deepseek_v3",
+        context_tokens=2050,
+        n_e=288,
+        z=72 * 4,
+        tokens=72 * 12,
+        warmup_tokens=72 * 4,
+        batch_policy="round",
+        route_draw="bulk",
+    )
+    assert (p.n_units, p.node_size, p.intra_via_nic, p.r, p.k) == (72, 8, True, 58, 8)
+    assert p.dispatch_bytes == pytest.approx(7168 * (1 + 4 / 128))  # DeepEP LL: 7392 B per row
+    sim = Simulation(p)
+    assert sim.kv_bytes_per_layer == 2050 * 576 * 2
+    out = sim.run()
+    assert out["batches"]["fired_by_round"] > 0 and out["throughput_tok_s"] > 0
+    with pytest.raises(ValueError, match="context_tokens"):
+        load_params("h100_sglang", "deepseek_v3")

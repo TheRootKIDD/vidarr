@@ -8,7 +8,8 @@ source line, which `check_sources` enforces); the model shape comes from a ladde
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
+from dataclasses import fields as fields_of
 from pathlib import Path
 from typing import Any, Literal
 
@@ -66,10 +67,31 @@ class SimParams:
     attn_proj_weight_bytes: float  # shared middle-block attention weights
     skel_in_flops: float  # early blocks, per token
     skel_out_flops: float  # final blocks + output head, per token
-    skel_weight_bytes: float  # half of the E + F skeleton weights each way (in / out)
+    skel_in_weight_bytes: float  # weights read by the skel_in job (recurrent: half of E + F)
+    skel_out_weight_bytes: float  # by skel_out, without the head (recurrent: the other half)
     head_weight_bytes: float  # tied output head
     kv_width: int  # H_kv d_h
     context_tokens: int  # keys visible to a decode token (decision 6)
+    skel_in_layers: int = 2  # attention layers whose KV the skel_in job reads (E blocks)
+    skel_out_layers: int = 2  # ... and the skel_out job (F blocks)
+    # per cached key per attention layer: score FLOPs and KV bytes. None: the recurrent
+    # model's 2 · 2 d and 2 H_kv d_h b_kv. DeepSeek-V3 (MLA, ADR-052 §3) sets both
+    score_flops_per_key: float | None = None
+    kv_bytes_per_key_layer: float | None = None
+    # bytes per element of a dispatched / returned row; None: b_act (DeepSeek-V3: FP8 + scales
+    # out, BF16 back)
+    b_dispatch: float | None = None
+    b_combine: float | None = None
+    # scenario (decision 14): achieved rates of the owner's GEMMs and of the attention core
+    # (None: phi), and the attention core's KV-read bandwidth (None: beta_c)
+    phi_owner: float | None = None
+    phi_attn: float | None = None
+    beta_attn: float | None = None
+    # two-tier fabric (decision 14): units in nodes of `node_size` (0: one tier). Rows within a
+    # node cross lambda_intra, unless `intra_via_nic`, when every off-unit row uses lambda_link
+    node_size: int = 0
+    lambda_intra: float | None = None
+    intra_via_nic: bool = False
 
     # ---- scheduler (docs/02 §5) -----------------------------------------------------------
     batch_rule: BatchRule = "floor"  # which threshold the expert queue fires at (I13/I18)
@@ -101,6 +123,10 @@ class SimParams:
     routing: Routing = "uniform"
     zipf_s: float = 1.0
     route_probs: tuple[float, ...] = ()  # routing = "empirical": per-expert selection weights
+    # how the round policy draws routes: "sequential" (numpy choice per token, the S0 runs) or
+    # "bulk" (one Gumbel-top-k draw per round: the same law, k distinct experts with
+    # Plackett-Luce weights, at a fraction of the cost; ADR-052's runs)
+    route_draw: Literal["sequential", "bulk"] = "sequential"
     seed: int = 0
     util_window_s: float = 1e-2  # bin width of the utilisation time series
 
@@ -135,6 +161,15 @@ class SimParams:
             raise ValueError("round policy: tokens and warmup_tokens must be multiples of z")
         if self.routing == "empirical" and len(self.route_probs) != self.n_e:
             raise ValueError("routing = empirical needs route_probs with N_e entries")
+        if self.route_draw == "bulk" and self.batch_policy != "round":
+            raise ValueError("route_draw = bulk is for the round policy")
+        if self.node_size:
+            if self.batch_policy != "round":
+                raise NotImplementedError("the two-tier fabric is modelled under the round policy")
+            if self.n_units % self.node_size:
+                raise ValueError("n_units must be a multiple of node_size")
+            if self.lambda_intra is None and not self.intra_via_nic:
+                raise ValueError("node_size needs lambda_intra, or intra_via_nic")
         for kind, table in self.owner_eff:
             if kind not in OWNER_KINDS:
                 raise ValueError(f"owner_eff: {kind} is not an owner kind {OWNER_KINDS}")
@@ -169,6 +204,15 @@ class SimParams:
     def vector_bytes(self) -> float:
         """One token's stream vector on the fabric, $d\\, b_{act}$ (docs/02 §3)."""
         return self.d * self.b_act
+
+    @property
+    def dispatch_bytes(self) -> float:
+        """One dispatched row (round policy): d b_dispatch, b_act when unset."""
+        return self.d * (self.b_act if self.b_dispatch is None else self.b_dispatch)
+
+    @property
+    def return_bytes(self) -> float:
+        return self.d * (self.b_act if self.b_combine is None else self.b_combine)
 
     def expert_of_unit(self, expert: int) -> int:
         """Static placement: expert i lives on unit i mod n_units (decision 3)."""
@@ -223,8 +267,18 @@ def _scenario_fields(doc: dict[str, Any]) -> dict[str, Any]:
         "link_latency_s": float(fab["latency_floor_s"]),
         "b_floor_empirical": int(chip["b_floor_empirical"]),
         "grouped_eff": tuple(sorted((int(b), float(e)) for b, e in table.items())),
+        **_optional(chip, "phi_owner", "phi_owner_flops"),
+        **_optional(chip, "phi_attn", "phi_attn_flops"),
+        **_optional(chip, "beta_attn", "beta_attn_bytes_per_s"),
+        **_optional(fab, "lambda_intra", "lambda_intra_bytes_per_s"),
+        "node_size": int(fab.get("node_size", 0)),
+        "intra_via_nic": bool(fab.get("intra_via_nic", False)),
         **_software_fields(doc.get("software")),
     }
+
+
+def _optional(section: dict[str, Any], field_name: str, key: str) -> dict[str, Any]:
+    return {field_name: float(section[key])} if key in section else {}
 
 
 def _software_fields(sw: dict[str, Any] | None) -> dict[str, Any]:
@@ -263,6 +317,8 @@ def log2_interp(table: tuple[tuple[int, float], ...], b: int) -> float:
 
 # ---- model shape -----------------------------------------------------------------------------
 def _model_fields(rung: str, context_tokens: int | None) -> dict[str, Any]:
+    if rung == "deepseek_v3":
+        return _deepseek_v3_fields(context_tokens)
     from model.config import ladder  # deferred: model/ is only needed for presets
 
     cfg = ladder(rung)
@@ -309,15 +365,69 @@ def _model_fields(rung: str, context_tokens: int | None) -> dict[str, Any]:
         "attn_proj_weight_bytes": proj_w,
         "skel_in_flops": skel * cm.early_blocks / blocks,
         "skel_out_flops": skel * cm.final_blocks / blocks + output_head_flops(cm),
-        "skel_weight_bytes": (proj_w + skel_ff_w) * blocks / 2,
+        "skel_in_weight_bytes": (proj_w + skel_ff_w) * blocks / 2,
+        "skel_out_weight_bytes": (proj_w + skel_ff_w) * blocks / 2,
+        "skel_in_layers": cm.early_blocks,
+        "skel_out_layers": cm.final_blocks,
         "head_weight_bytes": cm.vocab * cm.d * b,
         "kv_width": cm.attn.kv_width,
         "context_tokens": keys,
     }
 
 
+def _deepseek_v3_fields(context_tokens: int | None) -> dict[str, Any]:
+    """DeepSeek-V3 as a layered round model (ADR-052 §3-4, decision 14). One round per MoE
+    layer; the 3 dense layers are `skel_in`, the head `skel_out`; the shared expert and the
+    router join each round's `attn` job (they run on the owner, DP attention). GEMM weights in
+    FP8 (the released checkpoint), the absorbed kv_b, router and head in BF16, KV in BF16.
+    `n_e` is the routed-expert count; a deployment with redundant replicas overrides it with
+    its slot count (SGLang: 256 + 32)."""
+    from costmodel import deepseek_v3 as ds
+
+    if context_tokens is None:
+        raise ValueError("deepseek_v3 needs context_tokens (the deployment's mean keys)")
+    m = ds.DeepSeekV3()
+    fp8, bf16 = 1.0, 2.0
+    shared_w = m.n_shared * ds.swiglu(m.d, m.d_ff_expert)
+    attn_w = ds.attention_weight_bytes(m, fp8, bf16)
+    score = ds.attention_score_flops_per_key(m)
+    dense_layer_flops = ds.attention_proj_flops(m) + ds.dense_ff_flops(m) + score * context_tokens
+    return {
+        "rung": "deepseek_v3",
+        "d": m.d,
+        "k": m.k,
+        "n_e": m.n_routed,
+        "d_ff": m.d_ff_expert,
+        "L_e": 1,
+        "r": m.moe_layers,
+        "b_act": bf16,
+        "b_w": fp8,
+        "b_kv": bf16,
+        "attn_proj_flops": ds.attention_proj_flops(m)
+        + m.n_shared * ds.expert_flops(m)
+        + 2.0 * ds.router_params(m),
+        "attn_proj_weight_bytes": attn_w + shared_w * fp8 + ds.router_params(m) * bf16,
+        "skel_in_flops": m.dense_layers * dense_layer_flops,
+        "skel_out_flops": ds.head_flops(m),
+        "skel_in_weight_bytes": m.dense_layers * (attn_w + ds.swiglu(m.d, m.d_ff_dense) * fp8),
+        "skel_out_weight_bytes": 0.0,
+        "head_weight_bytes": m.vocab * m.d * bf16,
+        "kv_width": m.kv_entry // 2,
+        "context_tokens": context_tokens,
+        "skel_in_layers": m.dense_layers,
+        "skel_out_layers": 0,
+        "score_flops_per_key": score,
+        "kv_bytes_per_key_layer": ds.kv_bytes_per_key(m, bf16),
+        "b_dispatch": fp8 + 4.0 / 128,  # FP8 with one fp32 scale per 128 values (DeepEP LL)
+        "b_combine": bf16,
+    }
+
+
 def attention_score_flops_per_token(p: SimParams) -> float:
-    """$2 \\cdot 2 d \\cdot n_{keys}$ at the decode position (docs/01 §10, decision 6)."""
+    """$2 \\cdot 2 d \\cdot n_{keys}$ at the decode position (docs/01 §10, decision 6), or the
+    model's own per-key figure (MLA)."""
+    if p.score_flops_per_key is not None:
+        return p.score_flops_per_key * p.context_tokens
     cm = Model(d=p.d)
     return attention_score_flops(cm, n_keys=p.context_tokens, n_streams=1)
 
@@ -330,5 +440,7 @@ def load_params(
 ) -> SimParams:
     """Scenario + rung + overrides → `SimParams`. Overrides use the dataclass field names."""
     fields = {**_scenario_fields(load_scenario(scenario)), **_model_fields(rung, context_tokens)}
-    params = SimParams(**fields)
-    return replace(params, **overrides) if overrides else params
+    unknown = set(overrides) - {f.name for f in fields_of(SimParams) if f.init}
+    if unknown:
+        raise TypeError(f"unknown SimParams fields: {sorted(unknown)}")
+    return SimParams(**{**fields, **overrides})  # validated once, with the overrides applied

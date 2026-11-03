@@ -11,6 +11,7 @@ S0's barrier (decision 11, ADR-049 §5).
 
 from __future__ import annotations
 
+import gc
 import math
 from collections import deque
 from dataclasses import dataclass, field
@@ -72,7 +73,12 @@ class Simulation:
         self.route_p = self._routing_distribution()
         self.cm = Model(d=p.d, experts=CmExperts(n_e=p.n_e, k=p.k, d_ff=p.d_ff, L_e=p.L_e))
         self.score_flops = attention_score_flops_per_token(p)
-        self.kv_bytes_per_layer = p.context_tokens * 2 * p.kv_width * p.b_kv
+        per_key = (
+            2 * p.kv_width * p.b_kv
+            if p.kv_bytes_per_key_layer is None
+            else p.kv_bytes_per_key_layer
+        )
+        self.kv_bytes_per_layer = p.context_tokens * per_key
         # counters and samples
         self.started = 0
         self.completed = 0
@@ -148,8 +154,11 @@ class Simulation:
 
     def _dispatch(self, tok: Token) -> None:
         """Route to k distinct experts and send one vector to each (`02 §3`; no multicast)."""
-        experts = self.rng.choice(self.p.n_e, size=self.p.k, replace=False, p=self.route_p)
         tok.pending = self.p.k
+        if self.p.route_draw == "bulk":
+            self._round_dispatch(tok, None)  # drawn with the whole round
+            return
+        experts = self.rng.choice(self.p.n_e, size=self.p.k, replace=False, p=self.route_p)
         if self.round:
             self._round_dispatch(tok, [int(e) for e in experts])
             return
@@ -196,7 +205,15 @@ class Simulation:
         self.eng.at(unit.egress_free_t + self.p.link_latency_s, deliver)
 
     # ---- expert side -------------------------------------------------------------------------
-    def _round_dispatch(self, tok: Token, experts: list[int]) -> None:
+    def _bulk_routes(self, n: int) -> np.ndarray:
+        """n rows of k distinct experts, drawn without replacement with weights `route_p`:
+        Gumbel-top-k, which has the law of sequential sampling without replacement."""
+        k = self.p.k
+        with np.errstate(divide="ignore"):
+            keys = np.log(self.route_p)[None, :] + self.rng.gumbel(size=(n, self.p.n_e))
+        return np.argpartition(-keys, k - 1, axis=1)[:, :k]
+
+    def _round_dispatch(self, tok: Token, experts: list[int] | None) -> None:
         """Round policy (decisions 11-12): the dispatch is a collective. It completes when the
         last owner has joined, after two collective latencies (counts, rows) plus the busiest
         unit's off-unit bytes at lambda_link; then every expert fires once on all its rows."""
@@ -204,15 +221,13 @@ class Simulation:
         if len(self.round_rows) < self.p.z:
             return
         rows, self.round_rows = self.round_rows, []
-        out_bytes = [0.0] * self.p.n_units
-        for t, es in rows:
-            for e in es:
-                dest = self.p.expert_of_unit(e)
-                self.bytes_logical += self.p.vector_bytes
-                if dest != t.owner:
-                    out_bytes[t.owner] += self.p.vector_bytes
-                    self.bytes_wire += self.p.vector_bytes
-        dt = 2 * self.p.collective_s + max(out_bytes) / self.p.lambda_link
+        if self.p.route_draw == "bulk":
+            drawn = self._bulk_routes(len(rows))
+            rows = [(t, [int(e) for e in drawn[i]]) for i, (t, _) in enumerate(rows)]
+        k = self.p.k
+        src = np.repeat(np.fromiter((t.owner for t, _ in rows), dtype=np.int64, count=len(rows)), k)
+        dst = np.fromiter((e for _, es in rows for e in es), dtype=np.int64, count=len(rows) * k)
+        dt = 2 * self.p.collective_s + self._leg_s(src, dst % self.p.n_units, self.p.dispatch_bytes)
 
         def deliver() -> None:
             for t, es in rows:
@@ -232,19 +247,33 @@ class Simulation:
         if self.round_jobs_left:
             return
         rets, self.round_returns = self.round_returns, []
-        out_bytes = [0.0] * self.p.n_units
-        for src, owner, _ in rets:
-            self.bytes_logical += self.p.vector_bytes
-            if src != owner:
-                out_bytes[src] += self.p.vector_bytes
-                self.bytes_wire += self.p.vector_bytes
-        dt = self.p.collective_s + max(out_bytes) / self.p.lambda_link
+        src = np.fromiter((u for u, _, _ in rets), dtype=np.int64, count=len(rets))
+        dst = np.fromiter((o for _, o, _ in rets), dtype=np.int64, count=len(rets))
+        dt = self.p.collective_s + self._leg_s(src, dst, self.p.return_bytes)
 
         def deliver() -> None:
             for _, _, tok in rets:
                 self._expert_return(tok)
 
         self.eng.after(dt, deliver)
+
+    def _leg_s(self, src: np.ndarray, dst: np.ndarray, row_bytes: float) -> float:
+        """Wire time of one collective leg (decisions 11, 14): the busiest sender's bytes. One
+        tier: off-unit rows at lambda_link. Two tiers: rows within a node at lambda_intra and
+        across nodes at lambda_link, in parallel; `intra_via_nic` sends both over the NIC."""
+        p = self.p
+        off = src != dst
+        self.bytes_logical += row_bytes * len(src)
+        self.bytes_wire += row_bytes * int(off.sum())
+        if p.node_size and not p.intra_via_nic:
+            near = off & (src // p.node_size == dst // p.node_size)
+        else:
+            near = np.zeros_like(off)
+        far = off & ~near
+        intra = np.bincount(src[near], minlength=p.n_units) * row_bytes
+        inter = np.bincount(src[far], minlength=p.n_units) * row_bytes
+        lam_in = p.lambda_intra or p.lambda_link
+        return float(np.max(np.maximum(intra / lam_in, inter / p.lambda_link)))
 
     def _expert_arrive(self, e: int, tok: Token) -> None:
         q = self.queues[e]
@@ -338,27 +367,44 @@ class Simulation:
         """Batched owner work: max(FLOPs / φ, (weights + KV reads) / β_C) (decision 6), divided
         by the scenario's efficiency at n sequences (decision 13; 1 when absent)."""
         p = self.p
+        phi_o = p.phi if p.phi_owner is None else p.phi_owner
+        phi_a = p.phi if p.phi_attn is None else p.phi_attn
+        beta_a = p.beta_c if p.beta_attn is None else p.beta_attn
+        kv = self.kv_bytes_per_layer
         if kind == "attn":
             flops = n * (p.attn_proj_flops + self.score_flops)
-            nbytes = p.attn_proj_weight_bytes + n * self.kv_bytes_per_layer
+            compute = n * p.attn_proj_flops / phi_o + n * self.score_flops / phi_a
+            mem = p.attn_proj_weight_bytes / p.beta_c + n * kv / beta_a
         elif kind == "post":
             # g-weighted sum of k returns plus the residual: k d FLOPs, (k + 2) d reads per token
             flops = n * 2.0 * p.k * p.d
-            nbytes = n * (p.k + 2) * p.d * p.b_act
+            compute = flops / p.phi
+            mem = n * (p.k + 2) * p.d * p.b_act / p.beta_c
         elif kind == "skel_in":
             flops = n * p.skel_in_flops
-            nbytes = p.skel_weight_bytes + n * 2 * self.kv_bytes_per_layer
+            compute = flops / phi_o
+            mem = p.skel_in_weight_bytes / p.beta_c + n * p.skel_in_layers * kv / beta_a
         else:
             flops = n * p.skel_out_flops
-            nbytes = p.skel_weight_bytes + p.head_weight_bytes + n * 2 * self.kv_bytes_per_layer
-        roof = max(flops / p.phi, nbytes / p.beta_c) / p.owner_efficiency(kind, n)
+            compute = flops / phi_o
+            w = p.skel_out_weight_bytes + p.head_weight_bytes
+            mem = w / p.beta_c + n * p.skel_out_layers * kv / beta_a
+        roof = max(compute, mem) / p.owner_efficiency(kind, n)
         return p.job_time(kind, roof), flops
 
     # ---- run and report ----------------------------------------------------------------------
     def run(self) -> dict[str, Any]:
         for seq in range(self.p.z):
             self.eng.at(0.0, lambda seq=seq: self._start_token(seq))
-        self.eng.run(lambda: self.completed >= self.p.tokens)
+        # the run allocates millions of acyclic sample tuples; the cyclic collector would
+        # rescan them all on every generation-2 pass (quadratic in the run's length)
+        enabled = gc.isenabled()
+        gc.disable()
+        try:
+            self.eng.run(lambda: self.completed >= self.p.tokens)
+        finally:
+            if enabled:
+                gc.enable()
         for unit in self.units:
             if unit.expert_jobs or any(unit.owner_items.values()):
                 raise RuntimeError(f"unit {unit.uid} has work left after the last token")
