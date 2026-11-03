@@ -1,0 +1,156 @@
+{
+  "build": "build_wiki_memory",
+  "adr": "ADR-053",
+  "id": "040-wiki-memory",
+  "attribution": "text from English Wikipedia (CC BY-SA 3.0 / GFDL); derived data, not redistributed",
+  "dataset": {
+    "repo": "wikimedia/wikipedia",
+    "config": "20231101.en",
+    "revision": "b04c8d1ceb2f5cd4588862100d08de323dccfbaa"
+  },
+  "encoder": {
+    "repo": "BAAI/bge-base-en-v1.5",
+    "revision": "a5beb1e3e68b9ab74eb54cfd186867f64f240e1a",
+    "pooling": "cls",
+    "normalise": "l2",
+    "autocast": "fp16",
+    "fp16_vs_fp32_min_cos": 0.9999994039535522,
+    "fp16_vs_fp32_mean_cos": 0.9999998807907104
+  },
+  "filters": {
+    "min_chars": 40,
+    "max_chars": 300,
+    "boundary": "[.!?](?=\\s+[A-Z])",
+    "drop_title_prefix": "List of",
+    "drop_title_contains": "(disambiguation)",
+    "drop_sentence_contains": "may refer to"
+  },
+  "counts": {
+    "articles": 6407814,
+    "dropped_title": 168896,
+    "dropped_refer": 257401,
+    "dropped_length": 335025,
+    "eligible": 5646492,
+    "n_m": 1048576,
+    "in_table_pool": 2000,
+    "out_of_table_pool": 2000
+  },
+  "sample": {
+    "table_seed": 0,
+    "pool_seed": 1,
+    "pools": "in-table from the sampled articles, out-of-table from the eligible rest"
+  },
+  "grid": 1024,
+  "kmeans": {
+    "k": 1024,
+    "iters": 25,
+    "seed": 0,
+    "inertia_half1": [
+      0.43007142655551434,
+      0.2564613614231348,
+      0.24890235345810652,
+      0.24614172149449587,
+      0.24475908279418945,
+      0.24395321682095528,
+      0.24343265127390623,
+      0.24306008778512478,
+      0.242792678065598,
+      0.24258890002965927,
+      0.24243978690356016,
+      0.24232783913612366,
+      0.24223607406020164,
+      0.2421572795137763,
+      0.24208418559283018,
+      0.2420165603980422,
+      0.24195775762200356,
+      0.24191197752952576,
+      0.24187245033681393,
+      0.24183518160134554,
+      0.2418016130104661,
+      0.24177255295217037,
+      0.24174705427139997,
+      0.24172308016568422,
+      0.2417021980509162
+    ],
+    "inertia_half2": [
+      0.4335545804351568,
+      0.2585640512406826,
+      0.2509466605260968,
+      0.24824691284447908,
+      0.2468695780262351,
+      0.24604061245918274,
+      0.2454861281439662,
+      0.24507968127727509,
+      0.24478301499038935,
+      0.2445724131539464,
+      0.24441368598490953,
+      0.24428276252001524,
+      0.2441778453066945,
+      0.24409044068306684,
+      0.24402011930942535,
+      0.24396171607077122,
+      0.24391532223671675,
+      0.24387500062584877,
+      0.24383973609656096,
+      0.2438118178397417,
+      0.24378979858011007,
+      0.2437704773619771,
+      0.24375199433416128,
+      0.24373205937445164,
+      0.24370961263775826
+    ]
+  },
+  "placement": {
+    "tiers": {
+      "top32": 782207,
+      "top128": 237204,
+      "all_free": 29165
+    },
+    "share_outside_top32": 0.2540292739868164,
+    "mean_unconstrained_sqdist": 0.48537304997444153,
+    "mean_excess_sqdist": 0.1155986008816825,
+    "p50_excess_sqdist": 0.10715118050575256,
+    "p99_excess_sqdist": 0.3014593794941902,
+    "relative_distortion": 0.23816444050152685,
+    "wall_s": 79.08802890777588
+  },
+  "sentence_chars": {
+    "mean": 122.06927585601807
+  },
+  "files": {
+    "table.npy": {
+      "bytes": 1610612864,
+      "sha256": "08dec4b1bfa3260b9b5ea0cf638cd4cb4810217769c793ce68f78b98194eb832"
+    },
+    "mu1.npy": {
+      "bytes": 1572992,
+      "sha256": "c81da3bb3c8009a8a183740183fd01d58297b9debce4f70163a0e66ff46e3481"
+    },
+    "mu2.npy": {
+      "bytes": 1572992,
+      "sha256": "87bf85cca30ee37db879583c049291cfd94ec227f59e11e1280ef625342ef37c"
+    },
+    "cell_article_ids.npy": {
+      "bytes": 8388736,
+      "sha256": "57abc0b5e093d659a7a35eb85452e5449935a8f6a5de412ab6f348f6d8bf9494"
+    },
+    "sentences.jsonl": {
+      "bytes": 217264856,
+      "sha256": "826109f9192acc8df652a2ba422b2f64c36eb6697ab5b4341a39f2a643e8315a"
+    },
+    "eval_pools.jsonl": {
+      "bytes": 1590996,
+      "sha256": "1108eef7738f11f02dc06ce3db59550461ce581806e10e2e8097f57bb2d92c92"
+    }
+  },
+  "wall_s": {
+    "download_s": 0.0002644062042236328,
+    "extract_s": 34.55887198448181,
+    "encode_s": 145.01320719718933,
+    "kmeans_s": 10.698850393295288,
+    "place_s": 79.08802890777588,
+    "write_s": 7.895573377609253,
+    "total_s": 287.6971824169159
+  },
+  "out": "/mnt/nvme/memory/wiki-20231101-lead"
+}

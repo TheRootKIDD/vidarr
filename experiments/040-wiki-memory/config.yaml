@@ -1,0 +1,10 @@
+# 040-wiki-memory — L8's knowledge table (ADR-053 §1–§4, §9a). Rig series.
+command: python -m scripts.data.build_wiki_memory --id 040-wiki-memory
+tree: ba89ed2 (script as committed; run from the working tree at the same content)
+dataset: {repo: wikimedia/wikipedia, config: 20231101.en, revision: b04c8d1ceb2f5cd4588862100d08de323dccfbaa}
+encoder: {repo: BAAI/bge-base-en-v1.5, revision: a5beb1e3e68b9ab74eb54cfd186867f64f240e1a, pooling: cls, normalise: l2, autocast: fp16}
+slice: {first_sentence: true, min_chars: 40, max_chars: 300, drop: ["title starts 'List of'", "title contains '(disambiguation)'", "sentence contains 'may refer to'"]}
+sample: {n_m: 1048576, table_seed: 0, pool_seed: 1, pool_size: 2000}
+grid: {size: 1024, kmeans_iters: 25, kmeans_seed: 0, placement: greedy balanced, order_seed: 0, tiers: [top32, top128, all_free]}
+out: /mnt/nvme/memory/wiki-20231101-lead   # derived data (CC BY-SA 3.0 / GFDL), not committed
+hardware: 4 x RTX 3060 12 GB (encoding), GPU 0 (k-means), Threadripper PRO 3945WX

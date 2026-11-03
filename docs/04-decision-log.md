@@ -2015,6 +2015,16 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-11-03 (22:40) — **L8 built: `040` table, `041` probe passed, `queue_screen_15` running `173-l8-screen`**
+
+- **Code** `ba89ed2`: `model/memory.py`, `MemoryCfg` and the `L8` preset (expert width **704**, the solver's 712.6 snapped to 64; ADR-053's "≈ 711" was the exact value), `costmodel` memory FLOPs and params per ADR-053 §6, the §9 unit tests, `scripts/data/build_wiki_memory.py`, `scripts/analysis/eval_wiki_lead.py`. `transformers` and `safetensors` were added to the venv and to `pyproject`'s `data` extra, with `tokenizers` and `huggingface_hub` pinned at their installed versions so that the corpus tokenizer does not move.
+- **`040-wiki-memory`** (288 s): 5,646,492 eligible articles, 2²⁰ sampled; placement 74.6 % / 22.6 % / 2.8 % in the top-32² / top-128² / any-free tiers, +24 % quantisation distance against an unconstrained nearest pair.
+  - **Correction, recorded rather than silently fixed:** ADR-053 §2 says both eval pools come "from the rest", which contradicts §7's in-table pool. The build follows §7: in-table from the table's articles, out-of-table from the eligible rest.
+  - **Addition:** the any-free-cell tier is not in ADR-053 §4. It is needed once the top-128² pairs are full, and it is reported.
+- **`041-l8-sizing`**: 5.31 GiB peak, 41.1 k tok/s (0.85× L5), non-embedding params −2.79 M against `110`; the eval and probe script runs end to end.
+- **`queue_screen_15`**: gate passed 22:36 (`ba89ed2`); `173-l8-screen` started 22:36, ETA ≈ 05:50; then the wiki-lead evals of `110` and `173` (with probes) and the §10 compare, on GPU 0.
+- Next ladder id 174, next rig id 042. **No CPU probes beside the DDP run.**
+
 ### 2026-11-03 (22:10) — **ADR-053 accepted** (the user: "yes, accept it, push, then continue")
 
 - ADR-053 moves to Accepted; I3, I8 and I9 are answered by it; ADR-009 carries the key amendment.
