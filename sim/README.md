@@ -95,6 +95,7 @@ beyond the `costmodel` local-traffic term; expert-choice balancing in time (`02 
 ## S0: the calibration still to do
 
 **First attempt 2026-11-03, `034-s0-ep-decode`: not passed** at any $z$ (sim/meas throughput 12.4× / 8.1× / 4.2× / 2.6× at $z$ = 16 / 64 / 256 / 1024). The rig pays a fixed ≈ 0.4 ms per expert call and ≈ 1.2 ms per owner stage that the rooflines do not model (I37).
+**Re-score 2026-11-03, `036`**, with decision 12's measured fixed costs (`035`): passes at $z$ = 16 / 64 / 256 (throughput 1.13× / 1.09× / 1.17×, iteration p50 0.93× / 0.96× / 0.88×) and misses at 1024 (1.46× / 0.71×). The owner stages at 256 sequences run 30–45 % slower than $t_0$ + roofline (I38). Re-run with `python -m scripts.bench.s0_compare --measured 034-s0-ep-decode --id <new id>`.
 
 S0 (`docs/03`, `06 §6`) compares this simulator on `local_3060` with a **measured**
 expert-parallel inference run of the `small` model on the four cards. The script is

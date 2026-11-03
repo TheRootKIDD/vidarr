@@ -52,7 +52,7 @@ Model sizes are fixed by `docs/06 §3` (ADR-015, ADR-018): `screen` and `small` 
 ## 3. Simulator experiments (Tier S)
 | Sim | Question | Reads (`02 §14`) |
 |---|---|---|
-| S0 | **Calibration on the local rig**: `small` model in expert-parallel inference over 4 × RTX 3060 under the continuous scheduler; simulator with `local_3060` must match measured throughput and per-iteration latency within ± 20 % (`docs/06 §6`). **Run 2026-11-03 as `034-s0-ep-decode` (ADR-049: bulk-synchronous rounds, `132`): not passed.** The sim is 2.6–12.4× high on throughput and 0.08–0.38× on iteration p50 at $z$ = 16–1024; its rooflines have no fixed cost per job (I37) | throughput, latency |
+| S0 | **Calibration on the local rig**: `small` model in expert-parallel inference over 4 × RTX 3060 under the continuous scheduler; simulator with `local_3060` must match measured throughput and per-iteration latency within ± 20 % (`docs/06 §6`). **Run 2026-11-03 as `034-s0-ep-decode` (ADR-049: bulk-synchronous rounds, `132`): not passed.** The sim is 2.6–12.4× high on throughput and 0.08–0.38× on iteration p50 at $z$ = 16–1024; its rooflines have no fixed cost per job (I37). **Re-scored 2026-11-03 as `036` with ADR-050's measured fixed cost per job (`035`): passes at $z$ = 16/64/256 (throughput 1.09–1.17×, iteration p50 0.88–0.96×) and misses at 1024 (1.46× / 0.71×): owner stages at large batch run below peak (I38)** | throughput, latency |
 | S1 | Per-iteration latency budget in `note64` vs `gpu_today`; effect of parallel branches | latency distributions |
 | S2 | Continuous scheduler: ($b_{min}$, $w_{max}$) sweep → utilisation vs p99 | utilisation, queue wait |
 | S3 | Placement + multicast + reduction → per-tier bytes; up/down asymmetry | fabric bytes |
