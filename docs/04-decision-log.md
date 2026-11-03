@@ -961,7 +961,7 @@ Consequences: `costmodel/` gains the DeepSeek-V3 shape (MLA, shared expert, dens
 - P13, P15, P18 show only page-break differences in extraction; the author's Q10 addendum (sentence embeddings without entailments) is already in ADR-009.
 
 ### Internal
-- **I1** *(**answered by ADR-052**, 2026-11-03: SGLang's EP72 decode of DeepSeek-V3 on 9 × 8 H100, no-TBO throughput 17,777 tok/s per node; closes on the `039` score)* Which published expert-parallel deployment to calibrate the simulator against (candidate: DeepSeek-V3's published inference figures). The second calibration point is the local S0 run (`docs/06 §6`).
+- **I1** *(**answered by ADR-052**, 2026-11-03: SGLang's EP72 decode of DeepSeek-V3 on 9 × 8 H100, no-TBO throughput 17,777 tok/s per node; scored 2026-11-03 as `039`: **inconclusive**, 1.09× at the stated inputs, flips at InfiniBand 200 Gb/s (0.67×) and at zipf-0.5 routing (0.62×); stays open on I39)* Which published expert-parallel deployment to calibrate the simulator against (candidate: DeepSeek-V3's published inference figures). The second calibration point is the local S0 run (`docs/06 §6`).
 - **I2** Whether `small` can show anything about H6 (recurrence may need scale).
 - **I3** Licence and provenance of the knowledge source for L8.
 - **I4** Which `note64` / `gpu_today` scenario numbers can be sourced from public vendor data vs must remain placeholders (`local_3060` is fully measured).
@@ -1066,6 +1066,13 @@ Cost units from `docs/06 §4`: one `screen` run ≈ 8 h (1 B tokens, 1 seed); on
   - the decode attention backend (the post credits an FA3 backend; FlashMLA is not named).
 
   Any of these that flips the verdict makes point (b) inconclusive until it is sourced, from the authors or a later publication.
+
+  **Status after `039` (2026-11-03):**
+  - **Settled:** the intra-node path is pure RDMA (DeepEP README at `1a0c8f6`).
+  - **Do not flip:** SXM vs PCIe (0.97×), the attention backend (1.13× at peak) and the intra-node path (1.16×).
+  - **Flip the verdict, and decide it:**
+    - the **per-GPU NIC speed** (0.67× at 200 Gb/s);
+    - the **residual routing imbalance after EPLB** (0.62× at zipf 0.5, about no-EPLB imbalance).
 
 ## Session log
 
@@ -1946,6 +1953,32 @@ and an ADR first, L6c likewise; the `small` programme (L0, L1, L2, L3, L5, L5d a
 the ladder's own next step and needs no new code. The choice between "more `screen` variants" and
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
+
+### 2026-11-03 (19:55) — ADR-052 built and scored: **`039-i1-sglang`: point (b) inconclusive** (stated 1.09×; flips at IB 200 Gb/s and at zipf-0.5 routing)
+
+Code `28af353`:
+- `costmodel/deepseek_v3` (671 B / 36.6 B active, MLA absorbed decode);
+- the `deepseek_v3` rung, a layered round mode with 288 replica slots, and the two-tier fabric;
+- `route_draw = bulk` (Gumbel-top-k per round) and vectorized leg accounting; GC paused during runs, because rescanning the samples was quadratic (637 s → 75 s per full-scale run);
+- scenario `h100_sglang`, sourced to the H100 datasheet and to the READMEs at the post's date (DeepGEMM `78cacf7`, FlashMLA `a9444cd`, DeepEP `1a0c8f6`).
+
+DeepEP's README at that date settles one I39 item: the low-latency kernels were **pure RDMA**. ruff is clean, 142 tests pass, and S0 (`038`) reproduces unchanged.
+
+**`039`**: the stated run gives 19,349 tok/s per node, **1.088×** the 17,777 target (step p50 105.9 ms against the implied 115).
+
+| sweep arm | sim ÷ target |
+|---|---|
+| 2,000 keys | 1.09 |
+| NVLink inside a node | 1.16 |
+| attention at peak | 1.13 |
+| owner GEMMs at M = 4096 | 1.18 |
+| expert GEMMs × 1.14 | 1.10 |
+| PCIe | 0.97 |
+| seed 1 | 1.09 |
+| **InfiniBand 200 Gb/s** | **0.67** |
+| **zipf 0.5** (hottest GPU 2.8× mean, about "no EPLB") | **0.62** |
+
+**Verdict: inconclusive** by §7's pre-set rule. All-to-all is 64 % of a layer (combine 0.72 ms, dispatch 0.37 of 1.72), so the NIC speed decides it. Reported only: the `profile-data` configuration gives 16,839 tok/s per node without overlap, against 18,598 measured with overlap. I1 stays open, and I39 now names its two deciding inputs. `02 §14` is not met. Nothing running. Next rig id 040.
 
 ### 2026-11-03 (17:50) — **I1 started: ADR-052** (point (b) = SGLang's EP72 decode of DeepSeek-V3 on H100, scored without TBO); I39 opened
 

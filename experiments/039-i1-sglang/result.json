@@ -1,0 +1,198 @@
+{
+  "result_id": "039-i1-sglang",
+  "provenance": {
+    "date_utc": "2026-11-03T18:54:29+00:00",
+    "git_hash": "28af353f627a5225d242872694c4c326bbee83a9",
+    "git_dirty": false,
+    "driver_version": "615.71.09",
+    "torch_version": "2.13.0+cu130",
+    "torch_cuda_version": "13.0",
+    "python_version": "3.12.13",
+    "platform": "Linux-7.2.5-200.fc44.x86_64-x86_64-with-glibc2.43",
+    "gpus": [
+      {
+        "index": 0,
+        "name": "NVIDIA GeForce RTX 3060",
+        "uuid": "GPU-4673cc7d-9e44-4578-a9ca-48215bc5ddc8",
+        "sm": "8.6",
+        "multi_processor_count": 28,
+        "total_memory_bytes": 12543590400
+      },
+      {
+        "index": 1,
+        "name": "NVIDIA GeForce RTX 3060",
+        "uuid": "GPU-88074816-a56d-dc95-d744-6096efc59bfc",
+        "sm": "8.6",
+        "multi_processor_count": 28,
+        "total_memory_bytes": 12543590400
+      },
+      {
+        "index": 2,
+        "name": "NVIDIA GeForce RTX 3060",
+        "uuid": "GPU-8cb4f7cc-d2a2-fb38-c9ee-14dc7f1515ab",
+        "sm": "8.6",
+        "multi_processor_count": 28,
+        "total_memory_bytes": 12543590400
+      },
+      {
+        "index": 3,
+        "name": "NVIDIA GeForce RTX 3060",
+        "uuid": "GPU-56c7aa62-b07a-0d35-3792-44b0a78ef58d",
+        "sm": "8.6",
+        "multi_processor_count": 28,
+        "total_memory_bytes": 12543590400
+      }
+    ]
+  },
+  "bench": "i1_sglang",
+  "adr": "ADR-052",
+  "scenario": "h100_sglang",
+  "scenario_sha256": "3ef3e666b6e4cc8caf6f0903c867650956149a28867381813d429475bf4a30bf",
+  "target_tok_s_per_node": 17777.0,
+  "tolerance": 0.2,
+  "keys": 2050,
+  "stated": {
+    "tok_s_per_node": 19348.85503525362,
+    "round_p50_s": 0.0017684323811306274,
+    "step_p50_s": 0.10584605633090659,
+    "mean_rows_per_slot": 512.0,
+    "wire_bytes_per_token_iteration": 171407.02719907407,
+    "wall_s": 72.60640859603882,
+    "ratio": 1.0884207141392597
+  },
+  "split_stated": {
+    "attn_s": 0.0004325976351236256,
+    "dispatch_s": 0.0003732138666666667,
+    "experts_s": 0.0001812875953598705,
+    "combine_s": 0.0007238087111111112,
+    "post_s": 1.0955271641791044e-05,
+    "skel_in_per_step_s": 0.002362335942456637,
+    "skel_out_per_step_s": 0.0008397516256283186,
+    "rows_per_slot": 512
+  },
+  "sweep": [
+    {
+      "tok_s_per_node": 19409.778860231636,
+      "round_p50_s": 0.0017630306259791145,
+      "step_p50_s": 0.10551382448751707,
+      "mean_rows_per_slot": 512.0,
+      "wire_bytes_per_token_iteration": 171407.02719907407,
+      "wall_s": 72.87826418876648,
+      "name": "context_2000",
+      "input": "keys = the post's KV length 2,000 (stated 2,050)",
+      "ratio": 1.0918478292305585,
+      "within": true
+    },
+    {
+      "tok_s_per_node": 11921.064702836396,
+      "round_p50_s": 0.002904720884969833,
+      "step_p50_s": 0.17179673553090574,
+      "mean_rows_per_slot": 512.0,
+      "wire_bytes_per_token_iteration": 171407.02719907407,
+      "wall_s": 72.72153234481812,
+      "name": "nic_200g",
+      "input": "InfiniBand 200 Gb/s per GPU (placeholder 400; I39)",
+      "ratio": 0.6705892278132641,
+      "within": false
+    },
+    {
+      "tok_s_per_node": 20540.908326379966,
+      "round_p50_s": 0.0016636239142383338,
+      "step_p50_s": 0.09970347793090657,
+      "mean_rows_per_slot": 512.0,
+      "wire_bytes_per_token_iteration": 171407.02719907407,
+      "wall_s": 73.23371648788452,
+      "name": "nvlink_intra",
+      "input": "rows inside a node over NVLink, not RDMA (I39)",
+      "ratio": 1.155476645462112,
+      "within": true
+    },
+    {
+      "tok_s_per_node": 10995.310355402193,
+      "round_p50_s": 0.0031557344890771055,
+      "step_p50_s": 0.1862612271779833,
+      "mean_rows_per_slot": 512.0,
+      "wire_bytes_per_token_iteration": 171419.2422074553,
+      "wall_s": 80.85389375686646,
+      "name": "routing_zipf05",
+      "input": "residual imbalance: zipf s = 0.5 over the slots (I39)",
+      "ratio": 0.6185132674468241,
+      "within": false
+    },
+    {
+      "tok_s_per_node": 20163.54162676085,
+      "round_p50_s": 0.0016946979319460015,
+      "step_p50_s": 0.10156945827819826,
+      "mean_rows_per_slot": 512.0,
+      "wire_bytes_per_token_iteration": 171407.02719907407,
+      "wall_s": 73.1739399433136,
+      "name": "attn_peak",
+      "input": "attention core at nominal BF16 / HBM peak, not FlashMLA's (I39)",
+      "ratio": 1.134248839892043,
+      "within": true
+    },
+    {
+      "tok_s_per_node": 20948.19280485971,
+      "round_p50_s": 0.0016550821217764938,
+      "step_p50_s": 0.09776499667908777,
+      "mean_rows_per_slot": 512.0,
+      "wire_bytes_per_token_iteration": 171407.02719907407,
+      "wall_s": 72.96881937980652,
+      "name": "owner_m4096",
+      "input": "owner GEMMs at DeepGEMM's M = 4096 rate (stated M = 128)",
+      "ratio": 1.1783873997220966,
+      "within": true
+    },
+    {
+      "tok_s_per_node": 19598.235289893164,
+      "round_p50_s": 0.0017452600946640667,
+      "step_p50_s": 0.10449920463278427,
+      "mean_rows_per_slot": 512.0,
+      "wire_bytes_per_token_iteration": 171407.02719907407,
+      "wall_s": 72.90096497535706,
+      "name": "expert_x114",
+      "input": "expert GEMMs x 1.14 (DeepGEMM's 2025-04 speed-up)",
+      "ratio": 1.1024489671988054,
+      "within": true
+    },
+    {
+      "tok_s_per_node": 17302.130991633134,
+      "round_p50_s": 0.001967201934909721,
+      "step_p50_s": 0.11836692260568135,
+      "mean_rows_per_slot": 512.0,
+      "wire_bytes_per_token_iteration": 171407.02719907407,
+      "wall_s": 73.03481841087341,
+      "name": "pcie",
+      "input": "H100 PCIe instead of SXM (I39): rates x 0.765, HBM 2.0 TB/s",
+      "ratio": 0.973287449605284,
+      "within": true
+    },
+    {
+      "tok_s_per_node": 19354.794409641272,
+      "round_p50_s": 0.0017679170222228147,
+      "step_p50_s": 0.10581357552316974,
+      "mean_rows_per_slot": 512.0,
+      "wire_bytes_per_token_iteration": 171407.74533045976,
+      "wall_s": 72.81369924545288,
+      "name": "seed_1",
+      "input": "routing seed 1 (noise, not an input)",
+      "ratio": 1.0887548185656337,
+      "within": true
+    }
+  ],
+  "verdict": "inconclusive",
+  "flipping_inputs": [
+    "nic_200g",
+    "routing_zipf05"
+  ],
+  "reported_profile_data": {
+    "tok_s_per_node": 16838.658997601313,
+    "round_p50_s": 0.001011025945969482,
+    "step_p50_s": 0.06081244356488662,
+    "mean_rows_per_slot": 512.0,
+    "wire_bytes_per_token_iteration": 172467.4709837464,
+    "wall_s": 66.37979936599731,
+    "measured_with_overlap_tok_s_per_node": 18598
+  },
+  "reported_deepseek_production_tok_s_per_node": 14800
+}
