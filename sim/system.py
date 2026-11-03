@@ -22,7 +22,7 @@ from costmodel.config import Experts as CmExperts
 from costmodel.config import Model
 from costmodel.hardware import expert_step
 from sim.engine import Engine
-from sim.params import SimParams, attention_score_flops_per_token
+from sim.params import SimParams, attention_score_flops_per_token, log2_interp
 
 OwnerKind = Literal["skel_in", "attn", "post", "skel_out"]
 
@@ -322,16 +322,7 @@ class Simulation:
     def grouped_efficiency(self, b: int) -> float:
         """Grouped-GEMM efficiency vs dense at `b` tokens per expert: the scenario's table,
         linear in log2(b) between points, clamped at the ends (decision 1)."""
-        table = self.p.grouped_eff
-        if b <= table[0][0]:
-            return table[0][1]
-        if b >= table[-1][0]:
-            return table[-1][1]
-        for (b0, e0), (b1, e1) in zip(table, table[1:], strict=False):
-            if b0 <= b <= b1:
-                f = (math.log2(b) - math.log2(b0)) / (math.log2(b1) - math.log2(b0))
-                return e0 + f * (e1 - e0)
-        raise AssertionError("unreachable")
+        return log2_interp(self.p.grouped_eff, b)
 
     def expert_step_s(self, b: int) -> tuple[float, float]:
         """`costmodel.expert_step` with the grouped-GEMM efficiency on its compute term; the
@@ -344,7 +335,8 @@ class Simulation:
         return p.job_time("expert", roof), flops
 
     def owner_step_s(self, kind: str, n: int) -> tuple[float, float]:
-        """Batched owner work: max(FLOPs / φ, (weights + KV reads) / β_C) (decision 6)."""
+        """Batched owner work: max(FLOPs / φ, (weights + KV reads) / β_C) (decision 6), divided
+        by the scenario's efficiency at n sequences (decision 13; 1 when absent)."""
         p = self.p
         if kind == "attn":
             flops = n * (p.attn_proj_flops + self.score_flops)
@@ -359,7 +351,8 @@ class Simulation:
         else:
             flops = n * p.skel_out_flops
             nbytes = p.skel_weight_bytes + p.head_weight_bytes + n * 2 * self.kv_bytes_per_layer
-        return p.job_time(kind, max(flops / p.phi, nbytes / p.beta_c)), flops
+        roof = max(flops / p.phi, nbytes / p.beta_c) / p.owner_efficiency(kind, n)
+        return p.job_time(kind, roof), flops
 
     # ---- run and report ----------------------------------------------------------------------
     def run(self) -> dict[str, Any]:

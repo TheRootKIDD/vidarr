@@ -22,8 +22,25 @@ from model.model import BigMoE
 from model.moe import MoE
 
 STEPS = [
-    "L0", "L1", "L2", "L3", "L3b", "L3c", "L5", "L5-ne1", "L5-ne13", "L5-pm", "L5-noej", "L5b",
-    "L5c", "L5d", "L5e", "L6", "L6c", "L7-g4", "L7b",
+    "L0",
+    "L1",
+    "L2",
+    "L3",
+    "L3b",
+    "L3c",
+    "L5",
+    "L5-ne1",
+    "L5-ne13",
+    "L5-pm",
+    "L5-noej",
+    "L5b",
+    "L5c",
+    "L5d",
+    "L5e",
+    "L6",
+    "L6c",
+    "L7-g4",
+    "L7b",
     "L4",
 ]
 
@@ -312,10 +329,15 @@ def test_act_gate_is_graves_mean_field_output() -> None:
     pos = torch.arange(t)
     c0 = torch.randn(b, t, cfg.d)
     st = IterState(
-        c=c0, p=None, active=torch.ones(b, t, dtype=torch.bool),
-        r=torch.zeros(b, t, dtype=torch.long), cum_halt=torch.zeros(b, t),
-        remainder=torch.zeros(b, t), frozen_kv=None,
-        frozen=torch.zeros(b, t, dtype=torch.bool), loads=[],
+        c=c0,
+        p=None,
+        active=torch.ones(b, t, dtype=torch.bool),
+        r=torch.zeros(b, t, dtype=torch.long),
+        cum_halt=torch.zeros(b, t),
+        remainder=torch.zeros(b, t),
+        frozen_kv=None,
+        frozen=torch.zeros(b, t, dtype=torch.bool),
+        loads=[],
     )
     with torch.no_grad():
         st1, _ = mid.iteration(st, 1, pos, None, force_active=False)
@@ -378,10 +400,15 @@ def test_l6c_stopped_tokens_stay_stopped_and_keep_their_state() -> None:
     b, t = 2, 16
     pos = torch.arange(t)
     st = IterState(
-        c=torch.randn(b, t, cfg.d), p=None, active=torch.ones(b, t, dtype=torch.bool),
-        r=torch.zeros(b, t, dtype=torch.long), cum_halt=torch.zeros(b, t),
-        remainder=torch.zeros(b, t), frozen_kv=None,
-        frozen=torch.zeros(b, t, dtype=torch.bool), loads=[],
+        c=torch.randn(b, t, cfg.d),
+        p=None,
+        active=torch.ones(b, t, dtype=torch.bool),
+        r=torch.zeros(b, t, dtype=torch.long),
+        cum_halt=torch.zeros(b, t),
+        remainder=torch.zeros(b, t),
+        frozen_kv=None,
+        frozen=torch.zeros(b, t, dtype=torch.bool),
+        loads=[],
     )
     with torch.no_grad():
         for j in range(1, 6):
@@ -639,9 +666,15 @@ def test_l5e_h_writes_active_tokens_only() -> None:
     active = torch.ones(b, t, dtype=torch.bool)
     active[0, ::3] = False
     st = IterState(
-        c=c, p=None, active=active, r=torch.zeros(b, t, dtype=torch.long),
-        cum_halt=torch.zeros(b, t), remainder=torch.zeros(b, t), frozen_kv=None,
-        frozen=torch.zeros(b, t, dtype=torch.bool), loads=[],
+        c=c,
+        p=None,
+        active=active,
+        r=torch.zeros(b, t, dtype=torch.long),
+        cum_halt=torch.zeros(b, t),
+        remainder=torch.zeros(b, t),
+        frozen_kv=None,
+        frozen=torch.zeros(b, t, dtype=torch.bool),
+        loads=[],
     )
     with torch.no_grad():
         out = m._apply_h(st, torch.arange(t))
@@ -713,7 +746,9 @@ def test_l3b_evaluates_every_head_in_every_phase() -> None:
     with torch.no_grad():
         out = m.loss(toks)
     assert {k for k in out.metrics if k.startswith("mtp_accept_h")} == {
-        "mtp_accept_h2", "mtp_accept_h3", "mtp_accept_h4"
+        "mtp_accept_h2",
+        "mtp_accept_h3",
+        "mtp_accept_h4",
     }
 
 

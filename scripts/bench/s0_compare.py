@@ -3,9 +3,10 @@ measured `s0_ep_decode` result, at every z, with measured routing shares and wit
 
 Pass = throughput and per-iteration p50 within ±20 % at every z. Nothing is fitted: the scenario
 is read as it stands (its `software` section included, if any), and `--no-software` reproduces the
-comparison without the fixed per-job costs (ADR-049's original model).
+comparison without the fixed per-job costs (ADR-049's original model). Beside the full model it
+also reports the run without the owner efficiency table (ADR-051 §5: η = 1, ADR-050's model).
 
-Run: `python -m scripts.bench.s0_compare --measured 034-s0-ep-decode --id 036-s0-rescore`
+Run: `python -m scripts.bench.s0_compare --measured 034-s0-ep-decode --id 038-s0-rescore-eta`
 """
 
 from __future__ import annotations
@@ -23,7 +24,9 @@ from sim.system import simulate
 TOL = 0.20
 
 
-def compare(measured: dict[str, Any], scenario: str, software: bool, seed: int) -> list[dict]:
+def compare(
+    measured: dict[str, Any], scenario: str, software: bool, seed: int, eta: bool = True
+) -> list[dict]:
     rows = []
     for r in measured["results"]:
         z = r["z"]
@@ -37,6 +40,8 @@ def compare(measured: dict[str, Any], scenario: str, software: bool, seed: int) 
                 "t_coll_s": None,
             }
         )
+        if not (software and eta):
+            off["owner_eff"] = ()
         row: dict[str, Any] = {
             "z": z,
             "context_tokens": keys,
@@ -86,6 +91,7 @@ def main() -> None:
     scen = Path(__file__).resolve().parents[2] / "sim" / "scenarios" / f"{args.scenario}.yaml"
     with_sw = compare(measured, args.scenario, True, args.seed)
     without = compare(measured, args.scenario, False, args.seed)
+    no_eta = compare(measured, args.scenario, True, args.seed, eta=False)
     for row in with_sw:
         e = row["empirical"]
         print(
@@ -95,13 +101,14 @@ def main() -> None:
         )
     payload = {
         "bench": "s0_compare",
-        "adr": "ADR-050",
+        "adr": "ADR-050, ADR-051",
         "measured": args.measured,
         "measured_git_hash": measured["provenance"]["git_hash"],
         "scenario": args.scenario,
         "scenario_sha256": hashlib.sha256(scen.read_bytes()).hexdigest(),
         "tolerance": TOL,
         "with_software": with_sw,
+        "without_owner_efficiency": no_eta,
         "without_software": without,
         "passed": all(r["pass"] for r in with_sw),
     }

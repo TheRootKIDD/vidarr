@@ -191,3 +191,34 @@ def test_round_policy_needs_whole_rounds_and_empirical_needs_probs() -> None:
         small(batch_policy="round", tokens=301)
     with pytest.raises(ValueError, match="route_probs"):
         small(routing="empirical")
+
+
+def test_owner_efficiency_divides_the_owner_roofline() -> None:
+    """Decision 13 (ADR-051): η = 1 (or no table) is ADR-050's owner time exactly; a table
+    point is honoured, read in log2(n) between points and clamped at the ends."""
+    zero = {f"t0_{kd}_s": 0.0 for kd in ("skel_in", "attn", "post", "skel_out", "expert")}
+    bare = Simulation(small(owner_eff=(), **zero))
+    ones = Simulation(small(owner_eff=(("attn", ((1, 1.0), (256, 1.0))),), **zero))
+    for n in (1, 7, 64, 300):
+        assert ones.owner_step_s("attn", n) == bare.owner_step_s("attn", n)
+    table = (("attn", ((4, 1.0), (64, 0.5))), ("skel_in", ((1, 0.8),)))
+    half = Simulation(small(owner_eff=table, **zero))
+    assert half.owner_step_s("attn", 64)[0] == pytest.approx(2 * bare.owner_step_s("attn", 64)[0])
+    assert half.owner_step_s("attn", 1000)[0] == pytest.approx(
+        2 * bare.owner_step_s("attn", 1000)[0]
+    )
+    assert half.owner_step_s("attn", 2) == bare.owner_step_s("attn", 2)  # clamped at 1.0
+    assert half.p.owner_efficiency("attn", 16) == pytest.approx(0.75)  # halfway in log2
+    assert half.owner_step_s("skel_in", 9)[0] == pytest.approx(
+        bare.owner_step_s("skel_in", 9)[0] / 0.8
+    )
+    assert half.owner_step_s("post", 9) == bare.owner_step_s("post", 9)  # no table: η = 1
+    assert half.expert_step_s(64) == bare.expert_step_s(64)  # experts keep decision 1's table
+    with_t0 = Simulation(small(owner_eff=table, compose="sum", t0_attn_s=1e-3))
+    assert with_t0.owner_step_s("attn", 64)[0] == pytest.approx(
+        1e-3 + 2 * bare.owner_step_s("attn", 64)[0]
+    )
+    with pytest.raises(ValueError, match="owner kind"):
+        small(owner_eff=(("expert", ((1, 0.5),)),))
+    with pytest.raises(ValueError, match="0 < eta"):
+        small(owner_eff=(("attn", ((1, 1.2),)),))

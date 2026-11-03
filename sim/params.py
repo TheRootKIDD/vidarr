@@ -90,6 +90,9 @@ class SimParams:
     t0_expert_s: float = 0.0
     compose: Compose = "sum"
     t_coll_s: float | None = None  # None: the per-message latency floor stands in
+    # owner-stage efficiency vs batch (ADR-051, decision 13): per owner kind, (sequences, eta)
+    # points; the work term is roofline / eta. Absent kind or empty = 1 (peak)
+    owner_eff: tuple[tuple[str, tuple[tuple[int, float], ...]], ...] = ()
 
     # ---- workload --------------------------------------------------------------------------
     z: int = 256  # sequences in flight = decode tokens in flight (closed loop)
@@ -110,8 +113,12 @@ class SimParams:
             self,
             "hardware",
             Hardware(
-                phi=self.phi, beta_c=self.beta_c, m_c=self.m_c, lambda_c=self.lambda_c,
-                U=self.U, s_min=self.s_min,
+                phi=self.phi,
+                beta_c=self.beta_c,
+                m_c=self.m_c,
+                lambda_c=self.lambda_c,
+                U=self.U,
+                s_min=self.s_min,
             ),
         )
         num = Numerics(b_w=self.b_w, b_act=self.b_act, b_kv=self.b_kv)
@@ -128,6 +135,11 @@ class SimParams:
             raise ValueError("round policy: tokens and warmup_tokens must be multiples of z")
         if self.routing == "empirical" and len(self.route_probs) != self.n_e:
             raise ValueError("routing = empirical needs route_probs with N_e entries")
+        for kind, table in self.owner_eff:
+            if kind not in OWNER_KINDS:
+                raise ValueError(f"owner_eff: {kind} is not an owner kind {OWNER_KINDS}")
+            if not table or any(not 0.0 < e <= 1.0 for _, e in table):
+                raise ValueError(f"owner_eff[{kind}]: need a non-empty table with 0 < eta <= 1")
 
     def t0(self, kind: str) -> float:
         return float(getattr(self, f"t0_{kind}_s"))
@@ -136,6 +148,12 @@ class SimParams:
         """compose(t0, roofline) for one job (decision 12)."""
         t0 = self.t0(kind)
         return max(t0, roofline_s) if self.compose == "max" else t0 + roofline_s
+
+    def owner_efficiency(self, kind: str, n: int) -> float:
+        """η of an owner kind at n sequences: the scenario's table, linear in log2(n), clamped
+        at the ends; 1 where the scenario has none (ADR-051 §1)."""
+        table = dict(self.owner_eff).get(kind)
+        return log2_interp(table, n) if table else 1.0
 
     @property
     def collective_s(self) -> float:
@@ -173,8 +191,10 @@ def check_sources(doc: Any, path: str = "", inherited: bool = False) -> None:
         numeric = isinstance(val, int | float) and not isinstance(val, bool)
         if numeric and not here:
             raise ValueError(f"scenario value {sub} has no source line")
-        if isinstance(val, list) and not here and any(
-            isinstance(v, int | float) and not isinstance(v, bool) for v in val
+        if (
+            isinstance(val, list)
+            and not here
+            and any(isinstance(v, int | float) and not isinstance(v, bool) for v in val)
         ):
             raise ValueError(f"scenario value {sub} has no source line")
         check_sources(val, sub, here)
@@ -215,10 +235,30 @@ def _software_fields(sw: dict[str, Any] | None) -> dict[str, Any]:
     out: dict[str, Any] = {f"t0_{k}_s": float(t0[k]) for k in SOFTWARE_KINDS}
     out["compose"] = str(sw["compose"])
     out["t_coll_s"] = float(sw["t_coll_s"])
+    eff = sw.get("owner_efficiency") or {}
+    out["owner_eff"] = tuple(
+        (kind, tuple(sorted((int(n), float(e)) for n, e in eff[kind].items())))
+        for kind in OWNER_KINDS
+        if kind in eff
+    )
     return out
 
 
 SOFTWARE_KINDS = ("skel_in", "attn", "post", "skel_out", "expert")
+OWNER_KINDS = ("skel_in", "attn", "post", "skel_out")
+
+
+def log2_interp(table: tuple[tuple[int, float], ...], b: int) -> float:
+    """A (batch, value) table read at b: linear in log2(b) between points, clamped at the ends."""
+    if b <= table[0][0]:
+        return table[0][1]
+    if b >= table[-1][0]:
+        return table[-1][1]
+    for (b0, e0), (b1, e1) in zip(table, table[1:], strict=False):
+        if b0 <= b <= b1:
+            f = (math.log2(b) - math.log2(b0)) / (math.log2(b1) - math.log2(b0))
+            return e0 + f * (e1 - e0)
+    raise AssertionError("unreachable")
 
 
 # ---- model shape -----------------------------------------------------------------------------
@@ -234,11 +274,17 @@ def _model_fields(rung: str, context_tokens: int | None) -> dict[str, Any]:
         raise NotImplementedError("granularity g > 1 (L7) is milestone 2")
     a = cfg.attention
     cm = Model(
-        d=cfg.d, vocab=cfg.vocab, early_blocks=cfg.early_blocks, final_blocks=cfg.final_blocks,
-        r_max=cfg.middle.r_max, depth_embed=cfg.middle.depth_embed,
+        d=cfg.d,
+        vocab=cfg.vocab,
+        early_blocks=cfg.early_blocks,
+        final_blocks=cfg.final_blocks,
+        r_max=cfg.middle.r_max,
+        depth_embed=cfg.middle.depth_embed,
         attn=CmAttention(heads=a.heads, kv_heads=a.kv_heads, head_dim=a.head_dim, window=a.window),
         experts=CmExperts(
-            n_e=cfg.router.n_experts, k=cfg.router.k, d_ff=cfg.expert_width(),
+            n_e=cfg.router.n_experts,
+            k=cfg.router.k,
+            d_ff=cfg.expert_width(),
             L_e=cfg.experts.layers,
         ),
     )

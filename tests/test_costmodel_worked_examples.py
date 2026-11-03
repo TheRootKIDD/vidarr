@@ -190,8 +190,14 @@ def test_small_dense_training_flops_matches_0_6_gflop_anchor() -> None:
     which is the evidence that the anchor is a non-embedding figure.
     """
     fwd = dense_baseline_flops_per_token(
-        layers=12, d=768, d_ff=2048, q_width=768, kv_width=256,
-        n_keys=1024, vocab=32_000, include_head=False,
+        layers=12,
+        d=768,
+        d_ff=2048,
+        q_width=768,
+        kv_width=256,
+        n_keys=1024,
+        vocab=32_000,
+        include_head=False,
     )
     assert 3 * fwd == pytest.approx(0.6e9, rel=0.10)
 
@@ -199,8 +205,14 @@ def test_small_dense_training_flops_matches_0_6_gflop_anchor() -> None:
 def test_medium_dense_training_flops_matches_2_gflop_anchor() -> None:
     """`docs/06 §3`: ~2.0 GFLOP/token for `medium` at context 2048."""
     fwd = dense_baseline_flops_per_token(
-        layers=24, d=1024, d_ff=2816, q_width=1024, kv_width=256,
-        n_keys=1024, vocab=32_000, include_head=False,
+        layers=24,
+        d=1024,
+        d_ff=2816,
+        q_width=1024,
+        kv_width=256,
+        n_keys=1024,
+        vocab=32_000,
+        include_head=False,
     )
     assert 3 * fwd == pytest.approx(2.0e9, rel=0.10)
 

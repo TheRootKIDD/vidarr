@@ -1,5 +1,6 @@
 """Fixed cost per job of S0's decode stack (ADR-050 §3): time vs rows for each job kind, and
-the latency of the harness's collectives. Feeds `local_3060.yaml`'s `software` section.
+the latency of the harness's collectives; and the owner kinds' efficiency against batch
+(ADR-051 §2-3). Feeds the whole of `local_3060.yaml`'s `software` section.
 
 Every card runs the same sweep at once (one process each), so CPU contention matches
 `s0_ep_decode`. Each job is the exact code of one harness phase (`scripts/bench/s0_ep_decode.py`,
@@ -17,9 +18,12 @@ caches alone would pass the 10 GiB ceiling. The expert runs the whole row sweep.
 Collectives: a counts
 `all_to_all_single` (4 int64) and a rows `all_to_all_single` at S0's per-rank sizes. The roofline
 of each kind is `sim/`'s own (decisions 1, 6, 12 with t0 = 0), so `compose` ∈ {max, sum} is chosen
-by which reproduces this bench's own curve, never by S0.
+by which reproduces this bench's own curve, never by S0. Then, under that rule, each owner kind's
+efficiency is η(n) = min(1, roofline(n) / measured work(n)), the work being t(n) - t0 under `sum`
+and t(n) under `max` (ADR-051 §2).
 
-Run on an idle rig only: `python -m scripts.bench.bench_job_overhead --id 035-job-overhead`
+Run on an idle rig only: `python -m scripts.bench.bench_job_overhead --id 037-job-overhead-eta`
+(`035-job-overhead` was the ADR-050 run, on powers of two only.)
 """
 
 from __future__ import annotations
@@ -44,6 +48,10 @@ from scripts.train.train import gpu_thermals
 
 ROOT = Path(__file__).resolve().parents[2]
 KINDS = ("skel_in", "attn", "post", "skel_out", "expert")
+OWNER_KINDS = KINDS[:4]
+# ADR-051 §3: the owner grid (1-256 sequences, denser where η moves) joined with the expert's
+# powers of two to 1024 rows
+ROWS = sorted({1, 2, 4, 8, 16, 32, 48, 64, 96, 128, 192, 256} | {2**i for i in range(11)})
 
 
 def _sync() -> float:
@@ -229,7 +237,10 @@ def _sim_rooflines(meas: Curve, keys: int) -> Curve:
     from sim.system import Simulation
 
     zero = {f"t0_{kd}_s": 0.0 for kd in SOFTWARE_KINDS}
-    sim = Simulation(load_params("local_3060", "L5", context_tokens=keys, compose="sum", **zero))
+    bare = load_params(
+        "local_3060", "L5", context_tokens=keys, compose="sum", owner_eff=(), **zero
+    )  # peak rooflines: no fixed cost and η = 1, whatever the scenario holds
+    sim = Simulation(bare)
     roof: Curve = {}
     for kd, pts in meas.items():
         step = sim.expert_step_s if kd == "expert" else lambda b, kd=kd: sim.owner_step_s(kd, b)
@@ -253,11 +264,24 @@ def _compose_fit(meas: Curve, roof: Curve) -> dict[str, Any]:
     return res
 
 
+def _owner_efficiency(meas: Curve, roof: Curve, fit: dict[str, Any]) -> dict[str, dict[int, float]]:
+    """η per owner kind and sequence count (ADR-051 §2), under the compose rule already chosen."""
+    out: dict[str, dict[int, float]] = {}
+    for kd in OWNER_KINDS:
+        t0 = fit["t0_s"][kd]
+        table = {}
+        for (n, t), (_, r) in zip(meas[kd], roof[kd], strict=True):
+            w = t - t0 if fit["compose"] == "sum" else t
+            table[n] = 1.0 if w <= 0 else min(1.0, r / w)
+        out[kd] = table
+    return out
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--id", required=True)
     ap.add_argument("--run", default="132-l5-small-s0")
-    ap.add_argument("--rows", type=int, nargs="+", default=[2**i for i in range(11)])
+    ap.add_argument("--rows", type=int, nargs="+", default=ROWS)
     ap.add_argument("--keys", type=int, default=1792)
     ap.add_argument("--max-owner", type=int, default=256, help="largest owner batch")
     ap.add_argument("--z", type=int, nargs="+", default=[16, 64, 256, 1024])
@@ -284,6 +308,7 @@ def main() -> None:
     }
     roof = _sim_rooflines(meas, args.keys)
     fit = _compose_fit(meas, roof)
+    eta = _owner_efficiency(meas, roof, fit)
     coll = per_rank[0]["collectives"]
     # t_coll (ADR-050 §2): one collective as the harness runs it, at the smallest size: the
     # return phase at the smallest z, median over the cards. The dispatch phase is reported
@@ -303,7 +328,7 @@ def main() -> None:
     therm = list(out["thermal"])
     payload = {
         "bench": "bench_job_overhead",
-        "adr": "ADR-050",
+        "adr": "ADR-050, ADR-051",
         "run": args.run,
         "stack": "PyTorch eager + model/decode.py (reference), bf16, NCCL_P2P_DISABLE=1",
         "args": vars(args),
@@ -311,6 +336,7 @@ def main() -> None:
         "measured_s": meas,
         "sim_roofline_s": roof,
         "fit": fit,
+        "owner_efficiency": eta,
         "t_coll_s": t_coll,
         "collectives_rank0": coll,
         "collective_model_check": coll_check,
@@ -326,6 +352,8 @@ def main() -> None:
     t0_ms = {kd: round(v * 1e3, 3) for kd, v in fit["t0_s"].items()}
     print("fit", fit["compose"], fit["worst_overall"], "t0 ms", t0_ms)
     print("t_coll ms", round(t_coll * 1e3, 4))
+    for kd, table in eta.items():
+        print("eta", kd, {n: round(e, 3) for n, e in table.items()})
     for c in coll_check:
         print({k: (round(v * 1e3, 4) if isinstance(v, float) else v) for k, v in c.items()})
     if args.dry:
