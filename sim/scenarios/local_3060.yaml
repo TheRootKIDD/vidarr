@@ -82,6 +82,24 @@ fabric:
   lambda_c_bytes_per_s: 3.59e9
   lambda_c_source: same as lambda_link (U=1 rig; see note)
 
+software:
+  # ADR-050: the fixed cost per job of S0's stack (PyTorch eager + model/decode.py reference
+  # decode, bf16, NCCL_P2P_DISABLE=1, four processes at once). A property of this rig AND this
+  # software, not of the chip; a scenario without this section models no fixed cost.
+  stack: PyTorch 2.13.0+cu130 eager + model/decode.py (tree 48c3ed2), bf16
+  t0_s:
+    skel_in: 0.001368
+    attn: 0.001107
+    post: 8.372e-05
+    skel_out: 0.001508
+    expert: 0.0001899
+  t0_note: median time of each job kind at one row/sequence, four cards at once (attention kinds at 1792 keys)
+  compose: sum
+  compose_note: worst relative error over the bench's own sweep, max 0.59 vs sum 0.31
+  t_coll_s: 5.262e-05
+  t_coll_note: one all_to_all_single as the harness runs it (return phase at z = 16), median over cards
+  source: experiments/035-job-overhead
+
 tiers:
   hot:
     bandwidth_bytes_per_s: 342e9

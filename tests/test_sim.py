@@ -3,6 +3,8 @@ liveness, the compute bound, and the scenario source-line rule. Toy-sized; < 10 
 
 from __future__ import annotations
 
+import dataclasses as dc
+
 import pytest
 
 from sim.engine import Engine
@@ -76,7 +78,9 @@ def test_every_admitted_token_completes_and_nothing_is_left_queued() -> None:
 
 # ---- the compute bound (docs/02 §2) ----------------------------------------------------------
 def test_saturated_single_expert_runs_compute_bound_batches() -> None:
-    p = small(n_e=1, k=1, n_units=1, r=1, z=2048, tokens=4096, warmup_tokens=1024)
+    # the roofline alone (ADR-043 decision 1): the fixed cost per job is switched off here
+    no_t0 = {f"t0_{kd}_s": 0.0 for kd in ("skel_in", "attn", "post", "skel_out", "expert")}
+    p = small(n_e=1, k=1, n_units=1, r=1, z=2048, tokens=4096, warmup_tokens=1024, **no_t0)
     sim = Simulation(p)
     out = sim.run()
     assert max(sim.batch_sizes) == p.batch_threshold  # bursts fill the queue to the threshold
@@ -147,7 +151,8 @@ def test_round_policy_reproduces_the_hand_timeline(compose: str) -> None:
     plus unit 0's 2 vectors to owner 1 (R); both owners run `post` on 2 tokens (P). Each job is
     compose(t0, roofline), with the rooflines taken from a t0 = 0 copy."""
     p = _round_params(compose=compose, **T0)
-    bare = Simulation(_round_params())
+    zero = {f"t0_{kd}_s": 0.0 for kd in ("skel_in", "attn", "post", "skel_out", "expert")}
+    bare = Simulation(_round_params(compose="sum", **zero))
 
     def job(kind: str, n: int) -> float:
         roof = bare.expert_step_s(n)[0] if kind == "expert" else bare.owner_step_s(kind, n)[0]
@@ -169,9 +174,16 @@ def test_round_policy_reproduces_the_hand_timeline(compose: str) -> None:
         assert b_s == T0["t0_attn_s"] and c_s == T0["t0_expert_s"]  # t0 dominates at 2-4 rows
 
 
-def test_scenario_without_software_section_models_no_fixed_cost() -> None:
-    p = small()
-    assert p.t0("expert") == 0.0 and p.compose == "sum" and p.collective_s == p.link_latency_s
+def test_software_section_is_read_and_absent_means_none() -> None:
+    from sim.params import SimParams, _software_fields
+
+    assert _software_fields(None) == {}
+    defaults = {f.name: f.default for f in dc.fields(SimParams)}
+    assert defaults["t0_expert_s"] == 0.0 and defaults["t_coll_s"] is None  # not modelled
+    p = small()  # local_3060 carries the section (035, ADR-050 §4)
+    assert p.t0("attn") > 0 and p.collective_s > 0 and p.compose in ("max", "sum")
+    doc = load_scenario("local_3060")["software"]
+    assert doc["source"].startswith("experiments/035")
 
 
 def test_round_policy_needs_whole_rounds_and_empirical_needs_probs() -> None:
