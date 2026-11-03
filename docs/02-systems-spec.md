@@ -41,6 +41,7 @@ Inputs: windowed co-activation matrix $A_{ii'}$ (from router logs), per-expert l
 - **Expert unit**: per-expert queue $Q_i$; fires when $|Q_i| \ge b_{min}$ or the oldest entry has waited $\ge w_{max}$.
 - **Memory shards**: knowledge-table partitions with the same queue policy.
 Every unit may play all three roles (managed aggregation, §6).
+- **Round policy (measurement only; ADR-049).** S0's harness, and `sim/`'s matching `batch_policy = round`, replace the threshold and the timeout with a barrier. Iteration $j$ of all $z$ tokens in flight is one round. Each owner runs each stage (early blocks, attention, final blocks) once on all its tokens. Each expert fires once per round, when every token's dispatch for that round has arrived. It is the lockstep limit of the scheduler above, not the scheduler itself, and it calibrates the cost terms (expert step, links, owner roofline), not $w_{max}$ (I35).
 
 ### 5.2 Token lifecycle per iteration
 dispatch ($k$ experts + memory) → attention (local, overlapped) → collect → sum → halting check → next iteration, or exit to final blocks and output.

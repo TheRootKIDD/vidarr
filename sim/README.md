@@ -1,6 +1,6 @@
 # sim/ — discrete-event simulator of `docs/02`
 
-Milestone 1 (ADR-043). It is enough to attempt S0 once a measured S0 run exists. No
+Milestone 1 (ADR-043), plus the round policy of milestone 1.1 (ADR-049, decision 11). It is enough to attempt S0 once a measured S0 run exists. No
 S-result may be quoted from it until both calibration points of `02 §14` pass (S0 and I1).
 
 | file | role |
@@ -78,12 +78,20 @@ beyond the `costmodel` local-traffic term; expert-choice balancing in time (`02 
 10. **Measurement window**: from the `warmup_tokens`-th completion to the last admission.
     There the number of tokens in flight is exactly `z`, so $Z = XL$ is a check on the event
     accounting, not an assumption.
+11. **Round policy** (`batch_policy = round`, milestone 1.1, ADR-049 §5): S0's barrier. An
+    owner stage (early blocks, attention, final blocks) runs once on all of that owner's tokens.
+    Each expert fires once per iteration, as soon as the last of that iteration's dispatches to
+    it has arrived; there is no threshold and no timeout. The iteration latency is sampled once
+    per owner per iteration, from its attention job's start to its last return, as the harness
+    measures it. `tokens` and `warmup_tokens` must be multiples of $z$. Routing `empirical`
+    takes per-expert weights (`route_probs`) from the harness's histogram.
 
 ## S0: the calibration still to do
 
 S0 (`docs/03`, `06 §6`) compares this simulator on `local_3060` with a **measured**
-expert-parallel inference run of the `small` model on the four cards. That run does not
-exist yet. Its script must, at fixed $z$ ∈ {16, 64, 256, 1024} decode sequences in flight
+expert-parallel inference run of the `small` model on the four cards. The script is
+`scripts/bench/s0_ep_decode.py` (ADR-049, bulk-synchronous rounds; compare with
+`--policy round --routing empirical`). The original requirements: it must, at fixed $z$ ∈ {16, 64, 256, 1024} decode sequences in flight
 and a fixed $r$:
 
 - place experts and owners exactly as decisions 2–3 (or record its own placement, and the
