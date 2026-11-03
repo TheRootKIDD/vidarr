@@ -96,6 +96,12 @@ beyond the `costmodel` local-traffic term; expert-choice balancing in time (`02 
     `owner_efficiency` table, interpolated in $\log_2 n$ and clamped at the ends. It is defined as
     min(1, roofline / measured work term) from the bench (`037` on `local_3060`), and is 1 when
     absent. Expert jobs keep decision 1's grouped-GEMM table.
+14. **Layered round mode and two-tier fabric** (ADR-052, calibration point (b)): a layered
+    model (DeepSeek-V3 from `costmodel/`) runs one round per MoE layer, each with its own expert
+    set of the same shape and placement. Dense layers, embedding, head and the shared expert are
+    owner jobs. Experts sit in replica slots (256 + 32 over 72 GPUs, 4 each), and routing is
+    uniform over the slots. A dispatched row costs $\lambda_{intra}$ within a node and
+    $\lambda_{inter}$ across nodes, plus the per-collective latency.
 
 ## S0: the calibration still to do
 

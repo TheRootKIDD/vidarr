@@ -879,6 +879,43 @@ and η table in the bench; a unit test that η = 1 reproduces ADR-050's times ex
 table point is honoured; and `s0_compare`'s without-η column. GPU time ≈ 15 min. Touches I38, I35
 (still open) and I4.
 
+### ADR-052 — Calibration point (b) (I1): SGLang's EP72 decode of DeepSeek-V3 on H100s, scored without two-batch overlap; `sim/` gains a layered round mode and a two-tier fabric
+2026-11-03 · accepted (the user's decision: "yes, draft the I1 ADR with SGLang"; the source was chosen over DeepSeek's production overview and `profile-data`, see the session log 2026-11-03 17:50)
+Context: S0 passed (`038`, ADR-051), so `02 §14` now waits on point (b): a published expert-parallel deployment within ±20 %. Of the three candidates, only the SGLang team's post (LMSYS, 2025-05-05, "large-scale EP on 96 H100 GPUs"; reproduction in sglang issue #6017) publishes a configuration that can be set up:
+- **The decode run.** 9 nodes × 8 H100, DP attention 72, EP72. DeepEP runs in low-latency mode, with two-batch overlap (TBO), CUDA graphs at batch 256, and 32 redundant experts placed from a fixed distribution "matching the input/output data".
+- **The workload.** 2,000-token inputs and 100-token outputs. Decode is saturated at 256 sequences per GPU: decode is slowed until the batch fills, then resumed, and the "gen throughput" log lines are read.
+- **The result.** **22,282 tok/s per node.** The TBO section gives 22,310 for the same run, a 0.13 % disagreement inside the post, and says TBO is a **25.5 %** speedup there.
+
+DeepSeek's production figure (14.8k tok/s per H800 node) is a 24 h average over unknown load, so it cannot be set up. `profile-data` gives traces, not a throughput, and uses an artificially balanced routing.
+
+**Correction to the proposal.** The proposal's "no-overlap 12,929 tok/s per node" is from the post's *simulated-MTP* run: batch 128, KV 4,000, with dummy kernels added after attention by an unstated amount. That run cannot be modelled and is not used. The default run publishes no absolute no-TBO number, only the 25.5 % ratio.
+Decision:
+1. **The scored number.** No-TBO decode throughput $X_b$ = 22,310 / 1.255 = **17,777 tok/s per node** (2,222 per GPU), derived from the post's two figures for the same run. With batch $B$ = 256 per GPU, the matching step time is $B / (X_b/8)$ = 115 ms per decode step, or ≈ 1.9 ms per layer. `sim/` has no overlap model, and without TBO each GPU runs attention → dispatch → experts → combine layer by layer in lockstep with the EP group. That is the round policy (decision 11). **The TBO number (22,282) is not scored**: it needs an overlap policy and its own ADR.
+2. **Pass rule** (`02 §14`): sim throughput within ±20 % of $X_b$. Iteration latency is not an independent check here. In a closed loop at a fixed batch it is $B$ / throughput, and the post gives no decode latency of its own (only "ITL ≈ 100 ms" for the whole system). So **point (b) is a single number**, weaker than S0's two. This is recorded as such, not dressed up.
+   - **Reported, not scored:** the per-layer split against the post's text (dispatch ≈ 0.17 ms per layer, of which ≈ 0.06 ms occupies SMs; combine ≈ 2× DeepSeek's; MoE kernels 25 % slower than DeepSeek's); DeepSeek's 14.8k and `profile-data`'s 18,598 tok/s per node, with their overlap caveat.
+3. **The model shape** (`costmodel/`, pure and unit-tested). A `deepseek_v3` shape from the V3 technical report (arXiv:2412.19437) and its released config:
+   - $d$ 7168, 61 layers: the first 3 dense ($d_{ff}$ 18,432), then 58 MoE layers;
+   - 256 routed experts of $d_{ff}$ 2048, top-8, plus 1 shared expert of the same width;
+   - MLA: 128 heads, latent $d_c$ 512 plus 64 rope dims, so the KV cache is 576 values per token per layer; decode attention is in the absorbed form;
+   - vocabulary 129,280; FP8 weights for the GEMMs (the released checkpoint is FP8 block-scaled), BF16 KV;
+   - FP8 dispatch and BF16 combine, as DeepSeek's overview states for its own decode;
+   - no MTP (the scored run used none).
+4. **`sim/` layered round mode** (`sim/README` decision 14). A layered model runs under `batch_policy = round` with one round per MoE layer (58). Each layer has its own expert set with the same shape and placement, so one expert table is charged per round. The 3 dense layers, embedding and head are owner jobs (`skel_in` / `skel_out`), and so is the shared expert, which runs on the owner (DP attention). Placement: 288 slots (256 + 32 redundant), 4 per GPU. Routing is **uniform over the slots**, a stated assumption: EPLB's residual imbalance after placement is not published (I39), and the post's EPLB ablation (2.54× in decode) shows that imbalance matters.
+5. **Two-tier fabric** (`02 §1`). Units are GPUs ($U$ = 1) grouped into nodes of 8. A dispatched row costs its bytes at $\lambda_{intra}$ (NVLink) if the destination is in the node, and at $\lambda_{inter}$ (the GPU's InfiniBand NIC) otherwise. Each collective also pays a per-collective latency. Uniform placement sends ≈ 7/8 × 8/9 of the rows off-GPU and off-node; the exact mix comes from the placement, not from a constant. Which path DeepEP's low-latency kernels used inside a node at the cited version (RDMA only, or NVLink) is part of I39.
+6. **Scenario `h100_sglang.yaml`**, every value sourced (a vendor document, the post, the issue, DeepGEMM / DeepEP / FlashMLA READMEs) or labelled placeholder:
+   - H100 SXM 80 GB: φ (BF16 / FP8 dense), β_C, NVLink per direction. "SXM" is itself an assumption: the post says "H100" in 8-GPU nodes. It goes in I39;
+   - expert GEMM efficiency from DeepGEMM's published grouped (masked) GEMM table, measured on H800, which has the same SMs and HBM as H100 SXM; attention efficiency from FlashMLA's published decode figure, if the backend can be confirmed, else η = 1 with a note;
+   - NIC: the issue's 1P2D command lists eight `mlx5` devices per node (one per GPU), but no speed is given. **400 Gb/s per GPU is a placeholder** (I39);
+   - **no `software` section**: SGLang's per-job fixed cost (CUDA graphs) cannot be measured here and is not modelled ($t_0$ = 0).
+   - `context_tokens` = 2,050, the input plus half the output, as S0 used $P + N/2$. 2,000 is run beside it.
+7. **No fitting, and a sensitivity rule.** Nothing is tuned to $X_b$. Every placeholder or assumption (NIC speed 200 / 400 Gb/s; SXM; routing uniform against zipf $s$ = 0.5; intra-node path NVLink or RDMA; attention η) is swept one at a time around the stated value, and every run is reported.
+   - **Pass**: within ±20 % at the stated values and across every sweep.
+   - **Inconclusive**: the verdict flips inside the sweep. The flipping input is named in I39, and point (b) stays open.
+   - **Miss**: outside ±20 % across the whole sweep. The time split names the term, and a new ADR is needed.
+8. **What a pass buys.** With S0 (a), `02 §14`'s two points hold for the **round policy** on fabrics from host-bounced PCIe to NVLink + InfiniBand. S-results that use the round policy may then be quoted, with that scope. Threshold + timeout firing stays uncalibrated (I35), and so do overlap and TBO-like schedules. `note64` still needs its own values (I4).
+
+Consequences: `costmodel/` gains the DeepSeek-V3 shape (MLA, shared expert, dense layers) with worked-example tests against the published parameter count (671 B total, 37 B active). `sim/` gains the layered round mode, slot placement with replicas, and the two-tier fabric, each with a unit test (a two-node hand timeline). Plus one new scenario and a run script (`scripts/bench/i1_sglang.py`, CPU only, id `039`). No GPU time. Touches `02 §1` and `§14`, `sim/README` (decision 14), I1, I35, I4, and new **I39**.
+
 ## Proposed / pending
 - **ADR-028** — Unit model revisions from the author's hardware document (`docs/07 §4`): (a) two compute classes per chip — an FF core with a large array ($s_{min,ff}$ = 256–1024) and attention cores with small arrays ($s_{min,attn}$ ≈ 64), hence $\phi_{ff}$, $\phi_{attn}$ as separate scenario inputs; (b) the tile floor is a *row* floor, $N$ = $M$ × (LHS bw / RHS bw) rows per weight tile, with each token contributing 1 + $m$ rows under $m$-token speculation — the scheduler's queues count rows; (c) the reduce leg of the local fabric carries ≥ 16-bit partial sums: `02 §2` traffic becomes $b d\, b_{act} + b d\, b_{sum}$, $b_{sum}$ ≥ 2; (d) full pipelining inside the unit doubles tokens in flight and per-token latency — the Little's-law budget $Z$ of `02 §5.5` carries the factor; (e) router-based unit fabrics are ≤ 50 % link-efficient (avg. 2 hops), torus collectives 100 %: `02 §1`'s "switch" option is not equivalent to a torus; (f) the asymmetric 4×4×4 torus all-gather costs ≈ 3X/(8B) vs ≈ X/(2B) on a flat ring (our derivation from the author's algorithm) — the number S1/S3 must reproduce; (g) the failure domain is the 4-chip ring board, and a failed rail port is bypassed through torus neighbours at ¼ load (`02 §11`); (h) the replica-rounding utilisation floor $\ell / \lceil \ell \rceil$ reported beside the Little's-law model in S4. Also fills `note64.yaml` with the sourced ratios of `docs/07 §6`; absolute $\phi$, $\beta_C$, $\lambda_C$, $\nu_C$ stay placeholders (I4). Bears on H1, H5, H8, H9, H10, H11, H16; changes `02 §1, §2, §5, §11`.
 - **ADR-024** — Parallel prefill mode for long prompts (the author's "less effective mode"): (a) all segments at once with local attention only, global cache filled afterwards from context-poor final vectors; (b) pipelined segments, segment $k+1$ at iteration $j$ attending globally to segment $k$'s iteration-$j$ caches (transient per-iteration global cache during prefill, in-flight depth up to $r$ segments). Both are inference-time modes of a sequentially trained model; E-Q12 evaluates both against sequential prefill on continuation loss and TTFT (S5). If both degrade, a mixed-mode training variant becomes a later ladder step.
@@ -924,7 +961,7 @@ table point is honoured; and `s0_compare`'s without-η column. GPU time ≈ 15 m
 - P13, P15, P18 show only page-break differences in extraction; the author's Q10 addendum (sentence embeddings without entailments) is already in ADR-009.
 
 ### Internal
-- **I1** Which published expert-parallel deployment to calibrate the simulator against (candidate: DeepSeek-V3's published inference figures). The second calibration point is the local S0 run (`docs/06 §6`).
+- **I1** *(**answered by ADR-052**, 2026-11-03: SGLang's EP72 decode of DeepSeek-V3 on 9 × 8 H100, no-TBO throughput 17,777 tok/s per node; closes on the `039` score)* Which published expert-parallel deployment to calibrate the simulator against (candidate: DeepSeek-V3's published inference figures). The second calibration point is the local S0 run (`docs/06 §6`).
 - **I2** Whether `small` can show anything about H6 (recurrence may need scale).
 - **I3** Licence and provenance of the knowledge source for L8.
 - **I4** Which `note64` / `gpu_today` scenario numbers can be sourced from public vendor data vs must remain placeholders (`local_3060` is fully measured).
@@ -1021,6 +1058,14 @@ Cost units from `docs/06 §4`: one `screen` run ≈ 8 h (1 B tokens, 1 seed); on
 - **I36** *(2026-10-30)* **The held-out acceptance proxy conditions the verifier on the true context, which greedy decoding never does.** I27's metric accepts head $j$'s draft of $x_{t+j}$ when it equals head 1's greedy prediction at $t+j-1$ *given the true tokens up to $t+j-1$*. In self-speculative greedy decoding the verifier at $t+j-1$ is conditioned on the tokens just drafted and accepted, i.e. on head 1's own greedy outputs. For independent heads (L3, L3b) the two differ only through the verifier's context. For L3c's chain they also differ through the module's input: module 2 is fed head 1's greedy guess of $x_{t+1}$, which the proxy's verifier then ignores in favour of the true $x_{t+1}$ (right ≈ 40 % of the time at `screen`). So the proxy may understate L3c relative to L3. `164` measured 34.5 / 16.1 / 8.4 % chained against 70 / 65 / 63 % teacher-forced; how much of that gap is the metric is unknown. A decode-faithful measurement would greedily generate from held-out prompts and count accepted drafts along the generated sequence, for L3, L3b and L3c alike. To decide: whether it is worth building (an offline probe, GPU, no training) before H13 is closed for good. It cannot rescue H13's main-head clause (`164` +0.0497 vs L2). Bears on H13; touches I27, ADR-012, ADR-039.
 - **I37** *(2026-11-03, `034`; **closed 2026-11-03 by ADR-050**: the fixed costs are measured in `035` and in the scenario. The `036` re-score passes at $z$ ≤ 256, and the 1024 miss is I38)* **`sim/` has no fixed cost per job, and on this rig that cost dominates.** S0 (`034-s0-ep-decode`) failed at every $z$: the sim's throughput was 2.6–12.4× too high and its per-iteration p50 0.08–0.38× of measured. The expert phase costs 0.43 ms per round from 5 to 305 rows per expert, and the owner phase 1.16 ms at 4 tokens, about 40× what the rooflines of ADR-043 decisions 1 and 6 charge. The likely source is the reference implementation's Python and kernel-launch overhead. The question is which of three moves restores a calibration that means something: measure the per-job costs and the per-collective latency with their own bench and add them to `local_3060.yaml` as sourced inputs (`note64` then needs its own value); shrink them on the harness side (CUDA graphs, fused experts) toward the roofline system; or both. Each needs an ADR, and none may be fitted to S0 (ADR-049 §6).
 - **I38** *(2026-11-03, `035`/`036`; **closed 2026-11-03 by ADR-051**: η per owner kind measured in `037` and in the scenario; the `038` re-score passes at every $z$)* **The owner's work runs below peak at large batch, and `sim/` charges it at peak.** After ADR-050's fixed cost per job, S0 passes at $z$ = 16/64/256 and misses at 1024: throughput 1.46×, iteration p50 0.71×. `035` showed the cause before the comparison. At 256 sequences per owner, attention (1792 keys), `skel_in` and `skel_out` take 30–45 % longer than $t_0$ + roofline (3.34 / 6.07 / 6.55 ms against 2.49 / 4.22 / 4.50). ADR-043 decision 6 charges KV reads and skeleton GEMMs at peak φ and β_C. Candidate: a sourced efficiency per owner kind against batch, measured by a bench as `003-gemm`'s grouped-GEMM table is for experts. A second, smaller term: the dispatch phase runs 17–22 % above $2 t_{coll}$ + bytes/λ because it reads the counts back to the host. Any fix needs an ADR (ADR-050 §5), and nothing may be fitted to `034`.
+- **I39** *(2026-11-03, ADR-052)* **The unpublished inputs of calibration point (b).** The SGLang post and issue #6017 leave five inputs unstated, and ADR-052 §7 sweeps each around a stated value:
+  - the H100 variant (assumed SXM 80 GB);
+  - the per-GPU InfiniBand speed (placeholder 400 Gb/s; eight `mlx5` devices per node are listed);
+  - whether DeepEP's low-latency kernels used NVLink or RDMA inside a node at that version;
+  - EPLB's residual imbalance after the 32-replica placement (routing modelled uniform);
+  - the decode attention backend (the post credits an FA3 backend; FlashMLA is not named).
+
+  Any of these that flips the verdict makes point (b) inconclusive until it is sourced, from the authors or a later publication.
 
 ## Session log
 
@@ -1901,6 +1946,24 @@ and an ADR first, L6c likewise; the `small` programme (L0, L1, L2, L3, L5, L5d a
 the ladder's own next step and needs no new code. The choice between "more `screen` variants" and
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
+
+### 2026-11-03 (17:50) — **I1 started: ADR-052** (point (b) = SGLang's EP72 decode of DeepSeek-V3 on H100, scored without TBO); I39 opened
+
+The user asked for a proposal for I1. Three sources were weighed:
+- **SGLang on 96 × H100** (LMSYS 2025-05-05, issue #6017): a controlled configuration with ablations.
+- **DeepSeek's production overview**: a 24 h average over unknown load, so it cannot be set up.
+- **DeepSeek's `profile-data`**: traces, not a throughput, with balanced routing.
+
+The user chose SGLang ("yes, draft the I1 ADR with SGLang").
+
+**ADR-052** (accepted):
+- The scored number is the derived no-TBO decode throughput, 22,310 / 1.255 = 17,777 tok/s per node (batch 256 per GPU, 2K in, 100 out), under the round policy.
+- Point (b) is one number: latency follows from throughput in a closed loop.
+- New pieces: the DeepSeek-V3 shape in `costmodel/`, a layered round mode with replica slots and a two-tier fabric in `sim/`, and the scenario `h100_sglang.yaml` without a `software` section.
+- §7: a sensitivity sweep over the unpublished inputs (I39); a flip means "inconclusive".
+- **Correction:** the proposal's "no-overlap 12,929 tok/s per node" is the post's simulated-MTP run, with dummy attention kernels, and is not used.
+
+Spec: `02 §1` and `§14`, `sim/README` decision 14. Nothing built. Next rig id 039.
 
 ### 2026-11-03 (15:10) — ADR-051 built: **`037-job-overhead-eta`** measures η per owner kind; **`038-s0-rescore-eta`: S0 passes at every $z$** (I38 closed)
 
