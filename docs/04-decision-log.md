@@ -716,34 +716,37 @@ Consequences: no runs. Touches `01 §4.5` (status line), `03 §1` (H4 row), `03 
 `small` list), and I20. Nothing is queued after this. Phase 3 continues with L8/L9/S5–S7 or L7c,
 or Phase 2's S0 first; that is the user's call.
 
+### ADR-049 — S0's measured side: bulk-synchronous expert-parallel decode of the trained `small` L5 (`132`) on the four cards, and a matching `round` policy in `sim/`
+2026-11-03 · accepted (the user's decision: "yes, accept it, push, then continue"). The user's earlier choices, 2026-11-03: Phase 2's S0 next, bulk-synchronous rounds, and the trained `132` weights.
+Context: S0 (`06 §6`, `03` S0) is the first of `02 §14`'s two calibration points. No S-result may be quoted before it passes. Its measured side does not exist: `model/` has no decode path (no KV cache), and nothing runs the model expert-parallel. sim m1's threshold + timeout policy (ADR-043 decisions 4 and 9) would need an asynchronous point-to-point harness, and NCCL has no message probe, so the user chose rounds.
+Decision:
+1. **Decode path in `model/`** (`01 §4.8`). `BigMoE` gains a cache object and `decode_step(tokens [B, 1], cache) → logits [B, V]`, plus `prefill(tokens, cache)` that fills the cache by running the training forward on the prompt. Scope: recurrent arch, fixed $r$, `global_source = per_iteration` (L5). Other rungs raise `NotImplementedError` (L5d, two streams, L5e, halting ≠ fixed, MTP $m$ > 1 drafts). One K/V cache per early and final block, and one per middle-block iteration $j$ = 1..$r$, each over every past position, matching training's causal per-iteration attention. **Unit test:** on a toy config, prefill then teacher-forced decode of the remaining positions reproduces the full forward's logits at every position (fp32, tolerance 1e-4 relative), and the cache shapes are as stated.
+2. **The harness** `scripts/bench/s0_ep_decode.py`, under `torchrun` on 4 ranks with NCCL (host-bounced). Rank $u$ is unit $u$ ($U$ = 1). It owns sequences $s \equiv u$ (mod 4), $z/4$ per rank, and hosts experts $i \equiv u$ (mod 4), 2 of $N_e$ = 8, exactly ADR-043 decision 3. Embedding, early and final blocks, middle attention, norms, router and head are replicated on every rank; every unit plays every role (`02 §6`). **One round = one middle-block iteration for all $z$ tokens in lockstep:**
+   - (a) each owner runs DepthNorm, attention and the router for its tokens;
+   - (b) one `all_to_all` sends each token's normalised vector to its $k$ experts' ranks; split sizes are exchanged first, and the same-rank share does not touch the wire;
+   - (c) each hosted expert runs **once per round on everything it received** (the `round` firing policy);
+   - (d) one `all_to_all` returns the outputs;
+   - (e) the owner forms the gate-weighted sum and the residual.
+
+   Early blocks run before round 1. After round $r$ come the final blocks, the head and the next input token.
+3. **Workload.** Held-out windows from `val.bin`, one per sequence. The first $P$ = 1536 tokens are prefilled in chunks and not timed. Then $N$ = 512 positions are decoded **teacher-forced**: the input is the true next token, so routing is the trained model's routing on real text and no greedy loop can degenerate it. Every token's routing histogram is logged. $z$ ∈ {16, 64, 256, 1024}, and $r$ = 8 as trained. The first 64 decode positions are warm-up. If $z$ = 1024 exceeds 10 GiB per GPU (KV ≈ 12 KiB per token, ≈ 6 GiB at 256 sequences per rank), it is run with a smaller $P$, and that is recorded.
+4. **Measurements** (sim/README §S0), under one rig id `034` with one sub-record per $z$. Timing uses CUDA events with a synchronise at round boundaries:
+   - throughput (tokens/s after warm-up);
+   - per-iteration latency p50/p99, taken at the owner from attention start to the last expert return;
+   - per-token latency;
+   - the time split into owner compute, dispatch, expert compute and return;
+   - the expert batch-size distribution;
+   - per-GPU busy fraction;
+   - wire bytes per token per iteration;
+   - `n_thermal`, which must be zero;
+   - git hash, driver and the scenario file's hash.
+5. **`sim/` milestone 1.1:** firing policy `batch_policy: round`. Iteration $j$ of all $z$ tokens forms one round; each expert fires once when every owner's dispatch for that round has arrived; owner work runs as one batched job per round per unit; there is no timeout. It is a barrier model of the harness, not of `02 §5`'s scheduler. Also routing `empirical`: per-expert probabilities read from the harness's histogram, with uniform run beside it. `context_tokens` is set to the measured mean key count ($P$ + $N$/2 ≈ 1792). A unit test checks that `round` at $z$ = 4 reproduces a hand-computed timeline.
+6. **Pass rule** unchanged (`02 §14`): throughput and per-iteration p50 within ±20 % at every $z$. The scenario stays as measured by `scripts/bench/`. **No scenario value is fitted to S0.** A miss is a result: it names the term that misses (from the time split), and any fix goes through a new ADR.
+7. **Scope.** This calibrates the cost terms (expert step, link, owner roofline) under a barrier policy. It does not calibrate threshold + timeout firing, so **I35 stays open**. L5d decode, the asynchronous harness and I1 (the published-deployment point) are later.
+
+Consequences: `model/` gains a decode path and test, `sim/` gains m1.1 and a test, and one new bench script. GPU time ≈ 1–2 h on an idle rig (four $z$ values, prefill included). Touches `01 §4.8`, `02 §5.1`, `06 §6`, sim/README. Bears on H11 (indirectly) and on every S-result through `02 §14`.
+
 ## Proposed / pending
-- **ADR-049** — **S0's measured side: bulk-synchronous expert-parallel decode of the trained `small` L5 (`132`) on the four cards, and a matching `round` policy in `sim/`.** 2026-11-03 · *proposed*. The user's choices, 2026-11-03: Phase 2's S0 next, bulk-synchronous rounds, and the trained `132` weights. Context: S0 (`06 §6`, `03` S0) is the first of `02 §14`'s two calibration points. No S-result may be quoted before it passes. Its measured side does not exist: `model/` has no decode path (no KV cache), and nothing runs the model expert-parallel. sim m1's threshold + timeout policy (ADR-043 decisions 4 and 9) would need an asynchronous point-to-point harness, and NCCL has no message probe, so the user chose rounds.
-  Decision:
-  1. **Decode path in `model/`** (`01 §4.8`). `BigMoE` gains a cache object and `decode_step(tokens [B, 1], cache) → logits [B, V]`, plus `prefill(tokens, cache)` that fills the cache by running the training forward on the prompt. Scope: recurrent arch, fixed $r$, `global_source = per_iteration` (L5). Other rungs raise `NotImplementedError` (L5d, two streams, L5e, halting ≠ fixed, MTP $m$ > 1 drafts). One K/V cache per early and final block, and one per middle-block iteration $j$ = 1..$r$, each over every past position, matching training's causal per-iteration attention. **Unit test:** on a toy config, prefill then teacher-forced decode of the remaining positions reproduces the full forward's logits at every position (fp32, tolerance 1e-4 relative), and the cache shapes are as stated.
-  2. **The harness** `scripts/bench/s0_ep_decode.py`, under `torchrun` on 4 ranks with NCCL (host-bounced). Rank $u$ is unit $u$ ($U$ = 1). It owns sequences $s \equiv u$ (mod 4), $z/4$ per rank, and hosts experts $i \equiv u$ (mod 4), 2 of $N_e$ = 8, exactly ADR-043 decision 3. Embedding, early and final blocks, middle attention, norms, router and head are replicated on every rank; every unit plays every role (`02 §6`). **One round = one middle-block iteration for all $z$ tokens in lockstep:**
-     - (a) each owner runs DepthNorm, attention and the router for its tokens;
-     - (b) one `all_to_all` sends each token's normalised vector to its $k$ experts' ranks; split sizes are exchanged first, and the same-rank share does not touch the wire;
-     - (c) each hosted expert runs **once per round on everything it received** (the `round` firing policy);
-     - (d) one `all_to_all` returns the outputs;
-     - (e) the owner forms the gate-weighted sum and the residual.
-
-     Early blocks run before round 1. After round $r$ come the final blocks, the head and the next input token.
-  3. **Workload.** Held-out windows from `val.bin`, one per sequence. The first $P$ = 1536 tokens are prefilled in chunks and not timed. Then $N$ = 512 positions are decoded **teacher-forced**: the input is the true next token, so routing is the trained model's routing on real text and no greedy loop can degenerate it. Every token's routing histogram is logged. $z$ ∈ {16, 64, 256, 1024}, and $r$ = 8 as trained. The first 64 decode positions are warm-up. If $z$ = 1024 exceeds 10 GiB per GPU (KV ≈ 12 KiB per token, ≈ 6 GiB at 256 sequences per rank), it is run with a smaller $P$, and that is recorded.
-  4. **Measurements** (sim/README §S0), under one rig id `034` with one sub-record per $z$. Timing uses CUDA events with a synchronise at round boundaries:
-     - throughput (tokens/s after warm-up);
-     - per-iteration latency p50/p99, taken at the owner from attention start to the last expert return;
-     - per-token latency;
-     - the time split into owner compute, dispatch, expert compute and return;
-     - the expert batch-size distribution;
-     - per-GPU busy fraction;
-     - wire bytes per token per iteration;
-     - `n_thermal`, which must be zero;
-     - git hash, driver and the scenario file's hash.
-  5. **`sim/` milestone 1.1:** firing policy `batch_policy: round`. Iteration $j$ of all $z$ tokens forms one round; each expert fires once when every owner's dispatch for that round has arrived; owner work runs as one batched job per round per unit; there is no timeout. It is a barrier model of the harness, not of `02 §5`'s scheduler. Also routing `empirical`: per-expert probabilities read from the harness's histogram, with uniform run beside it. `context_tokens` is set to the measured mean key count ($P$ + $N$/2 ≈ 1792). A unit test checks that `round` at $z$ = 4 reproduces a hand-computed timeline.
-  6. **Pass rule** unchanged (`02 §14`): throughput and per-iteration p50 within ±20 % at every $z$. The scenario stays as measured by `scripts/bench/`. **No scenario value is fitted to S0.** A miss is a result: it names the term that misses (from the time split), and any fix goes through a new ADR.
-  7. **Scope.** This calibrates the cost terms (expert step, link, owner roofline) under a barrier policy. It does not calibrate threshold + timeout firing, so **I35 stays open**. L5d decode, the asynchronous harness and I1 (the published-deployment point) are later.
-
-  Consequences: `model/` gains a decode path and test, `sim/` gains m1.1 and a test, and one new bench script. GPU time ≈ 1–2 h on an idle rig (four $z$ values, prefill included). Touches `01 §4.8`, `02 §5.1`, `06 §6`, sim/README. Bears on H11 (indirectly) and on every S-result through `02 §14`.
 - **ADR-028** — Unit model revisions from the author's hardware document (`docs/07 §4`): (a) two compute classes per chip — an FF core with a large array ($s_{min,ff}$ = 256–1024) and attention cores with small arrays ($s_{min,attn}$ ≈ 64), hence $\phi_{ff}$, $\phi_{attn}$ as separate scenario inputs; (b) the tile floor is a *row* floor, $N$ = $M$ × (LHS bw / RHS bw) rows per weight tile, with each token contributing 1 + $m$ rows under $m$-token speculation — the scheduler's queues count rows; (c) the reduce leg of the local fabric carries ≥ 16-bit partial sums: `02 §2` traffic becomes $b d\, b_{act} + b d\, b_{sum}$, $b_{sum}$ ≥ 2; (d) full pipelining inside the unit doubles tokens in flight and per-token latency — the Little's-law budget $Z$ of `02 §5.5` carries the factor; (e) router-based unit fabrics are ≤ 50 % link-efficient (avg. 2 hops), torus collectives 100 %: `02 §1`'s "switch" option is not equivalent to a torus; (f) the asymmetric 4×4×4 torus all-gather costs ≈ 3X/(8B) vs ≈ X/(2B) on a flat ring (our derivation from the author's algorithm) — the number S1/S3 must reproduce; (g) the failure domain is the 4-chip ring board, and a failed rail port is bypassed through torus neighbours at ¼ load (`02 §11`); (h) the replica-rounding utilisation floor $\ell / \lceil \ell \rceil$ reported beside the Little's-law model in S4. Also fills `note64.yaml` with the sourced ratios of `docs/07 §6`; absolute $\phi$, $\beta_C$, $\lambda_C$, $\nu_C$ stay placeholders (I4). Bears on H1, H5, H8, H9, H10, H11, H16; changes `02 §1, §2, §5, §11`.
 - **ADR-024** — Parallel prefill mode for long prompts (the author's "less effective mode"): (a) all segments at once with local attention only, global cache filled afterwards from context-poor final vectors; (b) pipelined segments, segment $k+1$ at iteration $j$ attending globally to segment $k$'s iteration-$j$ caches (transient per-iteration global cache during prefill, in-flight depth up to $r$ segments). Both are inference-time modes of a sequentially trained model; E-Q12 evaluates both against sequential prefill on continuation loss and TTFT (S5). If both degrade, a mixed-mode training variant becomes a later ladder step.
 
@@ -1768,7 +1771,7 @@ want of σ, and the L0 pair at `small` is what supplies it.
 
 ADR-048 is pushed (`fe2a106`). The user chose Phase 2's S0 over L8, L7c and L9, then picked
 bulk-synchronous rounds over an asynchronous threshold + timeout harness and the trained `small`
-L5 `132` over random weights. **ADR-049** is drafted as *proposed*. It covers:
+L5 `132` over random weights. **ADR-049** is drafted as *proposed* (accepted the same night, below the session log's next entry). It covers:
 - a decode path in `model/` (L5, fixed $r$, per-iteration K/V caches; a test that teacher-forced
   decode equals the full forward);
 - the harness `scripts/bench/s0_ep_decode.py` (4 ranks; owner $s$ mod 4, experts $i$ mod 4; one
