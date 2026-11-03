@@ -31,7 +31,7 @@ Defines the model as a function from token sequences to next-token distributions
 | $\mathcal{G}$ | global cache: one K/V entry per completed token, from its final middle-layer vector $c_s^{(r_s)}$ | — |
 | $B_{idx}, K_{idx}$ | KV block size; blocks retrieved per query | 16, 32 |
 | $d_{idx}$ | indexer dimension | 32 |
-| $N_m, d_m, d_v, k_m$ | knowledge-table size, key dim, value dim, values retrieved | $2^{20}$, 128, 768, 1 |
+| $N_m, d_m, d_{enc}, k_m$ | knowledge-table size, key dim, encoder (value) dim, values retrieved | $2^{20}$, 128, 768, 32 (ADR-053) |
 | $m$ | MTP depth (tokens predicted ahead, incl. next) | 4 |
 | $\tau$ | tenant id | — |
 | $b_w, b_{act}, b_{kv}$ | bytes per weight / activation / KV element | — |
@@ -131,6 +131,13 @@ $$q_m = W_m [u; e_j], \qquad \mathcal{N} = \text{top-}k_m\ \text{of}\ q_m^\top \
 - **Population** (ADR-009, accepted; author's Q10 and addendum): corpus sentences → sentence vectors; no entailment extraction at first. Values are *parametric*: $v_n = g_\theta(\mathrm{enc}(s_n))$ with $s_n$ a sentence, $\mathrm{enc}$ a pretrained sentence encoder and $g_\theta$ trained with the model (the author's "layer in front"); keys $\kappa_n = h_\theta(\mathrm{enc}(s_n))$ likewise, product-key factorised for lookup. Fine-tuning $\mathrm{enc}$ itself by backpropagation (the author's preferred form if the table will grow) is variant L8c; replacing sentences by extracted entailments (atomic facts) is L8d, only if L8 shows the table is used. Because the map is learned rather than the entries, new sentences can be added later by running them through the same map.
 - The table is "correct but not complete": training must not depend on coverage. Coverage is measured separately from model quality.
 
+**L8, as built (ADR-053).** The form above is built as follows; the grid, $k_m$ and the read-out are changes ADR-053 makes so that it can be built and trained:
+- **Table.** $N_m$ = 2²⁰ first sentences of English Wikipedia articles (`20231101.en`, CC BY-SA 3.0 / GFDL; 40–300 characters, lists and disambiguation pages dropped; sampled with seed 0), encoded once by the frozen `BAAI/bge-base-en-v1.5` (CLS pooling, L2-normalised, $d_{enc}$ = 768). The table is derived data, kept off the repo.
+- **Product grid.** Each embedding's halves $e^1_n, e^2_n$ (384 each) are quantised by k-means codebooks $\mu^1, \mu^2$ of 1024 centroids, and every entry gets its own cell $(i, j)$ of the 1024 × 1024 grid by greedy balanced assignment. Keys are $\kappa_{(i,j)} = [h^1_\theta(\mu^1_i); h^2_\theta(\mu^2_j)]$, $h^{1,2}_\theta$: 384 → 64 ($d_m$ = 128), which amends ADR-009's per-entry key.
+- **Lookup.** $q_m = W_m[u; e_j]$ (832 → 128) is split into halves; each half scores its 1024 sub-keys, the top 32 per half give 1,024 candidate cells scored $s^1 + s^2$, and the top $k_m$ = **32** are kept with $\alpha = \mathrm{softmax}(s)$. ($k_m$ = 1 gives $\alpha$ = 1 and no gradient into the query or the keys.)
+- **Read-out.** $\mathrm{Mem} = W_v \sum_{n \in \mathcal{N}} \alpha_n e_n$ with $W_v$ = $W_o g_\theta$ (768 → $d$), one linear map applied after the weighted sum; $W_v$ starts at zero, so L8 starts as L5. The table $e$ and the codebooks $\mu$ are frozen buffers; $W_m$, $h^{1,2}_\theta$ and $W_v$ train. One module is shared by every middle iteration. Tenant tags are not built (L11).
+- **Matched FLOPs.** The memory is inside the budget (§10), so the expert width is re-solved for L8 (≈ 711 against L5's 896, a confound ADR-053 records).
+
 ### 4.7 Iteration count $r_t$ (note P7)
 **Status (ADR-046, 2026-11-02):** neither learned rule below (ACT, L6; expert-choice, L6c) beat a fixed $r$ at matched mean depth at `screen`, so both are closed there and the ladder trains with fixed $r$. The design and the ragged-depth semantics stay as written. They are P7, binding for `sim/` and for any reopening by ADR.
 
@@ -202,7 +209,7 @@ $m$ heads on $p_t^{out}$ ($c_t^{out}$ single-stream): head 1 predicts $x_{t+1}$ 
 - Attention scores: $2 \cdot 2\, d\,(W + |\mathcal{G}_{visible}|)$ per stream, with $|\mathcal{G}_{visible}| = K_{idx} B_{idx}$ once indexed. **Budget convention (ADR-027):** at the training context un-indexed, $W + |\mathcal{G}_{visible}|$ averages $(L+1)/2$ = 1024 keys at $L$ = 2048; that is the figure every `06 §3` anchor uses.
 - KV bytes: persistent $2 H_{kv} d_h b_{kv}$ per token (one $\mathcal{G}$ entry); transient $\le W \cdot r_{max} \cdot 2 H_{kv} d_h b_{kv}$ per in-flight sequence.
 - MoE: $2 \cdot k \cdot 3\, d\, d_{ff}\, L_e$ per stream; router $O(d_r \sqrt{N_e})$.
-- Memory: $O(d_m \sqrt{N_m}) + 2\, k_m\, d_v\, d$ per stream.
+- Memory (ADR-053): $2 (d + d_e) d_m + 2 d_m \sqrt{N_m} + 2 k_m d_{enc} + 2 d_{enc} d$ per stream (query, sub-key scores, weighted sum, read-out; the 1,024-candidate top-$k$ is not counted) — ≈ 1.70 MFLOP per token-iteration at `small`/`screen`. The table is data, not parameters; the trainable parameters are $(d + d_e) d_m + d_{enc} d_m + d_{enc} d$.
 - Prefill: $c$ only → drop the per-stream doubling → ≈ ½ of decode per token.
 - Fabric bytes per token per iteration (activations): $2 \cdot k \cdot d \cdot b_{act}$ **per stream** (dispatch + combine; two streams double it — ADR-027), before multicast/reduction dedup.
 
@@ -250,7 +257,8 @@ model:
     prev_segment_local: false      # ADR-022
     kv_share_every: 1              # L6b (transient local caches only)
     index: { enabled: false, block: 16, topk: 32, indexer_dim: 32 }
-  memory: { enabled: false, n_entries: 1048576, key_dim: 128, topk: 1, values: parametric, encoder_finetune: false }   # GPU product-key memory (L8); L8b = chunk retrieval; L8c = encoder fine-tune
+  memory: { enabled: false, n_entries: 1048576, grid: 1024, key_dim: 128, topk: 32, half_topk: 32, values: parametric,   # L8 (ADR-053)
+            encoder: bge-base-en-v1.5, source: wiki-20231101-lead, table: /mnt/nvme/memory/wiki-20231101-lead, encoder_finetune: false }   # GPU product-key memory (L8); L8b = chunk retrieval; L8c = encoder fine-tune
   halting: { mode: fixed, ponder_cost: 0.0, output: last, halted_kv: once,   # mode: fixed | act (L6) | expert (L6c)
              gate: true,                     # ADR-041/042: scale updates by the running probability (act) or the score (expert)
              survival: linear, survival_last: 0.3, tau_momentum: 0.99 }   # L6c schedule s_j and threshold EMA (ADR-042)
