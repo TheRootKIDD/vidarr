@@ -920,6 +920,67 @@ Consequences: `costmodel/` gains the DeepSeek-V3 shape (MLA, shared expert, dens
 - **ADR-028** — Unit model revisions from the author's hardware document (`docs/07 §4`): (a) two compute classes per chip — an FF core with a large array ($s_{min,ff}$ = 256–1024) and attention cores with small arrays ($s_{min,attn}$ ≈ 64), hence $\phi_{ff}$, $\phi_{attn}$ as separate scenario inputs; (b) the tile floor is a *row* floor, $N$ = $M$ × (LHS bw / RHS bw) rows per weight tile, with each token contributing 1 + $m$ rows under $m$-token speculation — the scheduler's queues count rows; (c) the reduce leg of the local fabric carries ≥ 16-bit partial sums: `02 §2` traffic becomes $b d\, b_{act} + b d\, b_{sum}$, $b_{sum}$ ≥ 2; (d) full pipelining inside the unit doubles tokens in flight and per-token latency — the Little's-law budget $Z$ of `02 §5.5` carries the factor; (e) router-based unit fabrics are ≤ 50 % link-efficient (avg. 2 hops), torus collectives 100 %: `02 §1`'s "switch" option is not equivalent to a torus; (f) the asymmetric 4×4×4 torus all-gather costs ≈ 3X/(8B) vs ≈ X/(2B) on a flat ring (our derivation from the author's algorithm) — the number S1/S3 must reproduce; (g) the failure domain is the 4-chip ring board, and a failed rail port is bypassed through torus neighbours at ¼ load (`02 §11`); (h) the replica-rounding utilisation floor $\ell / \lceil \ell \rceil$ reported beside the Little's-law model in S4. Also fills `note64.yaml` with the sourced ratios of `docs/07 §6`; absolute $\phi$, $\beta_C$, $\lambda_C$, $\nu_C$ stay placeholders (I4). Bears on H1, H5, H8, H9, H10, H11, H16; changes `02 §1, §2, §5, §11`.
 - **ADR-024** — Parallel prefill mode for long prompts (the author's "less effective mode"): (a) all segments at once with local attention only, global cache filled afterwards from context-poor final vectors; (b) pipelined segments, segment $k+1$ at iteration $j$ attending globally to segment $k$'s iteration-$j$ caches (transient per-iteration global cache during prefill, in-flight depth up to $r$ segments). Both are inference-time modes of a sequentially trained model; E-Q12 evaluates both against sequential prefill on continuation loss and TTFT (S5). If both degrade, a mixed-mode training variant becomes a later ladder step.
 
+### ADR-053 — L8 as built: a frozen Wikipedia lead-sentence table (BGE-base) on a 1024 × 1024 product grid, 32 values per lookup, read at every middle iteration; I3, I8 and I9 answered
+2026-11-03 · proposed (the user chose L8 as Phase 3's next item, 2026-11-03 20:15; this ADR answers I3, I8 and I9 for the user's approval)
+Context: L8 is the next ladder step (`03 §2`, H17: per-iteration knowledge memory lowers loss on knowledge-heavy evals at matched active FLOPs, with ≤ 0.5 % regression elsewhere). The design is set by `01 §4.6`, ADR-009 (parametric values and keys from a frozen pretrained sentence encoder; sentences, not entailments) and `06 §5.1` (a GPU-resident product-key memory, not a CPU index). Three questions block it: the licence of the source (I3), the encoder (I8) and the slice (I9). Writing the spec down for code shows three places where `01 §4.6` and `§11` cannot be built as written:
+- **`topk: 1` cannot train.** With $k_m$ = 1, $\alpha$ = softmax of one score = 1, so the query, the keys and $W_m$ receive no gradient. Product-key memories train with $k_m$ ≈ 32 over a softmax (Lample et al. 2019, arXiv:1907.05242).
+- **Per-entry keys are not product-key searchable.** ADR-009's $\kappa_n = h_\theta(\mathrm{enc}(s_n))$ gives every entry its own key. Product-key lookup needs the key set to be the Cartesian product of two sub-key sets, so entries must sit on a grid. Exact search over 2²⁰ free keys costs ≈ 0.5 GFLOP per query, ≈ 7× the model per token-iteration.
+- **Projecting each retrieved value is too costly.** Applying $g_\theta$ per retrieved value costs $2 k_m d_{enc} d_v$ ≈ 38 MFLOP per query at $k_m$ = 32. With $g_\theta$ linear, $\sum_n \alpha_n g_\theta(\mathrm{enc}_n) = g_\theta(\sum_n \alpha_n \mathrm{enc}_n)$, the same function at 1/32 of the cost.
+
+Decision:
+1. **Source (I3).** English Wikipedia, the `wikimedia/wikipedia` dataset, config `20231101.en`, pinned by revision `b04c8d1ceb`. Licence: CC BY-SA 3.0 and GFDL (the dataset card).
+   - The extracted sentences, their embeddings and the table are derived data. They live on `/mnt/nvme/memory/` and are **not committed or redistributed**.
+   - The repo holds the build script, the article ids sampled and the sha256 of every artefact. Results that use the table carry the attribution "text from English Wikipedia (CC BY-SA 3.0)".
+   - The pretraining corpus (ADR-014) is unchanged.
+2. **Slice (I9).** For each article: the first sentence of its text, cut at the first `.`, `!` or `?` that is followed by whitespace and an upper-case letter, within the first paragraph.
+   - **Kept:** 40–300 characters.
+   - **Dropped:** titles beginning "List of", titles containing "(disambiguation)", and sentences containing "may refer to".
+   - **Sample:** $N_m$ = 2²⁰ articles uniformly, seed 0 (the lower end of `06 §5.1`'s range; 1.5 GiB per GPU at 768 × bf16).
+   - **Eval pools:** two disjoint pools of 2,000 articles each are drawn from the rest with seed 1, for §7.
+3. **Encoder (I8).** `BAAI/bge-base-en-v1.5`, revision `a5beb1e3e6`, MIT licence, which permits fine-tuning (L8c). It is 768-d, uses CLS pooling and L2-normalisation as its model card specifies, and is frozen. Chosen over `all-mpnet-base-v2` (Apache-2.0) for its retrieval standing on its card; both licences would do.
+4. **Product grid (the fix for per-entry keys).**
+   - **Codebooks.** Each embedding $e_n$ is split into halves $e^1_n, e^2_n$ of 384. k-means with 1024 centroids per half on the table gives $\mu^1, \mu^2$ (seed 0, 25 iterations, on GPU).
+   - **Placement.** Each sentence gets its own cell $(i, j)$ of the 1024 × 1024 grid, so there are exactly 2²⁰ cells, no empties and no collisions. Assignment is greedy and balanced: in random order (seed 0), each sentence takes the free cell minimising $\lVert e^1 - \mu^1_i\rVert^2 + \lVert e^2 - \mu^2_j\rVert^2$ over its top-32 × top-32 centroid pairs; if all are taken, over the top-128 × top-128. The build reports the distortion (mean excess distance over the unconstrained nearest pair) and the share placed outside the top-32.
+   - **Keys.** $\kappa_{(i,j)} = [h^1_\theta(\mu^1_i);\ h^2_\theta(\mu^2_j)]$, with $h^{1,2}_\theta$ linear maps 384 → 64 ($d_m$ = 128). This is ADR-009's parametric key with $\mathrm{enc}(s_n)$ replaced by its product-quantised code, which **amends ADR-009** in that one respect.
+5. **The branch** (`01 §4.6`). One memory module is shared by every middle iteration and added as a fourth parallel branch, $x^{(j)} = x + \mathrm{Attn} + \sum g\, E + \mathrm{Mem}(u, e_j)$.
+   - **Query.** $q = W_m [u; e_j]$, 832 → 128, split into halves of 64.
+   - **Lookup.** Each half scores against its 1024 sub-keys. The top 32 per half give 32 × 32 = 1,024 candidate cells, scored $s = s^1 + s^2$. The top $k_m$ = **32** cells are kept, with $\alpha$ = softmax($s$).
+   - **Read-out.** $m = \sum \alpha_n e_n$ over the gathered, frozen 768-d encoder vectors, and $\mathrm{Mem} = W_v\, m$. Here $W_v$ (768 → $d$) is $W_o g_\theta$: both are linear, so they are one matrix, with no expressivity lost. $W_v$ starts at zero, so the branch starts as a no-op.
+   - **What trains.** $W_m$, $h^{1,2}_\theta$ and $W_v$. The table $e$ and the codebooks $\mu$ are frozen buffers, replicated per GPU under DDP.
+   - Tenant tags (`01 §4.6`) are not built: every entry is shared (L11 is later).
+6. **Accounting and matched FLOPs** (`01 §10`). Per token per iteration, the memory costs $2 (d + d_e) d_m$ (query) + $2 d_m \sqrt{N_m}$ (sub-keys) + $2 k_m d_{enc}$ (weighted sum) + $2 d_{enc} d$ (read-out) ≈ 0.21 + 0.26 + 0.05 + 1.18 = **1.70 MFLOP**, or 13.6 MFLOP per token at $r$ = 8 (2.3 % of the 600 M budget).
+   - `01 §10`'s memory line becomes this formula, replacing $2 k_m d_v d$, and `costmodel.memory_flops` / `memory_params` follow (the table counts as data, not as parameters).
+   - **H17 is "at matched active FLOPs"**, so `solve_d_ff` re-solves the expert width with the memory inside the budget, as every rung's width is solved. The expected width is ≈ 711 against L5's 896, snapped by the solver's own rule. The run reports both widths and the realised FLOPs per token.
+   - **Recorded confound:** a silent L8 could be the smaller experts as much as the memory, and §8's usage probes are what separate the two.
+7. **Evals (H17's "knowledge-heavy").** The project has none yet, so this ADR defines `wiki-lead`. Each held-out article is scored as "title, blank line, lead paragraph" (≤ 256 tokens), with the loss read on the lead only, in two pools:
+   - **in-table:** articles whose first sentence *is* in the table, scored on the first sentence (the model can retrieve it) and on the rest of the lead (related knowledge it cannot copy), separately;
+   - **out-of-table:** the control. "Correct but not complete" (`01 §4.6`): any gain there is not retrieval.
+
+   The noise floor of each delta is 4 × max(ADR-013's σ at `screen`, 0.0030 nats; the bootstrap SE over the pool's articles), fixed now. The general eval is the usual held-out FineWeb-Edu loss against $L_{ref}$ and `110`.
+8. **Usage probes,** reported with the run:
+   - the loss on every eval with the retrieved cells replaced by uniformly random cells (reliance);
+   - for in-table first sentences, the share of tokens whose own article's cell is among the 32 retrieved, per iteration $j$ (lookup accuracy);
+   - the entropy of $\alpha$ and the share of the 2²⁰ cells retrieved at least once on the held-out set (table use).
+9. **Build and runs.**
+   - (a) `scripts/data/build_wiki_memory.py`: extraction, encoding on the four cards, k-means and placement. Rig id `040`, with a manifest and hashes, ≈ 1 h.
+   - (b) An L8 memory and throughput probe at `screen`. Rig id `041`, as `033` was for L7: peak ≤ 10 GiB per GPU, tok/s against `110`.
+   - (c) `173-l8-screen`: one seed, 1 B tokens, against `110`, after `041` passes, with `queue_screen_15.sh` and the usual gate (ruff + pytest). Expect ≈ 9–11 h.
+
+   Unit tests: lookup shapes and top-$k$; the product-grid scores against exhaustive scoring of all 2²⁰ cells on a toy grid; zero-init no-op; no gradient into the table; FLOP formula against `costmodel`.
+10. **Verdict rule** (H17, set now):
+    - **Supports:** the in-table first-sentence loss and the in-table rest-of-lead loss are each below `110`'s by more than §7's floor, *and* the FineWeb-Edu loss regresses by ≤ 0.5 %.
+    - **Weakens:** neither in-table loss beats the floor, or the regression is > 0.5 %.
+    - **Silent:** anything else, for example only the first sentence improving (copying without knowledge).
+
+    A supported result triggers a `small` pair by ADR (ADR-031's rule). A weakened one, with low reliance, puts the cause on the table or the lookup, not on H17.
+
+Consequences:
+- **Spec:** `01 §4.6` (grid, $k_m$, read-out), `§10` (memory FLOPs) and `§11` (`memory:` schema: `topk: 32`, `grid: 1024`, `encoder: bge-base-en-v1.5`, `source: wiki-20231101-lead`); ADR-009 amended (§4); I3, I8 and I9 answered.
+- **Code:** `model/` gains a memory module (a reference implementation, no custom kernels); `costmodel/` is updated; plus one data script and one probe.
+- **GPU time:** ≈ 1 h build, 15 min probe, ≈ 10 h run. Disk: the Wikipedia parquet (≈ 20 GB) and the table (≈ 1.6 GB) on `/mnt/nvme`.
+
+Bears on H17 and L8; L8c and L8d stay later variants.
+
 ## Open questions
 
 ### For the note's author
@@ -963,13 +1024,13 @@ Consequences: `costmodel/` gains the DeepSeek-V3 shape (MLA, shared expert, dens
 ### Internal
 - **I1** *(**answered by ADR-052**, 2026-11-03: SGLang's EP72 decode of DeepSeek-V3 on 9 × 8 H100, no-TBO throughput 17,777 tok/s per node; scored 2026-11-03 as `039`: **inconclusive**, 1.09× at the stated inputs, flips at InfiniBand 200 Gb/s (0.67×) and at zipf-0.5 routing (0.62×); stays open on I39)* Which published expert-parallel deployment to calibrate the simulator against (candidate: DeepSeek-V3's published inference figures). The second calibration point is the local S0 run (`docs/06 §6`).
 - **I2** Whether `small` can show anything about H6 (recurrence may need scale).
-- **I3** Licence and provenance of the knowledge source for L8.
+- **I3** *(**answered by ADR-053, proposed**: Wikipedia 20231101.en, CC BY-SA 3.0 / GFDL, derived data kept off the repo)* Licence and provenance of the knowledge source for L8.
 - **I4** Which `note64` / `gpu_today` scenario numbers can be sourced from public vendor data vs must remain placeholders (`local_3060` is fully measured).
 - **I5** *(answered 2026-09-02, `002-nccl`)* $\lambda_{link}$ = 3.59 GB/s per rank, 44 µs floor. **S10 is viable and well-posed**: the `02 §2` TP condition is missed by 7× at the `small` default and 14× at the $N_e$ = 128 variant, so TP loses decisively and the crossover is swept by rung rather than observed. **S0 is measurable but fabric-bound by 2.7–4×**; record it as a fabric-dominated calibration point and take compute-side calibration from `003-gemm`; two cards is not a fix.
 - **I6** *(closed 2026-09-02, ADR-014)* Reuse the Mistral-7B-v0.1 32 k vocabulary; decided by convention, no A/B.
 - **I7** *(closed 2026-09-02)* v2 stored as `docs/source/The_big-DC_MoE_LLM_design_v2.pdf` with extracted text; diff below; `docs/00`, `01`, `02`, `03` revised (ADR-021).
-- **I8** Which pretrained sentence encoder for the table (ADR-009), and whether its licence permits fine-tuning (L8c).
-- **I9** Which corpus slice to embed for L8 at 2²⁰–2²¹ entries (e.g. lead sentences of Wikipedia articles), and how to sample the 2²¹ from it.
+- **I8** *(**answered by ADR-053, proposed**: BAAI/bge-base-en-v1.5, MIT, fine-tuning permitted)* Which pretrained sentence encoder for the table (ADR-009), and whether its licence permits fine-tuning (L8c).
+- **I9** *(**answered by ADR-053, proposed**: first sentence per article, 40–300 chars, 2²⁰ sampled uniformly, seed 0)* Which corpus slice to embed for L8 at 2²⁰–2²¹ entries (e.g. lead sentences of Wikipedia articles), and how to sample the 2²¹ from it.
 - **I10** *(closed 2026-09-02, `012-tiers-nvme`)* The 4 TB NVMe is installed at `/mnt/nvme`; $\beta_{cold}$ = 7.3 GB/s sequential, 6 GB/s random from 4 MiB, 46 µs / 70 µs random latency at 4 / 16 KiB (queue depth 1). The SATA drive was never measured. Cold is 10× warm in latency at KV-block sizes, so S6 batches cold fetches to ≥ 1 MiB or models the stall; see I16.
 - **I11** *(closed, `003-gemm`/`010`)* 3 × GA104 + 1 × GA106: per-card $\phi$ spread 2.5 %, identical DDP step times — immaterial.
 - **I12** *(closed 2026-09-02)* 3.6 TB free on `/mnt/nvme` (corpus, cold tier, indexes) and 916 GB on `/mnt/hdd` (bulk storage, never a KV tier) against a ≈ 20 GB corpus; the `06 §7` memmap-on-NVMe rule is satisfiable as written.
@@ -1953,6 +2014,17 @@ and an ADR first, L6c likewise; the `small` programme (L0, L1, L2, L3, L5, L5d a
 the ladder's own next step and needs no new code. The choice between "more `screen` variants" and
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
+
+### 2026-11-03 (20:55) — **ADR-053 proposed**: L8 as built (I3, I8, I9 answered for approval)
+
+The user chose L8 as Phase 3's next item. **ADR-053**:
+- **Source:** Wikipedia `20231101.en` (CC BY-SA 3.0 / GFDL, derived data not redistributed); 2²⁰ article lead sentences, seed 0.
+- **Encoder:** BGE-base-en-v1.5 (MIT), frozen.
+- **Lookup:** the table on a 1024 × 1024 product grid by balanced PQ placement, so keys are learned maps of the PQ centroids (ADR-009 amended); $k_m$ = 32 (the spec's `topk: 1` gives the query no gradient); one linear read-out after the weighted sum. 1.70 MFLOP per token-iteration, with the expert width re-solved for matched FLOPs (≈ 711 against 896, a recorded confound).
+- **Evals:** a new `wiki-lead` eval (in-table and out-of-table pools), usage probes, and the verdict rule set in advance.
+- **Ids:** build rig `040`, probe `041`, run `173`.
+
+Not built, nothing running.
 
 ### 2026-11-03 (20:10) — **The user accepts point (b) as inconclusive for now** and returns to Phase 3
 
