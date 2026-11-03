@@ -886,6 +886,7 @@ Cost units from `docs/06 §4`: one `screen` run ≈ 8 h (1 B tokens, 1 seed); on
 - **I33** *(2026-10-21)* **L5d's router aux loss is summed over segments, not averaged.** In `model/model.py` the segment loop of the shared-block forward adds each 512-token segment's router aux to the total. So L5d trains with an effective load-balancing weight of (context / 512) × L5's: 4× at 2 k and 16× at 8 k. The logged router aux shows it: `111` 0.0322 vs `110` 0.0079; `159` 0.1280 vs `158` 0.0077. Every L5d comparison carries the confound (`111`, `134`/`135`, `159`). Expected direction: stronger balancing costs the main loss slightly, so L5d's measured cost is probably *overstated*, and H15a's *supports* would survive. That is unmeasured. To decide: (1) an ADR that averages the aux over segments (spec in `01`, then code and a unit test that L5d's aux equals L5's at one segment); (2) whether to size the effect with one control, L5d at 2 k with the averaged aux, ≈ 8.3 h at `screen` against `111`. Bears on H15a; touches ADR-021/022 (segment-recurrent training), ADR-037. *Update 2026-10-21:* the user asked for the fix and the control. ADR-038 averages over segments (knob `router.segment_aux`, `sum` reproduces old runs); control `162-l5d-segmean-screen` is queued after `161`. *Closed 2026-10-30:* `162` = 3.3443 vs `111` 3.3477, Δ −0.0034 (1.1σ, inside ADR-038's 2σ band) → the confound is negligible and every L5d verdict stands as written; the direction is the predicted one (the 4× weight overstated L5d's cost: +0.35 % vs `110` instead of +0.45 %). The logged aux matches L5's (0.0076 vs 0.0079).
 - **I34** *(2026-10-21)* **The acceptance verifier skips the main head's output norm.** `01 §7` / I27 define acceptance against *head 1's own greedy prediction*. Head 1 is `head(h)` = $\mathrm{RMSNorm}_{out}(h)\,E^\top$, but `model/mtp.py` (`_greedy_head1`) and `scripts/analysis/probe_mtp_acceptance.py` compute the verifier as $h\,E^\top$, without the output RMSNorm. Its per-row scale does not change the argmax; its learned per-dimension gain can. So every logged acceptance (L3, L3-full, L3b at both budgets) is against a slightly different verifier than the main head. The size is unknown. The code disagrees with the spec, so the spec wins: the verifier becomes `head(h)` (on branch `l3c-i33`, merged after `161`). The probe reports both verifiers, and the queue re-measures `122`/`131` (L3 pair), `156`/`157` (L3b pair), `152` and `113` on GPU before `164` runs. H13's verdicts are weakened by margins of 28–31 points on acceptance and by the main-head clause on its own, so no verdict can flip. The re-measured numbers replace the logged ones as L3c's comparators. Bears on H13; touches I27, ADR-012, ADR-039. *Closed 2026-10-30:* `queue_screen_12` re-ran the seven probes with the fixed probe (`b96364b`). The corrected verifier lowers acceptance by 0.4–0.5 points at `screen` and 0.7–1.4 at `small` (table in `164`). Corrected pairs: L3 41.6 / 24.1 / 16.0 %, L3b 40.6 / 22.5 / 14.4 %. Every verdict stands.
 - **I36** *(2026-10-30)* **The held-out acceptance proxy conditions the verifier on the true context, which greedy decoding never does.** I27's metric accepts head $j$'s draft of $x_{t+j}$ when it equals head 1's greedy prediction at $t+j-1$ *given the true tokens up to $t+j-1$*. In self-speculative greedy decoding the verifier at $t+j-1$ is conditioned on the tokens just drafted and accepted, i.e. on head 1's own greedy outputs. For independent heads (L3, L3b) the two differ only through the verifier's context. For L3c's chain they also differ through the module's input: module 2 is fed head 1's greedy guess of $x_{t+1}$, which the proxy's verifier then ignores in favour of the true $x_{t+1}$ (right ≈ 40 % of the time at `screen`). So the proxy may understate L3c relative to L3. `164` measured 34.5 / 16.1 / 8.4 % chained against 70 / 65 / 63 % teacher-forced; how much of that gap is the metric is unknown. A decode-faithful measurement would greedily generate from held-out prompts and count accepted drafts along the generated sequence, for L3, L3b and L3c alike. To decide: whether it is worth building (an offline probe, GPU, no training) before H13 is closed for good. It cannot rescue H13's main-head clause (`164` +0.0497 vs L2). Bears on H13; touches I27, ADR-012, ADR-039.
+- **I37** *(2026-11-03, `034`)* **`sim/` has no fixed cost per job, and on this rig that cost dominates.** S0 (`034-s0-ep-decode`) failed at every $z$: the sim's throughput was 2.6–12.4× too high and its per-iteration p50 0.08–0.38× of measured. The expert phase costs 0.43 ms per round from 5 to 305 rows per expert, and the owner phase 1.16 ms at 4 tokens, about 40× what the rooflines of ADR-043 decisions 1 and 6 charge. The likely source is the reference implementation's Python and kernel-launch overhead. The question is which of three moves restores a calibration that means something: measure the per-job costs and the per-collective latency with their own bench and add them to `local_3060.yaml` as sourced inputs (`note64` then needs its own value); shrink them on the harness side (CUDA graphs, fused experts) toward the roofline system; or both. Each needs an ADR, and none may be fitted to S0 (ADR-049 §6).
 
 ## Session log
 
@@ -1767,11 +1768,46 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-11-03 (02:30) — **ADR-049 accepted and built; S0 run as `034-s0-ep-decode`: not passed at any $z$**. The sim's rooflines lack a fixed cost per job (I37)
+
+The user accepted ADR-049 ("yes, accept it, push, then continue"), pushed as `ee2772a`. Spec first
+(`7c94904`): `01 §4.8` (decode with per-iteration caches), `02 §5.1` (round policy, measurement
+only), `06 §6` (S0 as built) and `sim/README` decision 11. Code (`847e7e7`):
+- `model/decode.py`: preallocated per-iteration K/V buffers, chunked and row-sliced prefill,
+  grouped K/V read in place, and the owner/expert split, plus `BigMoE.prefill` / `decode_step`;
+- `scripts/bench/s0_ep_decode.py`;
+- `sim/` m1.1 (`batch_policy = round`, `routing = empirical`).
+
+Tests: teacher-forced decode equals the full forward (1e-4), and the round policy reproduces a
+hand-computed two-unit timeline. ruff is clean and 134 tests pass. One deviation from ADR-049 §2:
+the harness spawns its 4 processes with `mp.spawn` (the `bench_nccl` pattern), not `torchrun`.
+Nothing else changes.
+
+**`034-s0-ep-decode`** (rig id `034`, idle rig, 89 s): `132` at $z$ = 16 / 64 / 256 / 1024.
+
+| | $z$ = 16 | 64 | 256 | 1024 |
+|---|---|---|---|---|
+| measured | 802 tok/s | 3,153 | 9,832 | 18,618 |
+| iteration p50 | 1.93 ms | 1.95 | 2.52 | 5.05 |
+| sim (round, measured routing) | 12.4× the throughput | 8.1× | 4.2× | 2.6× |
+| sim iteration p50 | 0.08× | 0.12× | 0.22× | 0.38× |
+
+Uniform routing changes the sim by < 1 %. **Not passed** (`02 §14`: ±20 %). The time split names
+the term. A hosted expert's call costs 0.43–0.44 ms per round from 5 to 305 rows. An owner stage
+costs 1.16 ms at 4 tokens. Three host-bounced `all_to_all`s cost 0.22 ms per round, against the
+sim's 0.09. These are fixed costs per job that ADR-043's rooflines do not have, most likely Python
+and kernel launch overhead in `model/` (not measured). Teacher-forced NLL is 2.98–3.10, against
+`132`'s 3.078, so the decode is correct. Peak memory ≤ 7.71 GiB, `n_thermal` 0. Nothing was fitted
+(ADR-049 §6). **I37** opens with the three ways forward: measure the per-job costs as sourced
+scenario inputs, shrink them in the harness (CUDA graphs), or both. Each needs an ADR, and the
+choice is the user's. `sim/` stays uncalibrated. Nothing running. Next ladder id 173, next rig
+id 035.
+
 ### 2026-11-03 (01:20) — Phase 2 starts with S0; **ADR-049 proposed** (bulk-synchronous expert-parallel decode of `132`, sim `round` policy)
 
 ADR-048 is pushed (`fe2a106`). The user chose Phase 2's S0 over L8, L7c and L9, then picked
 bulk-synchronous rounds over an asynchronous threshold + timeout harness and the trained `small`
-L5 `132` over random weights. **ADR-049** is drafted as *proposed* (accepted the same night, below the session log's next entry). It covers:
+L5 `132` over random weights. **ADR-049** is drafted as *proposed* (accepted the same night; see 02:30). It covers:
 - a decode path in `model/` (L5, fixed $r$, per-iteration K/V caches; a test that teacher-forced
   decode equals the full forward);
 - the harness `scripts/bench/s0_ep_decode.py` (4 ranks; owner $s$ mod 4, experts $i$ mod 4; one
