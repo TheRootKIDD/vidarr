@@ -1954,6 +1954,21 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-11-03 (20:10) — **The user accepts point (b) as inconclusive for now** and returns to Phase 3
+
+Options offered after `039`:
+1. search the public record for the two deciding inputs;
+2. ask the SGLang authors;
+3. add a second published deployment;
+4. accept "inconclusive" and go back to the ladder.
+
+The user chose **4**. Consequences, recorded rather than decided anew:
+- **I1 stays open on I39.** `02 §14` is not met, so **no S-result (S1–S11) may be quoted** until point (b) is settled. Simulator runs may still be made and recorded as uncalibrated.
+- `sim/` keeps everything ADR-052 built.
+- Phase 3's ladder work (L8, L9, E-Q12) does not depend on the simulator and goes ahead.
+
+Nothing running. Next ladder id 173, next rig id 040.
+
 ### 2026-11-03 (19:55) — ADR-052 built and scored: **`039-i1-sglang`: point (b) inconclusive** (stated 1.09×; flips at IB 200 Gb/s and at zipf-0.5 routing)
 
 Code `28af353`:
