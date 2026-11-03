@@ -23,7 +23,9 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--batch-rule", choices=["floor", "roofline"], default="floor")
     ap.add_argument("--w-max", type=float, default=1e-3, help="expert queue timeout, seconds")
-    ap.add_argument("--routing", choices=["uniform", "zipf"], default="uniform")
+    ap.add_argument("--policy", choices=["queue", "round"], default="queue")
+    ap.add_argument("--routing", choices=["uniform", "zipf", "empirical"], default="uniform")
+    ap.add_argument("--route-probs", type=float, nargs="*", default=[], help="routing empirical")
     ap.add_argument("--zipf-s", type=float, default=1.0)
     ap.add_argument("--context", type=int, default=None, help="keys visible per decode token")
     ap.add_argument("--series", action="store_true", help="keep the utilisation time series")
@@ -40,6 +42,8 @@ def main(argv: list[str] | None = None) -> None:
         w_max_s=a.w_max,
         routing=a.routing,
         zipf_s=a.zipf_s,
+        batch_policy=a.policy,
+        route_probs=tuple(a.route_probs),
     )
     out: dict[str, Any] = simulate(p)
     if not a.series:

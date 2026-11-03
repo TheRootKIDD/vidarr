@@ -207,6 +207,21 @@ class BigMoE(nn.Module):
         )
         return new, aux
 
+    # ---- decode (ADR-049; `model/decode.py`) -------------------------------------------
+    def prefill(self, tokens: Tensor, cache: object) -> Tensor:
+        """Fill `cache` (a `decode.DecodeCache`) with prompt `tokens` [B, T]; logits [B, T, V]."""
+        from model import decode
+
+        assert isinstance(cache, decode.DecodeCache)
+        return decode.step(self, tokens, cache)
+
+    def decode_step(self, tokens: Tensor, cache: object) -> Tensor:
+        """One position per sequence: tokens [B, 1] -> logits [B, V]."""
+        from model import decode
+
+        assert isinstance(cache, decode.DecodeCache)
+        return decode.step(self, tokens, cache)[:, -1]
+
     def set_progress(self, frac: float) -> None:
         """Training progress in [0, 1), for schedules inside the model (L3b, ADR-036)."""
         if self.mtp is not None:

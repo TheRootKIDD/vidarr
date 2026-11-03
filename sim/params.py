@@ -28,7 +28,8 @@ from costmodel.hardware import b_min
 SCENARIO_DIR = Path(__file__).parent / "scenarios"
 
 BatchRule = Literal["floor", "roofline"]
-Routing = Literal["uniform", "zipf"]
+BatchPolicy = Literal["queue", "round"]
+Routing = Literal["uniform", "zipf", "empirical"]
 
 
 @dataclass(frozen=True)
@@ -72,6 +73,10 @@ class SimParams:
     # ---- scheduler (docs/02 §5) -----------------------------------------------------------
     batch_rule: BatchRule = "floor"  # which threshold the expert queue fires at (I13/I18)
     w_max_s: float = 1e-3  # queue timeout; NOT calibrated (decision 9, I35)
+    # "queue": threshold + timeout (02 §5.1). "round": S0's bulk-synchronous barrier (ADR-049 §5,
+    # decision 11): each owner runs all its tokens as one job per stage, and each expert fires
+    # once per iteration when every token's dispatch for that iteration has arrived
+    batch_policy: BatchPolicy = "queue"
     multicast: bool = False  # docs/02 §3 hook; m1 refuses True
     depth: Literal["fixed"] = "fixed"  # ragged depth hook; m1 refuses anything else
 
@@ -81,6 +86,7 @@ class SimParams:
     warmup_tokens: int = 1_000  # completions before the measurement window opens
     routing: Routing = "uniform"
     zipf_s: float = 1.0
+    route_probs: tuple[float, ...] = ()  # routing = "empirical": per-expert selection weights
     seed: int = 0
     util_window_s: float = 1e-2  # bin width of the utilisation time series
 
@@ -107,6 +113,10 @@ class SimParams:
             raise ValueError("need 1 <= k <= N_e")
         if self.z < 1 or self.tokens < self.z:
             raise ValueError("need z >= 1 and tokens >= z")
+        if self.batch_policy == "round" and (self.tokens % self.z or self.warmup_tokens % self.z):
+            raise ValueError("round policy: tokens and warmup_tokens must be multiples of z")
+        if self.routing == "empirical" and len(self.route_probs) != self.n_e:
+            raise ValueError("routing = empirical needs route_probs with N_e entries")
 
     @property
     def batch_threshold(self) -> int:

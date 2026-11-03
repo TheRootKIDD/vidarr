@@ -107,3 +107,36 @@ def test_a_value_without_a_source_line_is_rejected() -> None:
         check_sources({"chip": {"phi": 1.0}})
     with pytest.raises(ValueError, match="per_card"):
         check_sources({"chip": {"per_card": [1.0, 2.0]}})
+
+
+# ---- round policy (decision 11, ADR-049 §5) --------------------------------------------------
+def test_round_policy_reproduces_the_hand_timeline() -> None:
+    """Two units, z = 4, k = 1, every token routed to expert 0 on unit 0. Owner 0 holds
+    sequences 0 and 2, owner 1 holds 1 and 3. First iteration, by hand:
+    both owners run attention on 2 tokens (B); owner 1 sends 2 vectors over its link (2 v/λ
+    serialised, plus the latency floor ℓ); expert 0 fires once, on all 4 rows (C); unit 0 sends 2
+    returns to owner 1 (2 v/λ + ℓ). Owner 0's iteration = B + 2v/λ + ℓ + C; owner 1's adds the
+    return leg."""
+    p = load_params(
+        "local_3060", "L5", z=4, tokens=8, warmup_tokens=0, r=2, k=1, n_e=2,
+        n_units=2, batch_policy="round", routing="empirical", route_probs=(1.0, 0.0),
+    )
+    sim = Simulation(p)
+    sim.run()
+    a_s, _ = sim.owner_step_s("skel_in", 2)
+    b_s, _ = sim.owner_step_s("attn", 2)
+    c_s, _ = sim.expert_step_s(4)
+    leg = 2 * p.vector_bytes / p.lambda_link + p.link_latency_s
+    first = sorted(x for _, x in sim.iter_lat[:2])
+    assert first[0] == pytest.approx(b_s + leg + c_s, rel=1e-9)
+    assert first[1] == pytest.approx(b_s + leg + c_s + leg, rel=1e-9)
+    assert sim.fired == {"threshold": 0, "timeout": 0, "round": 2 * p.r}  # once per iteration
+    assert sim.batch_sizes == [4] * (2 * p.r)
+    assert sim.iter_lat[0][0] == pytest.approx(a_s + b_s + leg + c_s, rel=1e-9)
+
+
+def test_round_policy_needs_whole_rounds_and_empirical_needs_probs() -> None:
+    with pytest.raises(ValueError, match="multiples of z"):
+        small(batch_policy="round", tokens=301)
+    with pytest.raises(ValueError, match="route_probs"):
+        small(routing="empirical")

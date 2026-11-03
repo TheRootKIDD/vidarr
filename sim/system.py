@@ -5,7 +5,8 @@ skeleton, the sum of expert returns) and hosts experts. Each unit is a single FI
 server. Owner work of one kind that is waiting when the server frees is run as one batched
 job; an expert queue fires a batch at `batch_threshold` tokens or when its oldest token has
 waited `w_max_s` (`02 §5.1`). Messages cross per-unit egress links. Numbered decisions refer
-to `sim/README.md` (ADR-043).
+to `sim/README.md` (ADR-043). `batch_policy = "round"` replaces both batching rules with
+S0's barrier (decision 11, ADR-049 §5).
 """
 
 from __future__ import annotations
@@ -81,7 +82,16 @@ class Simulation:
         self.iter_lat: list[tuple[float, float]] = []
         self.queue_wait: list[tuple[float, float]] = []  # (batch start, wait)
         self.batch_sizes: list[int] = []
-        self.fired = {"threshold": 0, "timeout": 0}
+        self.fired = {"threshold": 0, "timeout": 0, "round": 0}
+        # round policy (decision 11): owned-token counts, this iteration's dispatches and
+        # per-expert targets, and per-owner iteration starts / returns for the latency sample
+        self.round = p.batch_policy == "round"
+        self.n_owned = [sum(1 for s in range(p.z) if p.owner_of(s) == u) for u in range(p.n_units)]
+        self.round_dispatched = 0
+        self.round_expect = np.zeros(p.n_e, dtype=int)
+        self.round_target: np.ndarray | None = None
+        self.owner_iter_start = [0.0] * p.n_units
+        self.owner_returned = [0] * p.n_units
         self.bytes_logical = 0.0
         self.bytes_wire = 0.0
         self.token_iterations = 0
@@ -89,10 +99,15 @@ class Simulation:
 
     # ---- workload ----------------------------------------------------------------------
     def _routing_distribution(self) -> np.ndarray:
-        """Per-expert selection weights (decision 7): uniform, or Zipf over expert index."""
+        """Per-expert selection weights (decision 7): uniform, Zipf over expert index, or the
+        measured shares of an S0 run (ADR-049 §5)."""
         p = self.p
-        zipf = 1.0 / np.arange(1, p.n_e + 1) ** p.zipf_s
-        w = np.ones(p.n_e) if p.routing == "uniform" else zipf
+        if p.routing == "empirical":
+            w = np.asarray(p.route_probs, dtype=float)
+        elif p.routing == "zipf":
+            w = 1.0 / np.arange(1, p.n_e + 1) ** p.zipf_s
+        else:
+            w = np.ones(p.n_e)
         return w / w.sum()
 
     def _start_token(self, seq: int) -> None:
@@ -129,6 +144,8 @@ class Simulation:
         """Route to k distinct experts and send one vector to each (`02 §3`; no multicast)."""
         experts = self.rng.choice(self.p.n_e, size=self.p.k, replace=False, p=self.route_p)
         tok.pending = self.p.k
+        if self.round:
+            self._round_dispatch(experts)
         for e in experts:
             dest = self.p.expert_of_unit(int(e))
             self._send(tok.owner, dest, lambda e=int(e), tok=tok: self._expert_arrive(e, tok))
@@ -139,7 +156,15 @@ class Simulation:
             return
         # the g-weighted sum at the owner is not charged (decision 8)
         self.token_iterations += 1
-        self.iter_lat.append((self.eng.now, self.eng.now - tok.iter_start_t))
+        if self.round:
+            # one sample per owner per iteration, attention start to the last return (harness)
+            self.owner_returned[tok.owner] += 1
+            u = tok.owner
+            if self.owner_returned[u] == self.n_owned[u]:
+                self.owner_returned[u] = 0
+                self.iter_lat.append((self.eng.now, self.eng.now - self.owner_iter_start[u]))
+        else:
+            self.iter_lat.append((self.eng.now, self.eng.now - tok.iter_start_t))
         if tok.j < self.p.r:
             self._begin_iteration(tok)
         else:
@@ -169,9 +194,32 @@ class Simulation:
         self.eng.at(unit.egress_free_t + self.p.link_latency_s, deliver)
 
     # ---- expert side -------------------------------------------------------------------------
+    def _round_dispatch(self, experts: np.ndarray) -> None:
+        """Count this iteration's dispatches; once all z are in, every expert's batch size is
+        known and an expert fires as soon as its last row has arrived (decision 11)."""
+        for e in experts:
+            self.round_expect[int(e)] += 1
+        self.round_dispatched += 1
+        if self.round_dispatched < self.p.z:
+            return
+        self.round_target = self.round_expect
+        self.round_expect = np.zeros(self.p.n_e, dtype=int)
+        self.round_dispatched = 0
+        for e in range(self.p.n_e):
+            self._round_check(e)
+
+    def _round_check(self, e: int) -> None:
+        t = self.round_target
+        if t is not None and t[e] > 0 and len(self.queues[e].items) == t[e]:
+            t[e] = 0
+            self._fire(e, "round")
+
     def _expert_arrive(self, e: int, tok: Token) -> None:
         q = self.queues[e]
         q.items.append((self.eng.now, tok))
+        if self.round:
+            self._round_check(e)
+            return
         if len(q.items) >= self.p.batch_threshold:
             self._fire(e, "threshold")
         elif len(q.items) == 1:
@@ -202,6 +250,8 @@ class Simulation:
         if unit.expert_jobs:
             best_kind, best_t = "expert", unit.expert_jobs[0].ready_t
         for kind, items in unit.owner_items.items():
+            if self.round and len(items) < self.n_owned[uid]:
+                continue  # round policy: an owner stage waits for all its tokens
             if items and items[0][0] < best_t:
                 best_kind, best_t = kind, items[0][0]
         if best_kind is None:
@@ -217,6 +267,8 @@ class Simulation:
             done = lambda: self._expert_job_done(unit, job)  # noqa: E731
         else:
             batch, unit.owner_items[best_kind] = unit.owner_items[best_kind], []
+            if self.round and best_kind == "attn":
+                self.owner_iter_start[uid] = now
             dt, flops = self.owner_step_s(best_kind, len(batch))
             done = lambda: self._owner_job_done(unit, best_kind, batch)  # noqa: E731
         unit.log.append((now, now + dt, flops))
@@ -306,6 +358,8 @@ class Simulation:
             "z": p.z,
             "tokens": p.tokens,
             "seed": p.seed,
+            "batch_policy": p.batch_policy,
+            "routing": p.routing,
             "batch_threshold": p.batch_threshold,
             "w_max_s": p.w_max_s,
             "window_s": [t0, t1],
@@ -321,6 +375,7 @@ class Simulation:
                 "mean_size": float(np.mean(self.batch_sizes)) if self.batch_sizes else 0.0,
                 "fired_by_threshold": self.fired["threshold"],
                 "fired_by_timeout": self.fired["timeout"],
+                "fired_by_round": self.fired["round"],
             },
             "fabric_bytes_per_token_iteration": {
                 "logical": self.bytes_logical / max(self.token_iterations, 1),
