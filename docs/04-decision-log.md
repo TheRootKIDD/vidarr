@@ -670,6 +670,52 @@ Decision:
 Consequences: one `screen` run (≈ 5–8 h, to be set by the `033` probe). Bears on H4; touches `01 §4.5`,
 `02 §2`, `03 §2` (L7 row), I20, S3, `sim/` milestone 2.
 
+### ADR-048 — H4 closes at `screen`: the unit-sized expert ($g$ = 1) is kept; no further $g$ arms
+2026-11-03 · accepted (the user's decision: "yes, draft the closing ADR for H4")
+Context: ADR-047's one arm is done. `172-l7-g4-screen` ($g$ = 4: 8 of 32 sub-experts of width 224,
+with FLOPs, expert params and unit count matched) = 3.3473, against `110` (L5, $g$ = 1) = 3.3328.
+**Δ = +0.0145 (+0.44 %, 4.8σ worse)**. The gap holds flat at +0.0145 from step 1000 to the end
+(−0.069 at step 100, +0.023 at step 500). Routing ends healthy (31.99 of 32 effective, 0 dead), with an
+early transient of up to 12 dead sub-experts recovered by step 47. Iterations do not partition the 32
+sub-experts by depth (correlation 0.65, `110` 0.71). That is ADR-047 §5's *unexpected* band: the
+fine-grained prior (I20: $g$ = 1 ≈ 3 % *worse* than $g$ = 4 at `small`) is the way H4 could have
+failed, and the measurement points the other way. The only run that could weaken H4 is one where finer
+beats coarser by > 4σ. At `screen` it lost by about as much, so a `small` pair (≈ 40 h at L7-g4's
+0.686× throughput) has no `screen` evidence to confirm, and ADR-031's pair rule (beats the
+comparator by > 4σ) does not fire. Precedents for closing at `screen`: ADR-044 (H13), ADR-046 (H7).
+Decision:
+1. **H4 closes at `screen`, silent under ADR-013's letter, leaning *supports*.** ADR-047 §5 maps
+   *supports-direction silent* to |Δ| ≤ 2σ and has no supports band for "coarse better by > 4σ". The
+   result is therefore recorded as *not weakened*, with the coarse expert 4.8σ better at one seed. It
+   is not recorded as *supported*. The record reads: "at matched FLOPs, params and unit count, the
+   unit-sized expert loses nothing to a 4-way split at this scale".
+2. **No further $g$ arms.** No $g$ = 2, no `L7-g4u` (unit-limited routing, ADR-047 §2), no L7 `small`
+   pair. L7 leaves `03 §2`'s list of decisive `small` steps. The four candidate causes in `172`'s
+   write-up stay recorded and untested:
+   - width 224 below the 256 tile floor;
+   - the early dead-sub-expert transient;
+   - an aux weight tuned at $N_e$ = 8;
+   - unconstrained selection.
+
+   None of them would turn a loss into a > 4σ win without a second feature.
+3. **The ladder keeps $g$ = 1** (the default, `01 §1`), so nothing changes for later rungs. **L7c**
+   (rank-heterogeneous experts, with S11) is a different question, P4's uniform-width rule, not
+   granularity. It stays scheduled as before and is not decided here. L7b (H8) is already decided at
+   `small`.
+4. **Spec and code.** `01 §4.5` keeps the granularity knob as written (ADR-047) and gains a status line
+   pointing here. The code (`experts.granularity`, Router's active count) and
+   `test_l7_granularity_matches_l5` stay. No code change. The systems side of $g$ > 1 (clos
+   destinations, per-chip batch; ADR-047 §2) stays a possible `sim/` scenario and is not owed.
+   `sim/params.py`'s refusal of $g$ > 1 stays.
+5. **I20:** its H4 prior was not borne out at `screen`. The sign is opposite, so that part of I20 is
+   closed, with a note.
+6. **Reopening** (e.g. at `medium`, where fine-grained laws are fitted, or with unit-limited routing)
+   needs a new ADR.
+
+Consequences: no runs. Touches `01 §4.5` (status line), `03 §1` (H4 row), `03 §2` (L7 row and
+`small` list), and I20. Nothing is queued after this. Phase 3 continues with L8/L9/S5–S7 or L7c,
+or Phase 2's S0 first; that is the user's call.
+
 ## Proposed / pending
 - **ADR-028** — Unit model revisions from the author's hardware document (`docs/07 §4`): (a) two compute classes per chip — an FF core with a large array ($s_{min,ff}$ = 256–1024) and attention cores with small arrays ($s_{min,attn}$ ≈ 64), hence $\phi_{ff}$, $\phi_{attn}$ as separate scenario inputs; (b) the tile floor is a *row* floor, $N$ = $M$ × (LHS bw / RHS bw) rows per weight tile, with each token contributing 1 + $m$ rows under $m$-token speculation — the scheduler's queues count rows; (c) the reduce leg of the local fabric carries ≥ 16-bit partial sums: `02 §2` traffic becomes $b d\, b_{act} + b d\, b_{sum}$, $b_{sum}$ ≥ 2; (d) full pipelining inside the unit doubles tokens in flight and per-token latency — the Little's-law budget $Z$ of `02 §5.5` carries the factor; (e) router-based unit fabrics are ≤ 50 % link-efficient (avg. 2 hops), torus collectives 100 %: `02 §1`'s "switch" option is not equivalent to a torus; (f) the asymmetric 4×4×4 torus all-gather costs ≈ 3X/(8B) vs ≈ X/(2B) on a flat ring (our derivation from the author's algorithm) — the number S1/S3 must reproduce; (g) the failure domain is the 4-chip ring board, and a failed rail port is bypassed through torus neighbours at ¼ load (`02 §11`); (h) the replica-rounding utilisation floor $\ell / \lceil \ell \rceil$ reported beside the Little's-law model in S4. Also fills `note64.yaml` with the sourced ratios of `docs/07 §6`; absolute $\phi$, $\beta_C$, $\lambda_C$, $\nu_C$ stay placeholders (I4). Bears on H1, H5, H8, H9, H10, H11, H16; changes `02 §1, §2, §5, §11`.
 - **ADR-024** — Parallel prefill mode for long prompts (the author's "less effective mode"): (a) all segments at once with local attention only, global cache filled afterwards from context-poor final vectors; (b) pipelined segments, segment $k+1$ at iteration $j$ attending globally to segment $k$'s iteration-$j$ caches (transient per-iteration global cache during prefill, in-flight depth up to $r$ segments). Both are inference-time modes of a sequentially trained model; E-Q12 evaluates both against sequential prefill on continuation loss and TTFT (S5). If both degrade, a mixed-mode training variant becomes a later ladder step.
@@ -730,7 +776,7 @@ Consequences: one `screen` run (≈ 5–8 h, to be set by the `033` probe). Bear
 - **I13** The empirical batch floor (512 for 80 % of $\phi$) is 7× the roofline $b_{min}$ (79). `02 §2` tells the simulator's queue to use $b_{min}$; it must use the larger. Is the gap a GA106-class property or intrinsic to the roofline argument — i.e. what is it on `note64` hardware? Scenario files carry both numbers.
 - **I14** `007-faiss-1m` recall is degenerate on random 768-d vectors; QPS stands (7.2 k at nprobe 8, 40× short of per-iteration retrieval, confirming `06 §5.1`). Re-measure recall on real sentence embeddings once I8/I9 settle, and run 10 M and `faiss-gpu` in that same job. The 10 M run exceeded the 15-minute rule; **1 M is accepted as the Phase-0 measurement** (`007-faiss-1m` §Decision): the 40× shortfall is structural at note scale (≈ 10⁸ QPS needed), not a property of this CPU, so ADR-009's memory-layer reading of P17 transfers to any hardware; only the cold-tier lookup ceiling and the offline L8b budget are rig-specific numbers.
 - **I15** 2:4 sparsity measured at 1.3–1.6× best and a loss below $b$ ≈ 2–4 k (`005/006`) against a nominal 2×. Framework path (PyTorch semi-structured) or silicon ceiling? A Phase-3 kernel question; until then ADR-013's H3 threshold prices the trade at ≈ 1.4×, not 2×.
-- **I20** Priors from the literature refresh (`docs/05 §Headline`) expect four of the note's claims to *fail* ADR-013's thresholds at our scale: H4 (granularity law: $g$ = 1 ≈ 3 % worse than $g$ = 4 at `small`), H3 (2:4 at equal width costs 1.5–3.8 %; no precedent for the 2×-width claim), H13 (MTP hurts main quality below ≈ 1 B without a curriculum), H15b (1 % is below Landmark's +1.5 % at ≈ 100 M). Thresholds stay — they are the note's claims — but each of these steps gets its recovery variant scheduled beside it rather than after: L7b ($L_e$ = 2) with L7, a forward MTP curriculum as L3b, and for H15b the RULER/PG-19 subset at 8–32 k that ≈ 100 M models can resolve (HELMET and LongBench v2 cannot). Also from `docs/05`: `007-faiss-1m` recall must be re-measured on real *block keys* (attention queries are out-of-distribution for IVF; 30–50 % of lists scanned in RetrievalAttention) before H15b-S is scored — extends I14.
+- **I20** *(H4 part closed by ADR-048: at `screen`, $g$ = 1 beat $g$ = 4 by 0.0145, opposite to the prior)* Priors from the literature refresh (`docs/05 §Headline`) expect four of the note's claims to *fail* ADR-013's thresholds at our scale: H4 (granularity law: $g$ = 1 ≈ 3 % worse than $g$ = 4 at `small`), H3 (2:4 at equal width costs 1.5–3.8 %; no precedent for the 2×-width claim), H13 (MTP hurts main quality below ≈ 1 B without a curriculum), H15b (1 % is below Landmark's +1.5 % at ≈ 100 M). Thresholds stay — they are the note's claims — but each of these steps gets its recovery variant scheduled beside it rather than after: L7b ($L_e$ = 2) with L7, a forward MTP curriculum as L3b, and for H15b the RULER/PG-19 subset at 8–32 k that ≈ 100 M models can resolve (HELMET and LongBench v2 cannot). Also from `docs/05`: `007-faiss-1m` recall must be re-measured on real *block keys* (attention queries are out-of-distribution for IVF; 30–50 % of lists scanned in RetrievalAttention) before H15b-S is scored — extends I14.
 - **I23** *(closes I22)* **Thermal throttling.** During `101-l1-screen` (14:46, after ≈ 19 h of continuous load) three cards read 91–93 °C with `sw_thermal_slowdown` active and SM clocks of 270 / 1320 / 1620 MHz against 2115 max; the fourth (GPU 2) sat at 58 °C and 1950 MHz. DDP runs at the slowest card, so the wall-clock gap of I22 is the 270 MHz card. The timed step missed it because the timer had no `cuda.synchronize` (fixed). Consequences per `06 §7`: **throughput numbers from `100-l0-screen` and the queued runs are invalid; loss numbers stand.** The trainer now logs min SM clock, max temperature and throttle count every 10 steps. `015-thermal-soak-170w` shows the three hot cards throttle within a minute while drawing only 85–105 W of their 170 W limit, so a power cap is not a remedy; the fix is airflow and spacing (`015` §Interpretation), verified by a 15-minute un-throttled soak before any run. The `014` bench ran cold and is unaffected. **2026-09-04, first cooling step** (`016-thermal-soak-bottom-fans`: three 140 mm bottom intakes plus top exhaust fans, cards not yet re-slotted): time to first throttle 50–70 s → 110–130 s, worst-card steady clock 328 → 1518 MHz, DDP step 1277 → 826 ms, but the three sandwiched cards still reach 93 °C with `sw_thermal_slowdown`; GPU 2 (free slot beside it) unchanged at 62 °C. Spacing is the remaining constraint; the acceptance soak waits for the bracket/riser and needs ≈ 1100 steps to last 15 min. **2026-09-10, after the rebuild and two re-slottings** (`017`, `019`, `021`, `022`): spacing is confirmed as the constraint — three cards now hold 1921–1958 MHz at 63–66 °C with zero throttled samples, while the fourth sits beside another card and throttles at 93 °C with its fan at 100 % and 113 W of a 170 W limit, costing the lockstep DDP step 13.4 %. No fan fault and no power fault: `019`'s 0 % fan reading was the bracket fouling the header and is retired (`021`). The remaining lever was the one slot position. **Closed 2026-09-10 by `024-thermal-soak-bracket-move`**: after the user's bracket and GPU work, 1100 steps from cold gave **zero thermal-slowdown samples on all four cards over a 13.7-minute load window**, peaks of 82 / 70 / 71 / 67 °C, every card's clock minimum within 20 MHz of its mean, and a `step_s_median` of **737.5 ms** — below the ≈ 760 ms cold floor the criterion asked it to approach. The starved card of `022` (`GPU-88074816`) runs at 70 °C and 1931 MHz. The DDP step falls 968 → 737.5 ms against `022`, **23.8 %**, which is ≈ 1.9 h per `screen` rung. One caveat carried forward: GPU 0 holds 82 °C with its fan at 97 % and has almost no margin, where the other three keep 15–20 points in reserve — a `screen` rung runs for hours, not fourteen minutes, so checklist step 6's watch on `106` stands. **The acceptance soak was `024`, not `023`**: ids are allocated in order and the env re-capture came first in the order of work.
 - **I27** **H13's acceptance metric measures the wrong quantity, and three experiments follow from fixing it.** ADR-013 states H13's threshold as *"greedy acceptance of heads 2/3/4 **against the main head** on held-out ≥ 70 / 55 / 45 %"*; ADR-012 repeats it. `model/mtp.py` logs `logits.argmax(-1) == target` against the **ground-truth** token — top-1 accuracy, not acceptance. A draft is accepted when it *agrees with the verifier*, not when it is *right*, so the two differ and acceptance is the larger. Found 2026-09-11 while asking what `108`'s result implies. CLAUDE.md: the doc wins.
 
@@ -1690,6 +1736,19 @@ and an ADR first, L6c likewise; the `small` programme (L0, L1, L2, L3, L5, L5d a
 the ladder's own next step and needs no new code. The choice between "more `screen` variants" and
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
+
+### 2026-11-03 (00:50) — **ADR-048: H4 closes at `screen`** (not weakened, silent, leaning supports); $g$ = 1 kept, no further $g$ arms
+
+The user chose to close (option 1 of the 00:30 proposal). **ADR-048** (accepted):
+- H4 closes at `screen` under ADR-013's letter. It is *not weakened*: `172`'s 4-way split was 4.8σ
+  *worse* than $g$ = 1. ADR-047 §5 has no supports band for that, so no *supports* is claimed.
+- No $g$ = 2, no L7-g4u, no L7 `small` pair (struck from `03 §2`'s `small` list).
+- The ladder keeps $g$ = 1. L7c (uniform-width question, with S11) is unaffected.
+- `01 §4.5` gets a status line; the code and its unit test stay.
+- I20's H4 prior is marked closed (the sign came out opposite).
+
+Reopening needs an ADR. Nothing running, nothing queued; the next step (Phase 2's S0, or Phase 3's
+L8/L9/S5–S7 or L7c) is the user's. Next ladder id 173, rig id 034.
 
 ### 2026-11-03 (00:30) — **`172` L7-g4 = 3.3473, +0.0145 vs L5 `110` (4.8σ worse)**: the fine split loses at `screen` (ADR-047 §5's "unexpected" band; H4 not weakened, silent at one seed); `queue_screen_14` done
 

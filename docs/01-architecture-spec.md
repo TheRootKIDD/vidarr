@@ -120,6 +120,8 @@ the smallest width whose per-chip tensor-parallel slice $d_{ff}/U$ fills a tile,
 
 **Granularity knob $g$ (ADR-047).** One unit may host $g$ sub-experts of width $d_{ff}/g$, executed expert-parallel inside the unit (each chip = one sub-expert) instead of one tensor-parallel expert. The router scores all $N_e g$ sub-experts and selects the top-$k g$, so active expert FLOPs ($3 k d\, d_{ff}$), total expert parameters and the unit count $N_e$ are those of $g$ = 1 (fine-grained segmentation). Selection is not limited to $k$ units: a token's $k g$ sub-experts can lie in up to $\min(k g, N_e)$ units, so clos traffic is identical to $g$ = 1 only under unit-limited routing, a separate variant (ADR-047 §2). This is the H4 experiment (L7).
 
+**Status (ADR-048, 2026-11-03):** at `screen`, $g$ = 4 (`172`) was 0.0145 nats (4.8σ) *worse* than $g$ = 1 (`110`) at matched FLOPs, params and unit count. H4 closes there, not weakened, and the design keeps $g$ = 1. The knob stays as written for any reopening by ADR.
+
 Parameters per expert ($L_e = 1$, SwiGLU): $3\, d\, d_{ff}$. With 2:4 sparsity the dense-equivalent width is $2 d_{ff}$ at equal FLOPs (§8).
 
 ### 4.6 Knowledge memory (note P17)
