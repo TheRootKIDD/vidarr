@@ -110,29 +110,68 @@ def test_a_value_without_a_source_line_is_rejected() -> None:
 
 
 # ---- round policy (decision 11, ADR-049 §5) --------------------------------------------------
-def test_round_policy_reproduces_the_hand_timeline() -> None:
-    """Two units, z = 4, k = 1, every token routed to expert 0 on unit 0. Owner 0 holds
-    sequences 0 and 2, owner 1 holds 1 and 3. First iteration, by hand:
-    both owners run attention on 2 tokens (B); owner 1 sends 2 vectors over its link (2 v/λ
-    serialised, plus the latency floor ℓ); expert 0 fires once, on all 4 rows (C); unit 0 sends 2
-    returns to owner 1 (2 v/λ + ℓ). Owner 0's iteration = B + 2v/λ + ℓ + C; owner 1's adds the
-    return leg."""
-    p = load_params(
-        "local_3060", "L5", z=4, tokens=8, warmup_tokens=0, r=2, k=1, n_e=2,
-        n_units=2, batch_policy="round", routing="empirical", route_probs=(1.0, 0.0),
+T0 = {
+    "t0_skel_in_s": 3e-3,
+    "t0_attn_s": 1e-3,
+    "t0_post_s": 2e-4,
+    "t0_skel_out_s": 4e-3,
+    "t0_expert_s": 5e-4,
+    "t_coll_s": 7e-5,
+}
+
+
+def _round_params(**kw):
+    return load_params(
+        "local_3060",
+        "L5",
+        z=4,
+        tokens=8,
+        warmup_tokens=0,
+        r=2,
+        k=1,
+        n_e=2,
+        n_units=2,
+        batch_policy="round",
+        routing="empirical",
+        route_probs=(1.0, 0.0),
+        **kw,
     )
+
+
+@pytest.mark.parametrize("compose", ["max", "sum"])
+def test_round_policy_reproduces_the_hand_timeline(compose: str) -> None:
+    """Two units, z = 4, k = 1, every token routed to expert 0 on unit 0. Owner 0 holds
+    sequences 0 and 2, owner 1 holds 1 and 3. First iteration, by hand (decisions 11-12):
+    both owners run attention on 2 tokens (B); the dispatch collective takes 2 t_coll plus owner 1's
+    2 vectors at λ (D); expert 0 runs once on all 4 rows (C); the return collective takes t_coll
+    plus unit 0's 2 vectors to owner 1 (R); both owners run `post` on 2 tokens (P). Each job is
+    compose(t0, roofline), with the rooflines taken from a t0 = 0 copy."""
+    p = _round_params(compose=compose, **T0)
+    bare = Simulation(_round_params())
+
+    def job(kind: str, n: int) -> float:
+        roof = bare.expert_step_s(n)[0] if kind == "expert" else bare.owner_step_s(kind, n)[0]
+        t0 = T0[f"t0_{kind}_s"]
+        return max(t0, roof) if compose == "max" else t0 + roof
+
     sim = Simulation(p)
     sim.run()
-    a_s, _ = sim.owner_step_s("skel_in", 2)
-    b_s, _ = sim.owner_step_s("attn", 2)
-    c_s, _ = sim.expert_step_s(4)
-    leg = 2 * p.vector_bytes / p.lambda_link + p.link_latency_s
-    first = sorted(x for _, x in sim.iter_lat[:2])
-    assert first[0] == pytest.approx(b_s + leg + c_s, rel=1e-9)
-    assert first[1] == pytest.approx(b_s + leg + c_s + leg, rel=1e-9)
+    v = 2 * p.vector_bytes / p.lambda_link
+    a_s, b_s, c_s, p_s = job("skel_in", 2), job("attn", 2), job("expert", 4), job("post", 2)
+    d_s, r_s = 2 * T0["t_coll_s"] + v, T0["t_coll_s"] + v
+    it = b_s + d_s + c_s + r_s + p_s
+    first = [x for _, x in sim.iter_lat[:2]]
+    assert first == pytest.approx([it, it], rel=1e-9)
+    assert sim.iter_lat[0][0] == pytest.approx(a_s + it, rel=1e-9)
     assert sim.fired == {"threshold": 0, "timeout": 0, "round": 2 * p.r}  # once per iteration
     assert sim.batch_sizes == [4] * (2 * p.r)
-    assert sim.iter_lat[0][0] == pytest.approx(a_s + b_s + leg + c_s, rel=1e-9)
+    if compose == "max":
+        assert b_s == T0["t0_attn_s"] and c_s == T0["t0_expert_s"]  # t0 dominates at 2-4 rows
+
+
+def test_scenario_without_software_section_models_no_fixed_cost() -> None:
+    p = small()
+    assert p.t0("expert") == 0.0 and p.compose == "sum" and p.collective_s == p.link_latency_s
 
 
 def test_round_policy_needs_whole_rounds_and_empirical_needs_probs() -> None:

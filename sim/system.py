@@ -24,7 +24,7 @@ from costmodel.hardware import expert_step
 from sim.engine import Engine
 from sim.params import SimParams, attention_score_flops_per_token
 
-OwnerKind = Literal["skel_in", "attn", "skel_out"]
+OwnerKind = Literal["skel_in", "attn", "post", "skel_out"]
 
 
 @dataclass
@@ -51,7 +51,7 @@ class Unit:
     egress_free_t: float = 0.0
     expert_jobs: deque[ExpertJob] = field(default_factory=deque)
     owner_items: dict[str, list[tuple[float, Token]]] = field(
-        default_factory=lambda: {"skel_in": [], "attn": [], "skel_out": []}
+        default_factory=lambda: {"skel_in": [], "attn": [], "post": [], "skel_out": []}
     )
     log: list[tuple[float, float, float]] = field(default_factory=list)  # (start, end, flops)
 
@@ -87,11 +87,10 @@ class Simulation:
         # per-expert targets, and per-owner iteration starts / returns for the latency sample
         self.round = p.batch_policy == "round"
         self.n_owned = [sum(1 for s in range(p.z) if p.owner_of(s) == u) for u in range(p.n_units)]
-        self.round_dispatched = 0
-        self.round_expect = np.zeros(p.n_e, dtype=int)
-        self.round_target: np.ndarray | None = None
+        self.round_rows: list[tuple[Token, list[int]]] = []  # this iteration's dispatches
+        self.round_jobs_left = 0  # expert jobs of this iteration still to finish
+        self.round_returns: list[tuple[int, int, Token]] = []  # (expert unit, owner, token)
         self.owner_iter_start = [0.0] * p.n_units
-        self.owner_returned = [0] * p.n_units
         self.bytes_logical = 0.0
         self.bytes_wire = 0.0
         self.token_iterations = 0
@@ -127,11 +126,18 @@ class Simulation:
         self._kick(tok.owner)
 
     def _owner_done(self, kind: str, batch: list[tuple[float, Token]]) -> None:
+        if kind == "post" and self.round and batch:
+            # one sample per owner per iteration, attention start to the end of `post` (harness);
+            # taken first, because the loop below may start the owner's next attention job
+            u = batch[0][1].owner
+            self.iter_lat.append((self.eng.now, self.eng.now - self.owner_iter_start[u]))
         for _, tok in batch:
             if kind == "skel_in":
                 self._begin_iteration(tok)
             elif kind == "attn":
                 self._dispatch(tok)
+            elif kind == "post":
+                self._end_iteration(tok)
             else:
                 self._complete(tok)
 
@@ -145,7 +151,8 @@ class Simulation:
         experts = self.rng.choice(self.p.n_e, size=self.p.k, replace=False, p=self.route_p)
         tok.pending = self.p.k
         if self.round:
-            self._round_dispatch(experts)
+            self._round_dispatch(tok, [int(e) for e in experts])
+            return
         for e in experts:
             dest = self.p.expert_of_unit(int(e))
             self._send(tok.owner, dest, lambda e=int(e), tok=tok: self._expert_arrive(e, tok))
@@ -154,16 +161,11 @@ class Simulation:
         tok.pending -= 1
         if tok.pending:
             return
-        # the g-weighted sum at the owner is not charged (decision 8)
+        self._owner_enqueue(tok, "post")  # the g-weighted sum is the `post` job (decision 12)
+
+    def _end_iteration(self, tok: Token) -> None:
         self.token_iterations += 1
-        if self.round:
-            # one sample per owner per iteration, attention start to the last return (harness)
-            self.owner_returned[tok.owner] += 1
-            u = tok.owner
-            if self.owner_returned[u] == self.n_owned[u]:
-                self.owner_returned[u] = 0
-                self.iter_lat.append((self.eng.now, self.eng.now - self.owner_iter_start[u]))
-        else:
+        if not self.round:
             self.iter_lat.append((self.eng.now, self.eng.now - tok.iter_start_t))
         if tok.j < self.p.r:
             self._begin_iteration(tok)
@@ -194,32 +196,59 @@ class Simulation:
         self.eng.at(unit.egress_free_t + self.p.link_latency_s, deliver)
 
     # ---- expert side -------------------------------------------------------------------------
-    def _round_dispatch(self, experts: np.ndarray) -> None:
-        """Count this iteration's dispatches; once all z are in, every expert's batch size is
-        known and an expert fires as soon as its last row has arrived (decision 11)."""
-        for e in experts:
-            self.round_expect[int(e)] += 1
-        self.round_dispatched += 1
-        if self.round_dispatched < self.p.z:
+    def _round_dispatch(self, tok: Token, experts: list[int]) -> None:
+        """Round policy (decisions 11-12): the dispatch is a collective. It completes when the
+        last owner has joined, after two collective latencies (counts, rows) plus the busiest
+        unit's off-unit bytes at lambda_link; then every expert fires once on all its rows."""
+        self.round_rows.append((tok, experts))
+        if len(self.round_rows) < self.p.z:
             return
-        self.round_target = self.round_expect
-        self.round_expect = np.zeros(self.p.n_e, dtype=int)
-        self.round_dispatched = 0
-        for e in range(self.p.n_e):
-            self._round_check(e)
+        rows, self.round_rows = self.round_rows, []
+        out_bytes = [0.0] * self.p.n_units
+        for t, es in rows:
+            for e in es:
+                dest = self.p.expert_of_unit(e)
+                self.bytes_logical += self.p.vector_bytes
+                if dest != t.owner:
+                    out_bytes[t.owner] += self.p.vector_bytes
+                    self.bytes_wire += self.p.vector_bytes
+        dt = 2 * self.p.collective_s + max(out_bytes) / self.p.lambda_link
 
-    def _round_check(self, e: int) -> None:
-        t = self.round_target
-        if t is not None and t[e] > 0 and len(self.queues[e].items) == t[e]:
-            t[e] = 0
-            self._fire(e, "round")
+        def deliver() -> None:
+            for t, es in rows:
+                for e in es:
+                    self.queues[e].items.append((self.eng.now, t))
+            fire = [e for e in range(self.p.n_e) if self.queues[e].items]
+            self.round_jobs_left = len(fire)
+            for e in fire:
+                self._fire(e, "round")
+
+        self.eng.after(dt, deliver)
+
+    def _round_expert_done(self, uid: int, job: ExpertJob) -> None:
+        """The return leg: one collective once every expert job of the iteration has finished."""
+        self.round_returns.extend((uid, tok.owner, tok) for _, tok in job.batch)
+        self.round_jobs_left -= 1
+        if self.round_jobs_left:
+            return
+        rets, self.round_returns = self.round_returns, []
+        out_bytes = [0.0] * self.p.n_units
+        for src, owner, _ in rets:
+            self.bytes_logical += self.p.vector_bytes
+            if src != owner:
+                out_bytes[src] += self.p.vector_bytes
+                self.bytes_wire += self.p.vector_bytes
+        dt = self.p.collective_s + max(out_bytes) / self.p.lambda_link
+
+        def deliver() -> None:
+            for _, _, tok in rets:
+                self._expert_return(tok)
+
+        self.eng.after(dt, deliver)
 
     def _expert_arrive(self, e: int, tok: Token) -> None:
         q = self.queues[e]
         q.items.append((self.eng.now, tok))
-        if self.round:
-            self._round_check(e)
-            return
         if len(q.items) >= self.p.batch_threshold:
             self._fire(e, "threshold")
         elif len(q.items) == 1:
@@ -276,6 +305,10 @@ class Simulation:
 
     def _expert_job_done(self, unit: Unit, job: ExpertJob) -> None:
         unit.busy = False
+        if self.round:
+            self._round_expert_done(unit.uid, job)
+            self._kick(unit.uid)
+            return
         for _, tok in job.batch:
             self._send(unit.uid, tok.owner, lambda tok=tok: self._expert_return(tok))
         self._kick(unit.uid)
@@ -307,7 +340,8 @@ class Simulation:
         r = expert_step(b, p.d_ff, self.cm, p.hardware, p.numerics)
         local = r.local_traffic_s if p.U > 1 else 0.0
         flops = 2.0 * b * 3.0 * p.d * p.d_ff * p.L_e
-        return max(r.compute_s / self.grouped_efficiency(b), r.weight_stream_s) + local, flops
+        roof = max(r.compute_s / self.grouped_efficiency(b), r.weight_stream_s) + local
+        return p.job_time("expert", roof), flops
 
     def owner_step_s(self, kind: str, n: int) -> tuple[float, float]:
         """Batched owner work: max(FLOPs / φ, (weights + KV reads) / β_C) (decision 6)."""
@@ -315,13 +349,17 @@ class Simulation:
         if kind == "attn":
             flops = n * (p.attn_proj_flops + self.score_flops)
             nbytes = p.attn_proj_weight_bytes + n * self.kv_bytes_per_layer
+        elif kind == "post":
+            # g-weighted sum of k returns plus the residual: k d FLOPs, (k + 2) d reads per token
+            flops = n * 2.0 * p.k * p.d
+            nbytes = n * (p.k + 2) * p.d * p.b_act
         elif kind == "skel_in":
             flops = n * p.skel_in_flops
             nbytes = p.skel_weight_bytes + n * 2 * self.kv_bytes_per_layer
         else:
             flops = n * p.skel_out_flops
             nbytes = p.skel_weight_bytes + p.head_weight_bytes + n * 2 * self.kv_bytes_per_layer
-        return max(flops / p.phi, nbytes / p.beta_c), flops
+        return p.job_time(kind, max(flops / p.phi, nbytes / p.beta_c)), flops
 
     # ---- run and report ----------------------------------------------------------------------
     def run(self) -> dict[str, Any]:

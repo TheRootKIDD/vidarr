@@ -29,6 +29,7 @@ SCENARIO_DIR = Path(__file__).parent / "scenarios"
 
 BatchRule = Literal["floor", "roofline"]
 BatchPolicy = Literal["queue", "round"]
+Compose = Literal["max", "sum"]
 Routing = Literal["uniform", "zipf", "empirical"]
 
 
@@ -80,6 +81,16 @@ class SimParams:
     multicast: bool = False  # docs/02 §3 hook; m1 refuses True
     depth: Literal["fixed"] = "fixed"  # ragged depth hook; m1 refuses anything else
 
+    # software stack (ADR-050, decision 12): fixed cost per job kind, how it composes with the
+    # roofline, and the latency of one collective (round policy). Absent = 0, not modelled
+    t0_skel_in_s: float = 0.0
+    t0_attn_s: float = 0.0
+    t0_post_s: float = 0.0
+    t0_skel_out_s: float = 0.0
+    t0_expert_s: float = 0.0
+    compose: Compose = "sum"
+    t_coll_s: float | None = None  # None: the per-message latency floor stands in
+
     # ---- workload --------------------------------------------------------------------------
     z: int = 256  # sequences in flight = decode tokens in flight (closed loop)
     tokens: int = 10_000  # decode tokens to admit in total
@@ -117,6 +128,18 @@ class SimParams:
             raise ValueError("round policy: tokens and warmup_tokens must be multiples of z")
         if self.routing == "empirical" and len(self.route_probs) != self.n_e:
             raise ValueError("routing = empirical needs route_probs with N_e entries")
+
+    def t0(self, kind: str) -> float:
+        return float(getattr(self, f"t0_{kind}_s"))
+
+    def job_time(self, kind: str, roofline_s: float) -> float:
+        """compose(t0, roofline) for one job (decision 12)."""
+        t0 = self.t0(kind)
+        return max(t0, roofline_s) if self.compose == "max" else t0 + roofline_s
+
+    @property
+    def collective_s(self) -> float:
+        return self.link_latency_s if self.t_coll_s is None else self.t_coll_s
 
     @property
     def batch_threshold(self) -> int:
@@ -180,7 +203,22 @@ def _scenario_fields(doc: dict[str, Any]) -> dict[str, Any]:
         "link_latency_s": float(fab["latency_floor_s"]),
         "b_floor_empirical": int(chip["b_floor_empirical"]),
         "grouped_eff": tuple(sorted((int(b), float(e)) for b, e in table.items())),
+        **_software_fields(doc.get("software")),
     }
+
+
+def _software_fields(sw: dict[str, Any] | None) -> dict[str, Any]:
+    """The scenario's `software` section (ADR-050 §4); a scenario without one models none."""
+    if not sw:
+        return {}
+    t0 = sw["t0_s"]
+    out: dict[str, Any] = {f"t0_{k}_s": float(t0[k]) for k in SOFTWARE_KINDS}
+    out["compose"] = str(sw["compose"])
+    out["t_coll_s"] = float(sw["t_coll_s"])
+    return out
+
+
+SOFTWARE_KINDS = ("skel_in", "attn", "post", "skel_out", "expert")
 
 
 # ---- model shape -----------------------------------------------------------------------------
