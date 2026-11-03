@@ -91,6 +91,11 @@ beyond the `costmodel` local-traffic term; expert-choice balancing in time (`02 
     `local_3060`; absent = 0, not modelled). The owner's gate-weighted sum is now the `post` job,
     which amends decision 8. Under the round policy each collective of the harness costs
     $t_{coll}$ + bytes/$\lambda_{link}$: two for dispatch (counts, rows) and one for the return.
+13. **Owner-stage efficiency** (ADR-051): an owner job of kind $\kappa$ on $n$ sequences costs
+    `compose`($t_{0,\kappa}$, roofline / $\eta_\kappa(n)$). η comes from the `software` section's
+    `owner_efficiency` table, interpolated in $\log_2 n$ and clamped at the ends. It is defined as
+    min(1, roofline / measured work term) from the bench (`037` on `local_3060`), and is 1 when
+    absent. Expert jobs keep decision 1's grouped-GEMM table.
 
 ## S0: the calibration still to do
 

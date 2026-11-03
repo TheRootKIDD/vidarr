@@ -805,6 +805,80 @@ amended), and `sim/` code: job kinds, $t_0$, `compose`, the collective term, `po
 one new bench and a unit test (a hand timeline with $t_0$ > 0 in both `compose` modes). GPU time
 ≈ 15–30 min. Touches I37, I35 (still open: the round policy has no timeout) and I4.
 
+### ADR-051 — The owner stages' efficiency against batch enters `sim/` as a measured scenario input (I38, option 1); S0 is re-scored against `034` with it
+2026-11-03 · accepted (the user's decision: "yes, draft the I38 ADR with option 1")
+Context: with ADR-050's fixed cost per job, S0 (`036-s0-rescore`) passes at $z$ = 16/64/256 and
+misses at 1024: throughput 1.46×, iteration p50 0.71×. `035` named the term before the comparison.
+At 256 sequences per owner, three owner stages take 30–45 % longer than $t_0$ + roofline:
+
+| stage at 256 sequences | measured | $t_0$ + roofline |
+|---|---|---|
+| attention, 1792 keys | 3.34 ms | 2.49 ms |
+| `skel_in` | 6.07 ms | 4.22 ms |
+| `skel_out` | 6.55 ms | 4.50 ms |
+
+At 64 sequences they agree within 4 %. ADR-043 decision 6 charges the owner's work at peak φ and
+β_C. The KV reads and skeleton GEMMs of the eager stack do not reach peak at these shapes, just as
+the expert GEMM does not at small batch, where `003-gemm`'s grouped-GEMM table already supplies an
+efficiency. Of I38's routes, the user chose to **measure** an efficiency per owner kind against
+batch and add it as a sourced input. The dispatch's host read-back (17–22 % over its model in
+`035`, ≈ 0.06 ms of a 5 ms round at $z$ = 1024) is left out: it is ≈ 1 % of the round, far
+inside the tolerance.
+Decision:
+1. **The model of an owner job** (`02 §1`, `sim/README` decision 13). An owner job of kind
+   $\kappa$ ∈ {`skel_in`, `attn`, `post`, `skel_out`} on $n$ sequences costs
+   $\mathrm{compose}(t_{0,\kappa},\ R_\kappa(n) / \eta_\kappa(n))$, where $R_\kappa$ is decision 6's
+   roofline $\max(\text{FLOPs}/\phi,\ \text{bytes}/\beta_C)$ and $\eta_\kappa$ is read from the
+   scenario's table. Between table points it is interpolated linearly in $\log_2 n$, and outside
+   them it is clamped to the end values, as `grouped_eff` is (decision 1). Scenarios without the
+   table get $\eta$ = 1. Expert jobs are unchanged: their efficiency stays `003-gemm`'s table.
+2. **The definition of η.** From one measured curve $t_\kappa(n)$, with the bench's own $t_0$ and
+   `compose`, the measured work term is $w_\kappa(n) = t_\kappa(n) - t_{0,\kappa}$ under `sum`
+   and $t_\kappa(n)$ under `max`. Then $\eta_\kappa(n) = \min\big(1,\ R_\kappa(n)/w_\kappa(n)\big)$.
+   The cap at 1 is the roofline's own meaning: no stage beats peak. A ratio above 1 only says that
+   $t_0$ hides part of the work at that $n$, as `035` saw for the expert at 128–256 rows. Where the
+   rig reaches peak, the model therefore stays exactly ADR-050's. `compose` is still chosen by
+   ADR-050 §1's rule on the bare rooflines, before η is derived, so η cannot pick its own rule.
+3. **The bench.** `scripts/bench/bench_job_overhead.py` gains a denser owner grid and the η table.
+   It runs under rig id `037` on an idle rig, with everything else as ADR-050 §3: four cards at
+   once, `132` in bf16 through `model/decode.py`, the median of ≥ 50 timed calls with
+   `cuda.synchronize`, and `n_thermal` recorded. The sweep:
+   - $n$ ∈ {1, 2, 4, 8, 16, 32, 48, 64, 96, 128, 192, 256} sequences for the owner kinds, at 1792
+     keys for `attn`;
+   - 256 is the most an owner holds in S0 (z = 1024) and about the memory limit (KV ≈ 6 GiB at
+     2048 keys).
+
+   One run supplies the whole `software` section: $t_0$, `compose`, $t_{coll}$ and η. The section
+   is replaced as a whole and sourced to `037`, so no scenario value mixes two runs. `035` stays
+   as it is, as the record ADR-050 used.
+4. **Scenario.** `local_3060.yaml`'s `software` section gains `owner_efficiency`: per kind, a
+   table from $n$ to η, with a note and the source. It belongs to the named stack (PyTorch eager
+   plus the reference decode at `132`'s shapes), not to the chip. `note64` has no such table
+   (η = 1) until I4.
+5. **The re-score** under its own id `038`. `s0_compare` is run as in ADR-050 §5 against `034`'s
+   measured numbers, which are unchanged, and also without η, to isolate its effect. Pass rule as
+   `02 §14`: ±20 % on throughput and iteration p50 at every $z$.
+   - **Pass**: S0's calibration point (a) holds for `local_3060` with the named stack, up to 256
+     sequences per owner (beyond that η is clamped and is an extrapolation). I38 closes, and I1 is
+     next.
+   - **Miss**: the time split names the next term, and a new ADR is needed.
+
+   Nothing is fitted to `034`.
+6. **What S0 then tests.** After this ADR, the owner stages in the sim are measured at the same
+   shapes the harness runs, so S0 no longer checks the owner rooflines. It checks what remains:
+   - the composition: round barrier, expert jobs, collectives and routing imbalance;
+   - and whether a stage timed alone (`037`) costs what it costs inside the harness (`034`'s owner
+     phase at $z$ = 1024 is 3.55 ms, against `035`'s 3.34 ms for attention alone).
+
+   Every S-result quoted later inherits this: on `local_3060`, the owner cost is an input, not a
+   prediction.
+
+Consequences: changes `02 §1`, `06 §6` (bench table) and `sim/README` (decision 13). Code: η per
+owner kind in `sim/params.py` and `owner_step_s`; the `owner_efficiency` loader; the denser grid
+and η table in the bench; a unit test that η = 1 reproduces ADR-050's times exactly and that a
+table point is honoured; and `s0_compare`'s without-η column. GPU time ≈ 15 min. Touches I38, I35
+(still open) and I4.
+
 ## Proposed / pending
 - **ADR-028** — Unit model revisions from the author's hardware document (`docs/07 §4`): (a) two compute classes per chip — an FF core with a large array ($s_{min,ff}$ = 256–1024) and attention cores with small arrays ($s_{min,attn}$ ≈ 64), hence $\phi_{ff}$, $\phi_{attn}$ as separate scenario inputs; (b) the tile floor is a *row* floor, $N$ = $M$ × (LHS bw / RHS bw) rows per weight tile, with each token contributing 1 + $m$ rows under $m$-token speculation — the scheduler's queues count rows; (c) the reduce leg of the local fabric carries ≥ 16-bit partial sums: `02 §2` traffic becomes $b d\, b_{act} + b d\, b_{sum}$, $b_{sum}$ ≥ 2; (d) full pipelining inside the unit doubles tokens in flight and per-token latency — the Little's-law budget $Z$ of `02 §5.5` carries the factor; (e) router-based unit fabrics are ≤ 50 % link-efficient (avg. 2 hops), torus collectives 100 %: `02 §1`'s "switch" option is not equivalent to a torus; (f) the asymmetric 4×4×4 torus all-gather costs ≈ 3X/(8B) vs ≈ X/(2B) on a flat ring (our derivation from the author's algorithm) — the number S1/S3 must reproduce; (g) the failure domain is the 4-chip ring board, and a failed rail port is bypassed through torus neighbours at ¼ load (`02 §11`); (h) the replica-rounding utilisation floor $\ell / \lceil \ell \rceil$ reported beside the Little's-law model in S4. Also fills `note64.yaml` with the sourced ratios of `docs/07 §6`; absolute $\phi$, $\beta_C$, $\lambda_C$, $\nu_C$ stay placeholders (I4). Bears on H1, H5, H8, H9, H10, H11, H16; changes `02 §1, §2, §5, §11`.
 - **ADR-024** — Parallel prefill mode for long prompts (the author's "less effective mode"): (a) all segments at once with local attention only, global cache filled afterwards from context-poor final vectors; (b) pipelined segments, segment $k+1$ at iteration $j$ attending globally to segment $k$'s iteration-$j$ caches (transient per-iteration global cache during prefill, in-flight depth up to $r$ segments). Both are inference-time modes of a sequentially trained model; E-Q12 evaluates both against sequential prefill on continuation loss and TTFT (S5). If both degrade, a mixed-mode training variant becomes a later ladder step.
@@ -946,7 +1020,7 @@ Cost units from `docs/06 §4`: one `screen` run ≈ 8 h (1 B tokens, 1 seed); on
 - **I34** *(2026-10-21)* **The acceptance verifier skips the main head's output norm.** `01 §7` / I27 define acceptance against *head 1's own greedy prediction*. Head 1 is `head(h)` = $\mathrm{RMSNorm}_{out}(h)\,E^\top$, but `model/mtp.py` (`_greedy_head1`) and `scripts/analysis/probe_mtp_acceptance.py` compute the verifier as $h\,E^\top$, without the output RMSNorm. Its per-row scale does not change the argmax; its learned per-dimension gain can. So every logged acceptance (L3, L3-full, L3b at both budgets) is against a slightly different verifier than the main head. The size is unknown. The code disagrees with the spec, so the spec wins: the verifier becomes `head(h)` (on branch `l3c-i33`, merged after `161`). The probe reports both verifiers, and the queue re-measures `122`/`131` (L3 pair), `156`/`157` (L3b pair), `152` and `113` on GPU before `164` runs. H13's verdicts are weakened by margins of 28–31 points on acceptance and by the main-head clause on its own, so no verdict can flip. The re-measured numbers replace the logged ones as L3c's comparators. Bears on H13; touches I27, ADR-012, ADR-039. *Closed 2026-10-30:* `queue_screen_12` re-ran the seven probes with the fixed probe (`b96364b`). The corrected verifier lowers acceptance by 0.4–0.5 points at `screen` and 0.7–1.4 at `small` (table in `164`). Corrected pairs: L3 41.6 / 24.1 / 16.0 %, L3b 40.6 / 22.5 / 14.4 %. Every verdict stands.
 - **I36** *(2026-10-30)* **The held-out acceptance proxy conditions the verifier on the true context, which greedy decoding never does.** I27's metric accepts head $j$'s draft of $x_{t+j}$ when it equals head 1's greedy prediction at $t+j-1$ *given the true tokens up to $t+j-1$*. In self-speculative greedy decoding the verifier at $t+j-1$ is conditioned on the tokens just drafted and accepted, i.e. on head 1's own greedy outputs. For independent heads (L3, L3b) the two differ only through the verifier's context. For L3c's chain they also differ through the module's input: module 2 is fed head 1's greedy guess of $x_{t+1}$, which the proxy's verifier then ignores in favour of the true $x_{t+1}$ (right ≈ 40 % of the time at `screen`). So the proxy may understate L3c relative to L3. `164` measured 34.5 / 16.1 / 8.4 % chained against 70 / 65 / 63 % teacher-forced; how much of that gap is the metric is unknown. A decode-faithful measurement would greedily generate from held-out prompts and count accepted drafts along the generated sequence, for L3, L3b and L3c alike. To decide: whether it is worth building (an offline probe, GPU, no training) before H13 is closed for good. It cannot rescue H13's main-head clause (`164` +0.0497 vs L2). Bears on H13; touches I27, ADR-012, ADR-039.
 - **I37** *(2026-11-03, `034`; **closed 2026-11-03 by ADR-050**: the fixed costs are measured in `035` and in the scenario. The `036` re-score passes at $z$ ≤ 256, and the 1024 miss is I38)* **`sim/` has no fixed cost per job, and on this rig that cost dominates.** S0 (`034-s0-ep-decode`) failed at every $z$: the sim's throughput was 2.6–12.4× too high and its per-iteration p50 0.08–0.38× of measured. The expert phase costs 0.43 ms per round from 5 to 305 rows per expert, and the owner phase 1.16 ms at 4 tokens, about 40× what the rooflines of ADR-043 decisions 1 and 6 charge. The likely source is the reference implementation's Python and kernel-launch overhead. The question is which of three moves restores a calibration that means something: measure the per-job costs and the per-collective latency with their own bench and add them to `local_3060.yaml` as sourced inputs (`note64` then needs its own value); shrink them on the harness side (CUDA graphs, fused experts) toward the roofline system; or both. Each needs an ADR, and none may be fitted to S0 (ADR-049 §6).
-- **I38** *(2026-11-03, `035`/`036`)* **The owner's work runs below peak at large batch, and `sim/` charges it at peak.** After ADR-050's fixed cost per job, S0 passes at $z$ = 16/64/256 and misses at 1024: throughput 1.46×, iteration p50 0.71×. `035` showed the cause before the comparison. At 256 sequences per owner, attention (1792 keys), `skel_in` and `skel_out` take 30–45 % longer than $t_0$ + roofline (3.34 / 6.07 / 6.55 ms against 2.49 / 4.22 / 4.50). ADR-043 decision 6 charges KV reads and skeleton GEMMs at peak φ and β_C. Candidate: a sourced efficiency per owner kind against batch, measured by a bench as `003-gemm`'s grouped-GEMM table is for experts. A second, smaller term: the dispatch phase runs 17–22 % above $2 t_{coll}$ + bytes/λ because it reads the counts back to the host. Any fix needs an ADR (ADR-050 §5), and nothing may be fitted to `034`.
+- **I38** *(2026-11-03, `035`/`036`; **answered by ADR-051**, the user's option 1: a measured η per owner kind; closes on the `038` re-score)* **The owner's work runs below peak at large batch, and `sim/` charges it at peak.** After ADR-050's fixed cost per job, S0 passes at $z$ = 16/64/256 and misses at 1024: throughput 1.46×, iteration p50 0.71×. `035` showed the cause before the comparison. At 256 sequences per owner, attention (1792 keys), `skel_in` and `skel_out` take 30–45 % longer than $t_0$ + roofline (3.34 / 6.07 / 6.55 ms against 2.49 / 4.22 / 4.50). ADR-043 decision 6 charges KV reads and skeleton GEMMs at peak φ and β_C. Candidate: a sourced efficiency per owner kind against batch, measured by a bench as `003-gemm`'s grouped-GEMM table is for experts. A second, smaller term: the dispatch phase runs 17–22 % above $2 t_{coll}$ + bytes/λ because it reads the counts back to the host. Any fix needs an ADR (ADR-050 §5), and nothing may be fitted to `034`.
 
 ## Session log
 
@@ -1827,6 +1901,22 @@ and an ADR first, L6c likewise; the `small` programme (L0, L1, L2, L3, L5, L5d a
 the ladder's own next step and needs no new code. The choice between "more `screen` variants" and
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
+
+### 2026-11-03 (14:50) — **ADR-051** (I38 option 1): a measured efficiency per owner kind against batch enters `sim/`; bench `037`, re-score `038`
+
+The user chose I38's option 1. **ADR-051** (accepted):
+- an owner job costs `compose`($t_0$, $R_\kappa(n)/\eta_\kappa(n)$); η per kind (`skel_in`, `attn`,
+  `post`, `skel_out`) comes from the scenario, interpolated in $\log_2 n$, clamped at the ends,
+  and is 1 where absent;
+- η = min(1, roofline / measured work term), with `compose` chosen first on the bare rooflines;
+- `bench_job_overhead.py` gets a denser owner grid (1–256 sequences) and is run as rig `037`,
+  which replaces the whole `software` section;
+- the re-score `038` runs against `034` unchanged, with and without η, ±20 % at every $z$;
+- the dispatch's host read-back is left out (≈ 1 % of a round at $z$ = 1024);
+- §6 records that S0 then no longer tests the owner rooflines on this rig, only the composition
+  and bench-vs-harness agreement.
+
+Spec: `02 §1`, `06 §6`, `sim/README` decision 13. Nothing built or run yet. Next rig id 037.
 
 ### 2026-11-03 (13:10) — ADR-050 built: **`035-job-overhead`** measures the fixed cost per job; **`036-s0-rescore`: S0 passes at $z$ = 16/64/256, misses at 1024** (I37 closed, I38 opened)
 
