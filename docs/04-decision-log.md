@@ -977,6 +977,35 @@ Consequences:
 
 Bears on H17 and L8; L8c and L8d stay later variants.
 
+### ADR-054 — A read-only diagnostic of L8's lookup on `173`'s checkpoint (I40, option 1); rig `042`
+2026-11-04 · accepted (the user's choice of I40's first option: "Diagnostic first")
+Context: `173-l8-screen` weakens H17 by ADR-053 §10. Lookup accuracy is at chance, α is 99.6 % uniform and 6.1 % of the cells are used, so §10's last clause puts the cause on the lookup or the table (I40). I40 lists three candidate causes and none is measured. Before a variant is designed, a probe of the finished checkpoint should tell which part of the lookup fails. It needs no training and changes no spec: `01 §4.6` and the model code stay as built.
+
+Decision: `scripts/analysis/probe_l8_lookup.py` loads `173`'s `latest.pt` on one GPU of an idle rig and measures four things. Hooks capture the memory's inputs and outputs; the module is not changed.
+1. **Does the query carry the article?** On the 2,000 in-table wiki-lead articles (ADR-053 §7), at each first-sentence token and iteration $j$:
+   - the exact rank of the article's own cell among all 2²⁰, from the two half-score vectors (chance median 2¹⁹);
+   - the rank of its row $a^*$ and column $b^*$ in each half (chance median 512).
+2. **Can the keys tell cells apart?** For each in-table article's cell, the rank of that cell when the query is the cell's own key $\kappa^* = [h^1(\mu^1_{a^*}); h^2(\mu^2_{b^*})]$ (an oracle query, no model involved). Also the singular values of $h^1$, $h^2$, $W_m$ and $W_v$.
+3. **Is the softmax starved by scale?** The gap between the first and the 32nd retrieved score, the standard deviation of the 32 scores, and the spread of each half's 1,024 scores, per iteration.
+4. **Does the lookup get a coherent training signal?** Gradients of the training loss on 8 disjoint batches of held-out FineWeb-Edu windows (one window each, model in train mode, no optimiser step):
+   - the mean pairwise cosine between the batches' gradients, per parameter group: $W_m$, $h^{1,2}$, $W_v$, against the experts and the attention as references;
+   - $\lVert g\rVert / \lVert w\rVert$ per group;
+   - the branch's output norm against the MoE output's, per iteration.
+
+Readings, fixed now (descriptive; the diagnostic bears on I40, not on a hypothesis):
+- (1) median own-cell rank within 20 % of 2¹⁹ → **the query is not article-specific**;
+- (2) own-key oracle puts its cell in the top 32 for < 50 % of articles → **the keys do not separate cells** (a key-map or placement problem; read it beside `040`'s distortion);
+- (3) mean top-1 − top-32 gap < 0.5 → **α is uniform by scale** (a score-scale or temperature problem);
+- (4) mean cross-batch cosine for $W_m$ and $h^{1,2}$ below a tenth of the experts' → **the lookup's gradient is noise**.
+
+Each reading names the variant it points at. The variant itself needs its own ADR, and the user chooses.
+
+Consequences:
+- **Code:** one analysis script. No change to `model/`, `costmodel/` or the spec.
+- **GPU time:** minutes on GPU 0, rig otherwise idle. Results in `experiments/042-l8-lookup-diag/`.
+
+Bears on I40 and L8 (H17 indirectly).
+
 ## Proposed / pending
 - **ADR-028** — Unit model revisions from the author's hardware document (`docs/07 §4`): (a) two compute classes per chip — an FF core with a large array ($s_{min,ff}$ = 256–1024) and attention cores with small arrays ($s_{min,attn}$ ≈ 64), hence $\phi_{ff}$, $\phi_{attn}$ as separate scenario inputs; (b) the tile floor is a *row* floor, $N$ = $M$ × (LHS bw / RHS bw) rows per weight tile, with each token contributing 1 + $m$ rows under $m$-token speculation — the scheduler's queues count rows; (c) the reduce leg of the local fabric carries ≥ 16-bit partial sums: `02 §2` traffic becomes $b d\, b_{act} + b d\, b_{sum}$, $b_{sum}$ ≥ 2; (d) full pipelining inside the unit doubles tokens in flight and per-token latency — the Little's-law budget $Z$ of `02 §5.5` carries the factor; (e) router-based unit fabrics are ≤ 50 % link-efficient (avg. 2 hops), torus collectives 100 %: `02 §1`'s "switch" option is not equivalent to a torus; (f) the asymmetric 4×4×4 torus all-gather costs ≈ 3X/(8B) vs ≈ X/(2B) on a flat ring (our derivation from the author's algorithm) — the number S1/S3 must reproduce; (g) the failure domain is the 4-chip ring board, and a failed rail port is bypassed through torus neighbours at ¼ load (`02 §11`); (h) the replica-rounding utilisation floor $\ell / \lceil \ell \rceil$ reported beside the Little's-law model in S4. Also fills `note64.yaml` with the sourced ratios of `docs/07 §6`; absolute $\phi$, $\beta_C$, $\lambda_C$, $\nu_C$ stay placeholders (I4). Bears on H1, H5, H8, H9, H10, H11, H16; changes `02 §1, §2, §5, §11`.
 - **ADR-024** — Parallel prefill mode for long prompts (the author's "less effective mode"): (a) all segments at once with local attention only, global cache filled afterwards from context-poor final vectors; (b) pipelined segments, segment $k+1$ at iteration $j$ attending globally to segment $k$'s iteration-$j$ caches (transient per-iteration global cache during prefill, in-flight depth up to $r$ segments). Both are inference-time modes of a sequentially trained model; E-Q12 evaluates both against sequential prefill on continuation loss and TTFT (S5). If both degrade, a mixed-mode training variant becomes a later ladder step.
@@ -1143,6 +1172,13 @@ Cost units from `docs/06 §4`: one `screen` run ≈ 8 h (1 B tokens, 1 seed); on
   - a diagnostic (gradient norms into $W_m$, $h^{1,2}$; scores of the true cell);
   - a variant that changes the lookup (for example an auxiliary retrieval loss on in-table text, or an initialisation of $W_m$ / $h^{1,2}$ from the encoder);
   - closing L8 at `screen`.
+
+  **Status after `042` (ADR-054, 2026-11-04):**
+  - **The query is not article-specific:** the own-cell rank is at chance at all eight iterations, and so are the row and column ranks per half (reading 1).
+  - **The keys separate cells only partly:** the own-key oracle reaches the top 32 for 7.8 % of cells, at a median rank of 945 of 2²⁰ (reading 2).
+  - **Not starved by scale:** the top-1 − top-32 gap is 0.6–1.2 (reading 3 does not fire).
+  - **Gradient coherence unresolved at 8 windows** (reading 4 does not fire). The query and key maps get 20–50× less gradient relative to their weights than the experts.
+  - **Still open:** the variant choice (query side, key side, or both) is the user's call, and each variant needs an ADR.
 
 ## Session log
 
@@ -2023,6 +2059,17 @@ and an ADR first, L6c likewise; the `small` programme (L0, L1, L2, L3, L5, L5d a
 the ladder's own next step and needs no new code. The choice between "more `screen` variants" and
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
+
+### 2026-11-04 (09:20) — **ADR-054 accepted and run: `042-l8-lookup-diag`**. L8's query carries no article information; its keys separate cells only partly
+
+- **ADR-054** (the user's choice of I40 option 1, "Diagnostic first"): a read-only probe of `173`'s checkpoint, with four readings fixed in advance. Script `scripts/analysis/probe_l8_lookup.py`. No change to `model/` or the spec.
+- **`042`** (GPU 0, idle rig, 19 s, 3.0 GiB):
+  1. **Fires.** The own-cell rank under the model's query has a median of 513–527 k against chance 524 k at every iteration, and the row and column ranks per half sit at 501–525 against 512.
+  2. **Fires.** The own-key oracle reaches the top 32 for 7.8 % of cells (median rank 945; row 4, column 25). The key maps keep full rank.
+  3. **Does not fire.** The top-1 − top-32 gap is 0.58–1.22, though the 32-score std of 0.15–0.35 keeps α near uniform.
+  4. **Does not fire, low power.** The cross-batch cosine is $W_m$ +0.017, $h$ −0.011, experts +0.008, and every group is near the 1/√8 noise ratio. ‖g‖/‖w‖ is 7 × 10⁻⁴ for the query and 3 × 10⁻⁴ for the key maps, against 1.5 × 10⁻² for the experts.
+  - The branch's output is 0.19–0.52× the MoE's and almost constant (1.28–1.35). $W_v$ has one dominant direction (3.09, against 1.50 next). This is consistent with the memory acting as a learned bias, which is not tested.
+- **I40 status updated.** The next step (a query-side variant, a key-side variant, or both) is the user's call, and each needs an ADR. Nothing is running. Next ladder id 174, next rig id 043.
 
 ### 2026-11-04 (05:40) — **`173` L8 = 3.3438, +0.0110 vs L5 `110` (3.7σ); wiki-lead no better than L5 on any split → H17 *weakened* by ADR-053 §10, with the cause on the lookup (accuracy at chance)**; `queue_screen_15` done
 

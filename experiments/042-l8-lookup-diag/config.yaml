@@ -1,0 +1,8 @@
+# 042-l8-lookup-diag (ADR-054): read-only diagnostic of L8's lookup, no training
+command: python -m scripts.analysis.probe_l8_lookup --id 173-l8-screen --out 042-l8-lookup-diag
+checkpoint: experiments/173-l8-screen/ckpt/latest.pt  # step 1907, config in ../173-l8-screen/config.yaml
+table: /mnt/nvme/memory/wiki-20231101-lead  # build 040; hashes in ../173-l8-screen/wiki_lead.json
+eval_pool: in_table (2000 articles of eval_pools.jsonl, ADR-053 §7), first-sentence tokens
+grad_batches: 8  # disjoint held-out FineWeb-Edu windows, one 2048-token window each
+device: cuda:0  # rig otherwise idle
+autocast: bfloat16
