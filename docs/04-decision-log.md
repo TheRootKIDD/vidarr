@@ -1044,6 +1044,64 @@ Consequences:
 
 Bears on H17, L8 and I40.
 
+### ADR-056 — L8k: L8q with fixed sub-keys, a PCA projection of the codebooks, scored by distance (I40, key side); rig `044`, run `175`
+2026-11-04 · proposed (the user: "yes, draft the key-side ADR. Just draft what makes sense and don't cost anything other than the power for my rig and the time spent")
+
+Context: `174` (ADR-055) moves the query off chance. Own row and column ranks reach a median of 227–251, lookup accuracy is 1.6–1.9 × 10⁻³, and teacher agreement is 13–30 % per row. But the keys cap what any query can do: the own-key oracle puts a cell in the top 32 for only 6.45 % of cells (`173` 7.8 %). Two things in ADR-053 §4–5's key design cause this, and neither is a matter of training time:
+- **Dot-product scoring with learned, unnormalised keys.** Under $s = q \cdot k$, a cell's own key is not the arg max of its own score whenever another key is longer along it. The own-key row and column ranks per half are 49 / 18 in `174` (4 / 25 in `173`), not 0. Under the teacher loss the key maps grew (sub-key norms 0.17 → 0.54–0.67) and lost rank (61 → 49 of 64), so this got worse.
+- **The key maps are learned toward a topical target.** $h^{1,2}$ train only through the query loss and the near-uniform softmax. Nothing asks them to keep the 1,024 centroids apart, and the table was placed by distance in the encoder's space, not by $h$.
+
+Widening the keys to the full 384-d centroids would remove both, but it is not FLOP-neutral. Re-solving at $d_m$ = 768 cuts the expert width from 704 to **448** (`costmodel.solve_d_ff`, checked while drafting; $d_m$ = 256 gives 640). That width change would be a confound larger than any effect measured so far. This ADR keeps $d_m$ = 128, so the FLOPs, the expert width (704) and everything else stay `174`'s, and it changes only how the keys are made and scored.
+
+Decision:
+1. **Fixed keys.** For each half $h \in \{1, 2\}$, $P^h$ is the top-64 principal-component projection (384 → 64) of the table's 2²⁰ half-embeddings $e^h_n$, centred at their mean $\bar e^h$. It is computed once from `040`'s table, on GPU, and stored with its sha256 beside the table as derived data (not committed). The sub-keys are $k^h_i = P^h(\mu^h_i - \bar e^h)$. They are frozen buffers. $h^{1,2}$ are removed, which is −49,152 trainable parameters.
+2. **Distance scoring.** Each half scores $s^h_i = \tau\,(q^h \cdot k^h_i - \tfrac12 \lVert k^h_i \rVert^2) = -\tfrac{\tau}{2}\lVert q^h - k^h_i\rVert^2 + c(q)$. The constant $c(q)$ does not change any ranking or softmax. The rest of the product search is unchanged: top 32 per half, 1,024 candidate cells scored $s^1 + s^2$, top $k_m$ = 32, α = softmax. So the lookup ranks cells by squared distance in the projected space, which is the objective the placement used (ADR-053 §4) restricted to 64 + 64 dimensions, and a query equal to a cell's own key ranks that cell first. $\tau = \exp(t)$ is one learned scalar. $t$ starts at $-\ln$ (the median $\lVert k_i - k_{i'}\rVert^2$ over sub-key pairs, both halves pooled), so a typical key gap is about one logit at the start. The final τ is reported.
+3. **Everything else is as `174`**, so `175` against `174` isolates the keys:
+   - the query $W_m[u; e_j]$, 832 → 128, now living in the projected space;
+   - the ADR-055 query loss: the same teacher target (the full-space nearest centroid per half), λ_q 0.1 and the detach. Its CE now runs over the distance scores of (2);
+   - the table, placement, grid, $k_m$, read-out ($W_v$, zero-initialised), expert width 704, seed 0 and 1 B tokens.
+4. **Accounting.** The lookup costs the same as `173`/`174` ($d_m$ = 128). The ½‖k‖² bias is 2,048 adds per token-iteration, and the projection is applied once to the codebooks, not per token. So `costmodel.memory_flops` is unchanged and the width re-solves to 704. `costmodel.memory_params` gains a key-construction switch (fixed keys: no $h$ term, plus τ).
+5. **Gate probe, rig `044`** (GPU, rig idle, no training, minutes). This is the *ceiling*: what a perfect query in the encoder's space can retrieve through this lookup. The query is each in-table first sentence's own embedding, projected the same way, $[P^1(e^1 - \bar e^1); P^2(e^2 - \bar e^2)]$. It runs through the full product-key path for the 2,000 in-table eval articles, and the share whose own cell is among the 32 retrieved is the ceiling.
+   - It is reported for PCA-64 (this ADR), and for information for the full 384-d centroids with distance scores ($d_m$ = 768) and for `174`'s learned keys with dot scores (query $[h^1 e^1; h^2 e^2]$). It also reports the variance $P^h$ keeps per half, and own row and column ranks.
+   - **Pass:** the PCA-64 ceiling is ≥ 50 % (ADR-054's reading-2 line). Then `175` runs.
+   - **Fail:** no run. The probe is written up and the next step (wider keys at the width cost, a re-placement, or closing L8) is the user's call.
+6. **Readings and verdict, set now** (`175` against `110` and `174`, one seed):
+   - **Mechanism (I40):**
+     - *The keys were the limit* if lookup accuracy on in-table first sentences is ≥ 1.86 × 10⁻² at some iteration (10× `174`'s best).
+     - *The key side is ruled out at `screen`* if it is ≤ 3.7 × 10⁻³ at every iteration (2× `174`'s best).
+     - *Partial* otherwise.
+     - Reported beside it: `044`'s ceiling, own row and column ranks, teacher agreement, α entropy, table use and reliance.
+   - **H17 against `110`:** ADR-055 §6 unchanged. Supports if both in-table splits beat §7's floor and the FineWeb-Edu Δ ≤ 2σ. Weakens if neither split beats the floor, or Δ > 4σ. Silent otherwise.
+   - **Against `174`:** the deltas on every wiki-lead split and on FineWeb-Edu, with the same floors. The width is equal, so this is the key construction alone.
+   - **How they combine:**
+     - Keys were the limit, but H17 is not supported: a lookup that retrieves the article for at least 1.9 % of its tokens does not help at `screen`. Closing L8 at `screen` is then the natural next ADR (the user's call).
+     - The key side is ruled out: I40 has no cheap lever left at `screen`, and closing L8 is again the user's call.
+     - H17 supported: a `small` pair follows by ADR (ADR-031).
+7. **Build and runs.**
+   - (a) **Code:** `MemoryCfg.keys` (`"learned"` as now | `"pca_fixed"`), the PCA builder (`scripts/data/build_wiki_memory.py --pca`, writing `pca{1,2}.npy` and `mean{1,2}.npy` with hashes into the table's manifest), the distance scoring in `KnowledgeMemory.lookup` and `query_loss`, τ, the `L8k` preset, `044`'s ceiling in `probe_l8_lookup.py`, and the costmodel switch.
+   - (b) **Unit tests:**
+     - the keys get no gradient;
+     - the distance score equals −τ/2 times the squared distance up to a per-query constant;
+     - a query equal to a cell's key retrieves that cell first;
+     - `L8k` differs from `L8q` only in the key construction (same FLOPs, same width);
+     - causality and the detach, as in ADR-055.
+   - (c) **Rig `044`:** the gate probe of (5), and a sizing probe of `L8k` (peak ≤ 10 GiB per GPU; tok/s against `174`).
+   - (d) **`175-l8k-screen`:** one seed, 1 B tokens, after `044` passes, via `queue_screen_17.sh` with the usual gate (ruff + pytest), then ADR-055 §5's evals and probes.
+   - Expect ≈ 7.7 h, as `174`. No CPU probes beside the run.
+8. **Cost.** GPU time is ≈ 10 min of probes and ≈ 8 h of training and evals on the local rig. Nothing else: the table, the encoder and the corpus are already on `/mnt/nvme`, so there are no downloads, no external services and no purchases.
+
+Not chosen, and why:
+- **$d_m$ = 768 (raw centroids):** the width cut to 448 (above). Its ceiling is reported by `044`, so it can be argued for later with that number.
+- **Learned keys with distance scoring:** this would keep the second cause, keys trained toward a topical target. Fixed keys make the ceiling a property of the table that `044` can measure before any training.
+- **Re-placement or a larger $k_m$:** the first rebuilds `040`, and the second changes the FLOPs. Each is a separate ADR if `044` says the ceiling is the placement's.
+
+Consequences:
+- **Spec:** `01 §4.6` gains an "L8k (ADR-056)" paragraph (fixed PCA keys, distance score, τ). `§11` gains `memory.keys: learned | pca_fixed`. `01 §10`'s memory parameter line notes the fixed-key case. `03 §2` lists L8k beside L8q.
+- **Code:** `model/memory.py`, `model/config.py`, `costmodel/params.py`, `scripts/data/build_wiki_memory.py` and `scripts/analysis/probe_l8_lookup.py`, with tests.
+- **GPU time:** as in (8).
+
+Bears on H17, L8 and I40.
+
 ## Proposed / pending
 - **ADR-028** — Unit model revisions from the author's hardware document (`docs/07 §4`): (a) two compute classes per chip — an FF core with a large array ($s_{min,ff}$ = 256–1024) and attention cores with small arrays ($s_{min,attn}$ ≈ 64), hence $\phi_{ff}$, $\phi_{attn}$ as separate scenario inputs; (b) the tile floor is a *row* floor, $N$ = $M$ × (LHS bw / RHS bw) rows per weight tile, with each token contributing 1 + $m$ rows under $m$-token speculation — the scheduler's queues count rows; (c) the reduce leg of the local fabric carries ≥ 16-bit partial sums: `02 §2` traffic becomes $b d\, b_{act} + b d\, b_{sum}$, $b_{sum}$ ≥ 2; (d) full pipelining inside the unit doubles tokens in flight and per-token latency — the Little's-law budget $Z$ of `02 §5.5` carries the factor; (e) router-based unit fabrics are ≤ 50 % link-efficient (avg. 2 hops), torus collectives 100 %: `02 §1`'s "switch" option is not equivalent to a torus; (f) the asymmetric 4×4×4 torus all-gather costs ≈ 3X/(8B) vs ≈ X/(2B) on a flat ring (our derivation from the author's algorithm) — the number S1/S3 must reproduce; (g) the failure domain is the 4-chip ring board, and a failed rail port is bypassed through torus neighbours at ¼ load (`02 §11`); (h) the replica-rounding utilisation floor $\ell / \lceil \ell \rceil$ reported beside the Little's-law model in S4. Also fills `note64.yaml` with the sourced ratios of `docs/07 §6`; absolute $\phi$, $\beta_C$, $\lambda_C$, $\nu_C$ stay placeholders (I4). Bears on H1, H5, H8, H9, H10, H11, H16; changes `02 §1, §2, §5, §11`.
 - **ADR-024** — Parallel prefill mode for long prompts (the author's "less effective mode"): (a) all segments at once with local attention only, global cache filled afterwards from context-poor final vectors; (b) pipelined segments, segment $k+1$ at iteration $j$ attending globally to segment $k$'s iteration-$j$ caches (transient per-iteration global cache during prefill, in-flight depth up to $r$ segments). Both are inference-time modes of a sequentially trained model; E-Q12 evaluates both against sequential prefill on continuation loss and TTFT (S5). If both degrade, a mixed-mode training variant becomes a later ladder step.
@@ -1222,7 +1280,7 @@ Cost units from `docs/06 §4`: one `screen` run ≈ 8 h (1 B tokens, 1 seed); on
   - **The query side works by ADR-055's bar:** with the teacher loss, own row and column ranks reach a median of 227–251 at iterations 6–8, and lookup accuracy is 1.6–1.9 × 10⁻³ (52–60× chance). The query matches the teacher's top-1 row 13–30 % of the time on FineWeb-Edu.
   - **It buys no loss:** every wiki-lead split is within its floor of `173`, FineWeb-Edu +0.0019. H17 is weakened against `110`, and by ADR-055 §6 that now bears on H17 itself.
   - **The keys are the remaining limit:** the own-key oracle reaches the top 32 for 6.45 % of cells (`173` 7.8 %), so even a perfect query would miss 94 % of the time; lookup hits 0.19 % of first-sentence tokens. Reliance moved to general text (random cells +0.013 on FineWeb, −0.003 on in-table first sentences): the retrieval is used as a topic signal.
-  - **Still open:** the key side (reading 2), or closing L8 at `screen`, is the user's call; either needs an ADR.
+  - **Still open:** the key side (reading 2), or closing L8 at `screen`, is the user's call; either needs an ADR. (The key side is drafted as ADR-056, proposed 2026-11-04.)
 
 ## Session log
 
@@ -2103,6 +2161,15 @@ and an ADR first, L6c likewise; the `small` programme (L0, L1, L2, L3, L5, L5d a
 the ladder's own next step and needs no new code. The choice between "more `screen` variants" and
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
+
+### 2026-11-04 (20:15) — **ADR-056 proposed**: L8k, fixed PCA sub-keys scored by distance (I40, key side), for approval
+
+- **Why this shape:** `174`'s keys cap a perfect query at 6.45 %. The causes are dot-product scoring over learned, unnormalised keys and key maps trained toward a topical target.
+- **Why not the raw 384-d centroids:** at $d_m$ = 768 the matched-FLOPs re-solve cuts the expert width 704 → 448 (256 → 640). So L8k keeps $d_m$ = 128 and `174`'s width, and changes only how the keys are made: a fixed per-half PCA of the table, with distance scoring and a learned τ.
+- **Gate:** rig `044` measures the perfect-query ceiling through the real lookup before any training. It must be ≥ 50 %, or there is no run.
+- **Then** `175-l8k-screen` against `110` (H17) and `174` (keys alone). Readings are set in advance: lookup accuracy ≥ 1.86 × 10⁻² means the keys were the limit, ≤ 3.7 × 10⁻³ means the key side is ruled out.
+- **Cost:** ≈ 10 min of probes and ≈ 8 h on the rig. No downloads or external services.
+- Nothing built, nothing running. Next ladder id 175, rig id 044.
 
 ### 2026-11-04 (19:40) — **`174` L8q = 3.3457, +0.0129 vs L5 `110` (4.3σ); the query now finds the article above chance, but no wiki-lead split beats `110` → H17 *weakened*, by ADR-055 §6 on H17 itself**; `queue_screen_16` done
 
