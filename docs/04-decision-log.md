@@ -1007,6 +1007,44 @@ Consequences:
 Bears on I40 and L8 (H17 indirectly).
 
 ## Proposed / pending
+### ADR-055 — L8q: L8 with a query-side retrieval loss distilled from the frozen encoder on the preceding chunk (I40, query side); rig `043`, run `174`
+2026-11-04 · proposed (the user: "yes, draft the query-side ADR")
+
+Context: `173` weakens H17 by ADR-053 §10, and `042` (ADR-054) locates the failure. Under the model's own query, an article's cell ranks at chance among 2²⁰, and so do its row and column per half (reading 1). The keys are a second, smaller limit (reading 2: the own-key oracle reaches the top 32 for 7.8 % of cells). The query and key maps get 20–50× less gradient relative to their weights than the experts, because the only signal reaching them is the main loss through a near-uniform softmax over 32 candidates. Nothing in L8 says what a good query is. The table's own encoder does: for any text, BGE gives the PQ code $(a^*, b^*)$ that the lookup would need to hit. This ADR adds that as a training target for the query, and changes nothing else. It is not L8b: no neighbours are fed to the model, and at inference the query is the model's own.
+
+Decision:
+1. **Teacher target.** Each training window (2,048 tokens) is cut into 32 window-aligned chunks of 64 tokens. For chunk $c$, the text decoded from its 64 corpus tokens is encoded by the frozen table encoder, as in `040`: BGE-base-en-v1.5, the same revision, CLS pooling, L2-normalised, max 128 BGE tokens, fp16, no gradient. Its halves give $a^*_c = \arg\min_i \lVert e^1 - \mu^1_i\rVert$ and $b^*_c = \arg\min_j \lVert e^2 - \mu^2_j\rVert$ against the frozen codebooks. The teacher runs online in the training loop on each rank's micro-batch, because the trainer samples windows uniformly over all 11 B tokens and an offline pass over the corpus would encode ≈ 11× more text than one run reads.
+2. **Causality.** Tokens at positions $p \in [64(c+1), 64(c+2))$ take chunk $c$'s target. Every token of chunk $c$ precedes $p$, so the target is a function of visible context only. The first chunk's tokens get no target. A target is masked if an EOS lies anywhere in $[64c, 64(c+2))$, so it never crosses a document boundary.
+3. **Loss.** At every middle iteration $j$, with the half scores $s^1 = q^1 \cdot h^1(\mu^1)$ and $s^2 = q^2 \cdot h^2(\mu^2)$ that the lookup already computes:
+   $$\mathcal{L}_{q} = \tfrac{1}{2}\big[\mathrm{CE}(s^1, a^*) + \mathrm{CE}(s^2, b^*)\big],$$
+   averaged over valid tokens and the $r$ iterations. The total loss gains $\lambda_q \mathcal{L}_q$ with $\lambda_q$ = **0.1**, set now and not tuned. A sweep needs its own ADR. The query's inputs $[u; e_j]$ are **detached** for this loss, so $\mathcal{L}_q$ trains only $W_m$, $h^1$ and $h^2$. The trunk is shaped only by the main loss, as in `173`, and the FineWeb comparison stays clean. A variant without the detach is noted, not run.
+4. **Everything else as `173`.** Same table (`040`), grid, $k_m$, read-out, zero-init $W_v$, expert width 704, seed 0 and 1 B tokens. The lookup and read-out at inference are unchanged, so the model's active FLOPs per token are `173`'s and H17's matching holds. The teacher's cost is training-only and is reported as measured tok/s, not as model FLOPs. That is ≈ 2 × 110 M × 80 BGE tokens per 64-token chunk, ≈ 0.28 GFLOP per training token (≈ 16 % of the model's ≈ 1.8 GFLOP training FLOPs per token). `costmodel/` is unchanged.
+5. **Evals and probes.** ADR-053 §7's wiki-lead, §8's usage probes, and `042`'s diagnostic (ADR-054) are rerun on the new checkpoint. One addition: on held-out FineWeb-Edu, the share of valid tokens whose top-1 row and column under the model's query equal the teacher's, per iteration (chance 1/1,024 per half). $\mathcal{L}_q$ is logged per step beside the main loss.
+6. **Readings and verdict, set now.**
+   - **Mechanism (I40).** The query *carries the article* if, at some iteration, `042`'s median own-row and own-column ranks on in-table first sentences are both ≤ 256 (chance 512), **and** lookup accuracy is ≥ 10× chance (≥ 3.1 × 10⁻⁴). Otherwise the query side is ruled out at `screen`, and I40 moves to the keys (reading 2) or to closing L8.
+   - **H17**, against `110`: ADR-053 §10 with its regression clause read under ADR-013 (the recorded `173` correction).
+     - **Supports:** both in-table wiki-lead splits beat `110` by §7's floor, and the FineWeb-Edu Δ ≤ 2σ.
+     - **Weakens:** neither in-table split beats the floor, or Δ > 4σ.
+     - **Silent:** anything else.
+   - **Against `173`** (same architecture and width, so ADR-053 §6's width confound cancels): the deltas on every wiki-lead split and on FineWeb-Edu are reported with the same floors. This is the effect of the query loss alone.
+   - **How the two combine:**
+     - If the mechanism works but H17 is not supported, retrieval that works does not help at `screen`. That is evidence on H17 itself, not on the lookup.
+     - If H17 is supported, a `small` pair follows by ADR (ADR-031).
+7. **Build and runs.**
+   - (a) **Code:** `MemoryCfg.query_aux` (`lambda_q`, `chunk` 64, `teacher`), the teacher and target builder in `scripts/train/` (no gradient, one copy per rank), $\mathcal{L}_q$ in `KnowledgeMemory` (it already holds $s^{1,2}$), the `L8q` preset, and the agreement probe in `probe_l8_lookup.py`.
+   - (b) **Unit tests:** causality (no target uses a token at or after its position, and a perturbed future chunk leaves the earlier targets unchanged), EOS masking, the detach (no $\mathcal{L}_q$ gradient into anything but $W_m$, $h^{1,2}$), $\lambda_q$ = 0 reproducing L8, and the teacher's halves matching `040`'s encoding of the same text.
+   - (c) **Rig `043`:** a sizing probe of `L8q` at `screen`, as `041` was for L8. Pass: peak ≤ 10 GiB per GPU (L8 5.31 GiB, plus ≈ 0.25 GiB of encoder per rank). It reports tok/s against `173` and the teacher's share of step time.
+   - (d) **`174-l8q-screen`:** one seed, 1 B tokens, after `043` passes, via `queue_screen_16.sh` with the usual gate (ruff + pytest), then the evals of (5) and the verdict.
+   - Expect ≈ 7.5–8.5 h (`173`'s 6.67 h plus the teacher). No CPU probes beside the run.
+
+Consequences:
+- **Spec:** `01 §4.6` gains an "L8q (ADR-055)" paragraph (teacher, causality, loss, detach). `§11` gains `memory.query_aux: { lambda_q: 0.1, chunk: 64, teacher: bge-base-en-v1.5 }` (absent = off). `03 §2` lists L8q beside L8b/c/d.
+- **Code:** `model/memory.py` and `config.py` (aux loss, config), `scripts/train/` (teacher on the micro-batch), one probe addition.
+- **GPU time:** ≈ 15 min probe, ≈ 8 h run, ≈ 10 min evals.
+- **Risk recorded:** the teacher's PQ code of the *preceding* chunk is topical, not the specific next fact. A query that learns it retrieves related sentences (RETRO's neighbour notion), which is what wiki-lead's in-table splits test.
+
+Bears on H17, L8 and I40.
+
 - **ADR-028** — Unit model revisions from the author's hardware document (`docs/07 §4`): (a) two compute classes per chip — an FF core with a large array ($s_{min,ff}$ = 256–1024) and attention cores with small arrays ($s_{min,attn}$ ≈ 64), hence $\phi_{ff}$, $\phi_{attn}$ as separate scenario inputs; (b) the tile floor is a *row* floor, $N$ = $M$ × (LHS bw / RHS bw) rows per weight tile, with each token contributing 1 + $m$ rows under $m$-token speculation — the scheduler's queues count rows; (c) the reduce leg of the local fabric carries ≥ 16-bit partial sums: `02 §2` traffic becomes $b d\, b_{act} + b d\, b_{sum}$, $b_{sum}$ ≥ 2; (d) full pipelining inside the unit doubles tokens in flight and per-token latency — the Little's-law budget $Z$ of `02 §5.5` carries the factor; (e) router-based unit fabrics are ≤ 50 % link-efficient (avg. 2 hops), torus collectives 100 %: `02 §1`'s "switch" option is not equivalent to a torus; (f) the asymmetric 4×4×4 torus all-gather costs ≈ 3X/(8B) vs ≈ X/(2B) on a flat ring (our derivation from the author's algorithm) — the number S1/S3 must reproduce; (g) the failure domain is the 4-chip ring board, and a failed rail port is bypassed through torus neighbours at ¼ load (`02 §11`); (h) the replica-rounding utilisation floor $\ell / \lceil \ell \rceil$ reported beside the Little's-law model in S4. Also fills `note64.yaml` with the sourced ratios of `docs/07 §6`; absolute $\phi$, $\beta_C$, $\lambda_C$, $\nu_C$ stay placeholders (I4). Bears on H1, H5, H8, H9, H10, H11, H16; changes `02 §1, §2, §5, §11`.
 - **ADR-024** — Parallel prefill mode for long prompts (the author's "less effective mode"): (a) all segments at once with local attention only, global cache filled afterwards from context-poor final vectors; (b) pipelined segments, segment $k+1$ at iteration $j$ attending globally to segment $k$'s iteration-$j$ caches (transient per-iteration global cache during prefill, in-flight depth up to $r$ segments). Both are inference-time modes of a sequentially trained model; E-Q12 evaluates both against sequential prefill on continuation loss and TTFT (S5). If both degrade, a mixed-mode training variant becomes a later ladder step.
 
@@ -2059,6 +2097,17 @@ and an ADR first, L6c likewise; the `small` programme (L0, L1, L2, L3, L5, L5d a
 the ladder's own next step and needs no new code. The choice between "more `screen` variants" and
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
+
+### 2026-11-04 (09:45) — **ADR-055 proposed**: L8q, a query-side retrieval loss for L8 (I40), for approval
+
+The user asked for the query-side ADR. **ADR-055**:
+- **Teacher:** the frozen BGE encoder, run online, gives each 64-token chunk its PQ code. The next chunk's tokens are trained to retrieve that code, so the target is causal and masked at EOS.
+- **Loss:** $\lambda_q$ = 0.1 × half-wise CE on the lookup's own sub-key scores. The query's inputs are detached, so only $W_m$ and $h^{1,2}$ learn from it.
+- **Everything else is `173`'s,** so a comparison with `173` isolates the query loss.
+- **Readings:** the mechanism counts as working if the own row and column median ranks are ≤ 256 and lookup accuracy is ≥ 10× chance. H17 is scored by ADR-053 §10, with ADR-013's 2σ / 4σ regression clause.
+- **Ids:** rig `043`, run `174-l8q-screen` via `queue_screen_16`.
+
+Not built, nothing running.
 
 ### 2026-11-04 (09:20) — **ADR-054 accepted and run: `042-l8-lookup-diag`**. L8's query carries no article information; its keys separate cells only partly
 
