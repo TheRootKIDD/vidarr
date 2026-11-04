@@ -205,6 +205,10 @@ def worker(rank: int, world: int, a: TrainArgs, cfg: ModelCfg, out: Path) -> Non
         from scripts.train.teacher import CORPUS_TOKENIZER, BgeTeacher
 
         teacher = BgeTeacher(qa.teacher_dir, CORPUS_TOKENIZER, dev, qa.teacher_max_tokens)
+    if cfg.memory.enabled and raw.middle.mem.retrieved:  # L8b (ADR-057)
+        from scripts.train.teacher import attach_encoder
+
+        attach_encoder(raw, dev)
 
     accum = a.batch_tokens // (world * a.micro_batch * cfg.context)
     if accum < 1:
@@ -269,9 +273,16 @@ def worker(rank: int, world: int, a: TrainArgs, cfg: ModelCfg, out: Path) -> Non
                 q_t = targets(toks[:, :-1], qa.chunk, teacher, mem.mu1, mem.mu2)
                 torch.cuda.synchronize(dev)
                 metric_sums["teacher_s"] = metric_sums.get("teacher_s", 0.0) + time.time() - t_q
+            nbr = None
+            if cfg.memory.enabled and raw.middle.mem.retrieved:  # L8b: this rank's neighbours
+                mem = raw.middle.mem
+                nbr = mem.neighbours(toks[:, :-1])
+                metric_sums["retrieval_s"] = (
+                    metric_sums.get("retrieval_s", 0.0) + mem.last_retrieval_s
+                )
             ctx = model.no_sync() if (world > 1 and micro < accum - 1) else _nullctx()
             with ctx, torch.autocast("cuda", dtype=torch.bfloat16):
-                o = model(toks, r=r, q_target=q_t)
+                o = model(toks, r=r, q_target=q_t, neighbours=nbr)
                 (o.loss / accum).backward()
             sums += torch.stack(
                 [

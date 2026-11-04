@@ -18,7 +18,15 @@ from costmodel.config import Experts as CmExperts
 from costmodel.config import Model as CmModel
 from costmodel.params import dense_baseline_params, total_params
 from model.block import Block
-from model.config import HaltingCfg, MemoryCfg, ModelCfg, QueryAuxCfg, StreamsCfg, ladder
+from model.config import (
+    HaltingCfg,
+    MemoryCfg,
+    ModelCfg,
+    QueryAuxCfg,
+    RetrievalCfg,
+    StreamsCfg,
+    ladder,
+)
 from model.layers import Expert, causal_mask, local_window_mask
 from model.middle import IterState
 from model.model import BigMoE
@@ -47,6 +55,7 @@ STEPS = [
     "L8",
     "L8q",
     "L8k",
+    "L8b",
     "L4",
 ]
 
@@ -54,6 +63,8 @@ STEPS = [
 TOY_MEM = MemoryCfg(enabled=True, grid=4, key_dim=8, topk=4, half_topk=3, encoder_dim=16)
 # L8q at toy size: chunks of 8 tokens in the 64-token context (ADR-055)
 TOY_QA = QueryAuxCfg(chunk=8)
+# L8b at toy size: a boundary every 8 tokens, queries of <= 16 tokens (>= 4), 4 neighbours
+TOY_RC = RetrievalCfg(stride=8, window=16, min_tokens=4, k=4)
 
 
 def tiny(step: str, **kw) -> ModelCfg:
@@ -70,7 +81,11 @@ def tiny(step: str, **kw) -> ModelCfg:
         # L5e: K = 4 so that H runs inside the tiny loop, once, after iteration 2
         middle=dc.replace(c.middle, r_max=3, depth_embed=8, h_every=4 if c.middle.h_every else 0),
         memory=dc.replace(
-            TOY_MEM, query_aux=TOY_QA if c.memory.query_aux else None, keys=c.memory.keys
+            TOY_MEM,
+            query_aux=TOY_QA if c.memory.query_aux else None,
+            keys=c.memory.keys,
+            mode=c.memory.mode,
+            retrieval=TOY_RC if c.memory.retrieval else None,
         )
         if c.memory.enabled
         else c.memory,
@@ -1181,6 +1196,122 @@ def test_l8k_checkpointed_iterations_match() -> None:
         o = m.loss(toks, r=cfg.middle.r_max, q_target=_toy_targets(cfg, 2))
         o.loss.backward()
         grads.append((m.middle.mem.q.weight.grad.clone(), m.middle.mem.log_tau.grad.clone()))
+    assert all(torch.allclose(a, b, atol=1e-5) for a, b in zip(*grads, strict=True))
+
+
+# ---- L8b: exact retrieval outside the model (ADR-057) ---------------------------------------
+
+
+def _l8b_model(seed: int = 0) -> tuple[ModelCfg, BigMoE]:
+    torch.manual_seed(seed)
+    cfg = tiny("L8b")
+    m = BigMoE(cfg)
+    nn.init.normal_(m.middle.mem.out.weight, std=0.1)
+    return cfg, m
+
+
+def test_l8b_boundary_queries_are_causal_and_stay_in_the_document() -> None:
+    from model.memory import boundary_queries
+
+    eos = 2
+    row = [5, 6, 7, 8, 9, 10, eos, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+    where, spans = boundary_queries(torch.tensor([row]), stride=4, window=6, min_tokens=2, eos=eos)
+    by = dict(zip(where, spans, strict=True))
+    assert by[(0, 1)] == [5, 6, 7, 8]  # b = 4: [0, 4)
+    assert (0, 2) not in by  # b = 8: after the EOS at 6 only [7, 8) = 1 token < min_tokens
+    assert by[(0, 3)] == [11, 12, 13, 14, 15]  # b = 12: [max(6, 7), 12) = positions 7..11
+    for (_, _i), sp in by.items():
+        assert len(sp) <= 6 and eos not in sp  # every token precedes b = 4 i
+
+
+def test_l8b_exact_topk_matches_brute_force() -> None:
+    from model.memory import exact_topk
+
+    g = torch.Generator().manual_seed(3)
+    table = torch.nn.functional.normalize(torch.randn(500, 24, generator=g), dim=-1)
+    q = torch.randn(37, 24, generator=g)
+    for tab in (table, table.to(torch.bfloat16)):
+        got = exact_topk(q, tab, k=5, tile=8)
+        ref = (q @ tab.float().T).topk(5, dim=-1).indices
+        assert torch.equal(got, ref)
+
+
+def test_l8b_neighbours_depend_only_on_earlier_tokens() -> None:
+    cfg, m = _l8b_model()
+    mem = m.middle.mem
+    s = cfg.memory.retrieval.stride
+    g = torch.Generator().manual_seed(4)
+    toks = torch.randint(3, cfg.vocab, (3, cfg.context), generator=g)
+    a = mem.neighbours(toks)
+    cut = 3 * s + 2
+    toks2 = toks.clone()
+    toks2[:, cut:] = torch.randint(3, cfg.vocab, (3, cfg.context - cut), generator=g)
+    b = mem.neighbours(toks2)
+    assert torch.equal(a[:, : cut // s + 1], b[:, : cut // s + 1])  # rows serving positions < cut
+    assert (a[:, 0] == -1).all() and (a[:, 1:] >= 0).all()  # no EOS: every later boundary valid
+    toks3 = toks.clone()
+    toks3[:, 2 * s - 1] = 2  # an EOS right before boundary 2: nothing of that document precedes
+    c = mem.neighbours(toks3)
+    assert (c[:, 2] == -1).all()
+
+
+def test_l8b_branch_is_zero_without_neighbours_and_reads_the_table() -> None:
+    cfg, m = _l8b_model()
+    mem = m.middle.mem
+    nb = cfg.context // cfg.memory.retrieval.stride
+    u, e = torch.randn(2, cfg.context, cfg.d), torch.randn(cfg.middle.depth_embed)
+    none = torch.full((2, nb, cfg.memory.retrieval.k), -1, dtype=torch.long)
+    assert torch.equal(mem(u, e, none), torch.zeros_like(mem(u, e, none)))
+    one = none.clone()
+    one[:, 1:, 0] = 5  # a single neighbour: alpha = 1 on it, Mem = W_v e_5
+    out = mem(u, e, one)
+    s = cfg.memory.retrieval.stride
+    ref = mem.out(mem.table[5].to(mem.out.weight.dtype))
+    assert torch.allclose(out[:, s:], ref.expand_as(out[:, s:]), atol=1e-3)
+    assert torch.equal(out[:, :s], torch.zeros_like(out[:, :s]))
+
+
+def test_l8b_zero_readout_reproduces_l5_and_params_follow_costmodel() -> None:
+    from costmodel.config import Model as CmM
+    from costmodel.params import memory_params
+
+    cfg, m = _l8b_model()
+    nn.init.zeros_(m.middle.mem.out.weight)
+    l5 = BigMoE(dc.replace(cfg, memory=MemoryCfg()))
+    missing = l5.load_state_dict(m.state_dict(), strict=False)
+    assert all(k.startswith("middle.mem.") for k in missing.unexpected_keys)
+    toks = torch.randint(0, cfg.vocab, (2, cfg.context + 1))
+    m.eval()
+    l5.eval()
+    with torch.no_grad():
+        assert torch.allclose(m.loss(toks).loss, l5.loss(toks).loss, atol=1e-5)
+    tm = CmM(d=cfg.d, depth_embed=cfg.middle.depth_embed, mem=cfg.cm_memory())
+    assert sum(p.numel() for p in m.middle.mem.parameters()) == memory_params(tm)
+
+
+def test_l8b_width_and_flops_follow_costmodel() -> None:
+    from costmodel.config import Model as CmM
+    from costmodel.flops import memory_flops
+
+    c = ladder("L8b")
+    assert c.expert_width() == 704
+    f = memory_flops(CmM(d=c.d, depth_embed=c.middle.depth_embed, mem=c.cm_memory()))
+    assert f == 2 * 832 * 128 + 2 * 128 * 8 + 2 * 8 * 768 + 2 * 768 * 768 + 2 * 768 * 128 * 8 / 16
+    assert abs(f - 1.51e6) < 0.01e6
+
+
+def test_l8b_checkpointed_iterations_match() -> None:
+    cfg, base = _l8b_model(seed=2)
+    gen = torch.Generator().manual_seed(9)
+    toks = torch.randint(3, cfg.vocab, (2, cfg.context + 1), generator=gen)
+    grads = []
+    for ckpt in (True, False):
+        m = BigMoE(dc.replace(cfg, checkpoint_iterations=ckpt))
+        m.load_state_dict(base.state_dict())
+        m.train()
+        m.loss(toks, r=cfg.middle.r_max).loss.backward()
+        mem = m.middle.mem
+        grads.append((mem.q.weight.grad.clone(), mem.kappa.weight.grad.clone()))
     assert all(torch.allclose(a, b, atol=1e-5) for a, b in zip(*grads, strict=True))
 
 

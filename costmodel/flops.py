@@ -70,15 +70,21 @@ def router_flops(model: Model) -> float:
 def memory_flops(model: Model, n_streams: int | None = None) -> float:
     """ADR-053 / `docs/01 §10`, per stream: query $2 (d + d_e) d_m$, sub-key scores
     $2 d_m \\sqrt{N_m}$, weighted sum $2 k_m d_{enc}$, read-out $2 d_{enc} d$.
-    The top-$k$ selections and the per-batch key maps are not counted."""
+    The top-$k$ selections and the per-batch key maps are not counted. L8b (ADR-057): query,
+    scores $2 d_m K$, weighted sum $2 K d_{enc}$, read-out, and the neighbour key map
+    $2 d_{enc} d_m K / s$ amortised over a boundary; the retrieval itself is not model FLOPs."""
     s = model.n_streams if n_streams is None else n_streams
     m = model.mem
     if not m.enabled:
         return 0.0
     q_proj = 2 * (model.d + model.depth_embed) * m.d_m
+    read_out = 2 * m.d_enc * model.d
+    if m.retrieved_k:  # L8b (ADR-057): scores over K neighbours, their key map per boundary
+        k = m.retrieved_k
+        nbr = 2 * m.d_m * k + 2 * k * m.d_enc + 2 * m.d_enc * m.d_m * k / m.retrieved_stride
+        return float((q_proj + nbr + read_out) * s)
     lookup = 2 * m.d_m * math.isqrt(_ceil_square(m.n_m))
     weighted_sum = 2 * m.k_m * m.d_enc
-    read_out = 2 * m.d_enc * model.d
     return float((q_proj + lookup + weighted_sum + read_out) * s)
 
 

@@ -49,6 +49,9 @@ def load_run(run_dir: Path, device: torch.device) -> tuple[BigMoE, ModelCfg, int
     # The trainer saves a DDP-wrapped state dict on some paths; tolerate both.
     sd = {k.removeprefix("module."): v for k, v in ckpt["model"].items()}
     model.load_state_dict(sd)
+    from scripts.train.teacher import attach_encoder
+
+    attach_encoder(model, device)  # L8b (ADR-057): neighbours on every eval path
     return model.to(device).eval(), cfg, int(ckpt["step"])
 
 

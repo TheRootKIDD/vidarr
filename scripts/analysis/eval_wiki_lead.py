@@ -13,6 +13,14 @@ cells replaced by uniformly random ones (reliance); for `in_first` tokens the sh
 article's cell is among the k_m retrieved, per iteration (lookup accuracy); the mean entropy of
 alpha and the share of the 2^20 cells retrieved at least once on the held-out windows (use).
 
+With `--covered` (L8b, ADR-057 §6): the retrieval pipeline (the table's encoder, exact top-K;
+no model weights) gives every position its neighbours; two more in-table splits are scored,
+`in_first_cov` (first-sentence tokens with neighbours) and `in_first_hit` (those whose
+neighbours include the article's own sentence), with coverage and retrieval accuracy. The
+masks come from the pipeline alone, so they are the same for any run (`110` included); an L8b
+run reads the same neighbours. `--out` writes elsewhere than `<id>/wiki_lead.json` (needed to
+keep an earlier experiment's file append-only).
+
 Run on an idle GPU:
   python -m scripts.analysis.eval_wiki_lead --id 110-l5-screen
   python -m scripts.analysis.eval_wiki_lead --id 173-l8-screen --probes
@@ -32,6 +40,8 @@ import torch
 import torch.nn.functional as F
 from tokenizers import Tokenizer
 
+from model.config import RetrievalCfg, ladder
+from model.memory import retrieve
 from model.model import BigMoE
 from scripts.analysis.probe_routing import RESULTS_DIR, load_run
 from scripts.train.data import MemmapCorpus
@@ -41,6 +51,7 @@ TOKENIZER = "/mnt/nvme/corpus/tokenizer/mistral-7b-v0.1/tokenizer.json"
 POOLS = "/mnt/nvme/memory/wiki-20231101-lead/eval_pools.jsonl"
 EOS, MAX_TOK = 2, 256
 SPLITS = ("in_first", "in_rest", "out_lead")
+COVERED = ("in_first_cov", "in_first_hit")  # L8b (ADR-057 §6), in-table pool
 SIGMA_SCREEN = 0.0030  # ADR-053 §7's floor: max(this, bootstrap SE), times 4; ADR-013's sigma
 REGRESSION = 0.005  # ADR-053 §10 as written: "<= 0.5 %" of L (kept for the 173 record)
 # ADR-055 §6 / ADR-013: H17's "0.5 %" is "no detectable regression", delta <= 2 sigma; > 4 sigma
@@ -74,13 +85,40 @@ def build_items(tok: Tokenizer) -> list[dict[str, Any]]:
     return items
 
 
+class Pipeline:
+    """L8b's retrieval pipeline without a model (ADR-057 §3): the 040 table and its encoder."""
+
+    def __init__(self, dev: torch.device, model: BigMoE | None = None) -> None:
+        mem = None if model is None or not model.cfg.memory.enabled else model.middle.mem
+        if mem is not None and mem.retrieved:  # the run's own pipeline: identical neighbours
+            self.rc, self.encoder, self.table = mem.mc.retrieval, mem.encoder, mem.table
+            return
+        from scripts.train.teacher import CORPUS_TOKENIZER, BgeTeacher
+
+        mc = ladder("L8b").memory
+        self.rc = mc.retrieval or RetrievalCfg()
+        tab = np.load(Path(mc.table) / "table.npy")
+        self.table = torch.from_numpy(tab).to(dev).to(torch.bfloat16)  # as the model holds it
+        rc = self.rc
+        self.encoder = BgeTeacher(rc.encoder_dir, CORPUS_TOKENIZER, dev, rc.encoder_max_tokens)
+
+    def __call__(self, inp: torch.Tensor) -> torch.Tensor:
+        return retrieve(inp, self.rc, self.encoder, self.table)
+
+
 @torch.no_grad()
 def score_articles(
-    model: BigMoE, items: list[dict[str, Any]], dev: torch.device, batch: int = 16
+    model: BigMoE,
+    items: list[dict[str, Any]],
+    dev: torch.device,
+    batch: int = 16,
+    pipe: Pipeline | None = None,
 ) -> tuple[dict[str, np.ndarray], list[list[float]]]:
-    """Per-article loss sums / counts per split; with recording on, lookup hits per iteration."""
-    sums = {s: np.zeros(len(items)) for s in SPLITS}
-    cnts = {s: np.zeros(len(items)) for s in SPLITS}
+    """Per-article loss sums / counts per split; with recording on, lookup hits per iteration.
+    With `pipe` (L8b), also the covered splits and the counts behind coverage and accuracy."""
+    names = SPLITS + (COVERED if pipe is not None else ())
+    sums = {s: np.zeros(len(items)) for s in names}
+    cnts = {s: np.zeros(len(items)) for s in names}
     mem = model.middle.mem if model.cfg.memory.enabled else None
     hits: list[list[float]] = []  # per iteration: [hits, tokens]
     for b0 in range(0, len(items), batch):
@@ -94,8 +132,20 @@ def score_articles(
         toks = toks.to(dev)
         if mem is not None:
             mem.records.clear()
+        nbr, masks = None, {}
+        if pipe is not None:
+            nbr = pipe(toks[:, :-1])  # [b, nb, K]
+            s_ = pipe.rc.stride
+            per_pos = nbr.repeat_interleave(s_, dim=1)[:, : L - 1].cpu()  # [b, L-1, K]
+            own = torch.tensor([-2 if x["cell"] is None else x["cell"] for x in chunk])
+            cov = (per_pos >= 0).any(-1)
+            masks = {
+                "in_first_cov": (lab == 1) & cov,
+                "in_first_hit": (lab == 1) & (per_pos == own[:, None, None]).any(-1),
+            }
         with torch.autocast("cuda", dtype=torch.bfloat16):
-            h, _ = model.forward_hidden(toks[:, :-1])
+            retrieved = mem is not None and mem.retrieved
+            h, _ = model.forward_hidden(toks[:, :-1], neighbours=nbr if retrieved else None)
             logits = model.head(h).float()
         loss = F.cross_entropy(logits.transpose(1, 2), toks[:, 1:], reduction="none").cpu()
         for r in range(len(chunk)):
@@ -103,6 +153,9 @@ def score_articles(
                 m = lab[r] == k
                 sums[s][b0 + r] = float(loss[r][m].sum())
                 cnts[s][b0 + r] = float(m.sum())
+            for s, mk in masks.items():
+                sums[s][b0 + r] = float(loss[r][mk[r]].sum())
+                cnts[s][b0 + r] = float(mk[r].sum())
         if mem is not None and mem.record:
             own = torch.tensor([-1 if x["cell"] is None else x["cell"] for x in chunk], device=dev)
             first = (lab == 1).to(dev)  # positions whose next token is in the first sentence
@@ -113,7 +166,7 @@ def score_articles(
                 hits[j][0] += float(hit.sum())
                 hits[j][1] += float(first.sum())
             mem.records.clear()
-    return {"sum_" + s: sums[s] for s in SPLITS} | {"cnt_" + s: cnts[s] for s in SPLITS}, hits
+    return {"sum_" + s: sums[s] for s in names} | {"cnt_" + s: cnts[s] for s in names}, hits
 
 
 @torch.no_grad()
@@ -133,17 +186,22 @@ def heldout(model: BigMoE, dev: torch.device, max_tokens: int, use: bool) -> dic
         n += toks.shape[0]
         if mem is not None and use:
             for cells, alpha in mem.records:
-                seen[cells.flatten()] = True
-                a = alpha.float().clamp_min(1e-12)
+                c = cells.flatten()
+                seen[c[c >= 0]] = True
+                a = alpha.float()
+                rows = a.sum(-1) > 0  # L8b: positions without neighbours have alpha = 0
+                a = a[rows].clamp_min(1e-12)
                 ent += float(-(a * a.log()).sum(-1).sum())
-                ent_n += a[..., 0].numel()
+                ent_n += a.shape[0]
             mem.records.clear()
     res = {"val_loss": tot / n, "val_windows": float(n)}
     if seen is not None and use:
         res |= {
             "cells_used_share": float(seen.float().mean()),
             "alpha_entropy_mean": ent / ent_n,
-            "alpha_entropy_max": float(np.log(cfg.memory.topk)),
+            "alpha_entropy_max": float(
+                np.log(cfg.memory.retrieval.k if mem.retrieved else cfg.memory.topk)
+            ),
         }
     return res
 
@@ -169,8 +227,21 @@ def run_eval(a: argparse.Namespace) -> None:
     if mem is not None:
         res["table_manifest_sha256"] = {k: v["sha256"] for k, v in mem.manifest["files"].items()}
         mem.record = a.probes
-    per, hits = score_articles(model, items, dev)
+    pipe = Pipeline(dev, model) if a.covered else None
+    per, hits = score_articles(model, items, dev, pipe=pipe)
     res["wiki_lead"] = {s: mean_loss(per, s) for s in SPLITS}
+    if pipe is not None:
+        res["wiki_lead"] |= {s: mean_loss(per, s) for s in COVERED}
+        first = float(np.sum(per["cnt_in_first"]))
+        cov, hit = float(np.sum(per["cnt_in_first_cov"])), float(np.sum(per["cnt_in_first_hit"]))
+        res["retrieval"] = {
+            "in_first_tokens": first,
+            "covered_tokens": cov,
+            "own_retrieved_tokens": hit,
+            "coverage": cov / max(first, 1.0),
+            "accuracy_on_covered": hit / max(cov, 1.0),
+            "rc": vars(pipe.rc),
+        }
     res["per_article"] = {k: v.tolist() for k, v in per.items()} | {
         "pool": [x["pool"] for x in items],
         "id": [x["id"] for x in items],
@@ -181,32 +252,42 @@ def run_eval(a: argparse.Namespace) -> None:
     if mem is not None and a.probes:
         mem.record, mem.random_cells = False, True
         torch.manual_seed(0)
-        per_r, _ = score_articles(model, items, dev)
+        mem.record = mem.retrieved  # L8b: keep the true neighbours for the covered masks
+        per_r, _ = score_articles(model, items, dev, pipe=pipe)
         res["random_cells"] = {
-            "wiki_lead": {s: mean_loss(per_r, s) for s in SPLITS},
+            "wiki_lead": {s: mean_loss(per_r, s) for s in SPLITS}
+            | ({s: mean_loss(per_r, s) for s in COVERED} if pipe is not None else {}),
             "heldout": heldout(model, dev, a.max_tokens, use=False),
         }
         mem.random_cells = False
+        mem.record = False
     res["wall_s"] = time.time() - t0
-    out = RESULTS_DIR / a.id / "wiki_lead.json"
+    out = Path(a.out) if a.out else RESULTS_DIR / a.id / "wiki_lead.json"
     out.write_text(json.dumps(res))
     print(json.dumps({k: v for k, v in res.items() if k != "per_article"}, indent=1))
     print(out)
 
 
-def compare(arm: str, base: str, n_boot: int = 2000) -> dict[str, Any]:
-    """ADR-053 §10's verdict: arm minus base on each split, bootstrap SE over articles."""
+def compare(
+    arm: str, base: str, n_boot: int = 2000, base_file: str | None = None
+) -> dict[str, Any]:
+    """ADR-053 §10's verdict: arm minus base on each split, bootstrap SE over articles. The
+    covered splits (L8b) are reported when both files have them; they do not enter the rule."""
     A = json.loads((RESULTS_DIR / arm / "wiki_lead.json").read_text())
-    B = json.loads((RESULTS_DIR / base / "wiki_lead.json").read_text())
+    bpath = Path(base_file) if base_file else RESULTS_DIR / base / "wiki_lead.json"
+    B = json.loads(bpath.read_text())
     pa, pb = A["per_article"], B["per_article"]
     assert pa["id"] == pb["id"], "the two runs were scored on different pools"
     rng = np.random.default_rng(0)
     out: dict[str, Any] = {"arm": arm, "base": base, "splits": {}}
     pool = np.array(pa["pool"])
-    for s in SPLITS:
+    extra = tuple(s for s in COVERED if "sum_" + s in pa and "sum_" + s in pb)
+    for s in SPLITS + extra:
         idx = np.flatnonzero(pool == ("out_of_table" if s == "out_lead" else "in_table"))
         sa, sb = np.array(pa["sum_" + s])[idx], np.array(pb["sum_" + s])[idx]
         c = np.array(pa["cnt_" + s])[idx]
+        if s in COVERED:  # masks come from the pipeline alone, so both runs score the same tokens
+            assert np.array_equal(c, np.array(pb["cnt_" + s])[idx]), f"{s} masks differ"
         delta = (sa.sum() - sb.sum()) / c.sum()
         boots = []
         for _ in range(n_boot):
@@ -257,11 +338,15 @@ def main() -> None:
     ap.add_argument("--compare", nargs=2, metavar=("ARM", "BASE"))
     ap.add_argument("--device", default="cuda:0")
     ap.add_argument("--max-tokens", type=int, default=2_000_000)
+    ap.add_argument("--covered", action="store_true", help="L8b's covered splits (ADR-057)")
+    ap.add_argument("--out", help="output file instead of <id>/wiki_lead.json")
+    ap.add_argument("--base-file", help="--compare: the base's wiki_lead file, if elsewhere")
+    ap.add_argument("--name", help="--compare: output file name in the arm's directory")
     a = ap.parse_args()
     if a.compare:
-        res = compare(*a.compare)
+        res = compare(*a.compare, base_file=a.base_file)
         base = a.compare[1]
-        name = (
+        name = a.name or (
             "wiki_lead_compare.json"
             if base == "110-l5-screen"
             else f"wiki_lead_compare_vs_{base.split('-')[0]}.json"

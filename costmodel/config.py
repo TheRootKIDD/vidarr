@@ -79,6 +79,10 @@ class Memory:
     """$k_m$ — values retrieved (ADR-053: 1 gives no gradient)."""
     fixed_keys: bool = False
     """ADR-056 (L8k): frozen PCA sub-keys, no $h^{1,2}$ maps, one learned temperature."""
+    retrieved_k: int = 0
+    """ADR-057 (L8b): neighbours per position from retrieval outside the model; 0 = product key."""
+    retrieved_stride: int = 1
+    """ADR-057: positions per retrieval boundary (the neighbour key map is amortised over it)."""
 
 
 @dataclass(frozen=True)

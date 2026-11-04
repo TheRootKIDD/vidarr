@@ -133,6 +133,21 @@ class QueryAuxCfg:
 
 
 @dataclass(frozen=True)
+class RetrievalCfg:
+    """L8b (ADR-057, `docs/01 §4.6`): exact chunk-level retrieval of the table's sentences.
+    Every `stride` positions, the last <= `window` tokens of the current document (at least
+    `min_tokens`) are encoded by the frozen encoder and the top `k` table rows by inner product
+    feed the next `stride` positions."""
+
+    stride: int = 16
+    window: int = 32
+    min_tokens: int = 8
+    k: int = 8
+    encoder_dir: str = "/mnt/nvme/memory/encoder/bge-base-en-v1.5"
+    encoder_max_tokens: int = 128
+
+
+@dataclass(frozen=True)
 class MemoryCfg:
     """L8, the knowledge memory as built (ADR-053, `docs/01 §4.6`)."""
 
@@ -149,6 +164,10 @@ class MemoryCfg:
     # L8k (ADR-056): "pca_fixed" = frozen per-half PCA sub-keys scored by distance, learned tau;
     # "learned" = the h^{1,2} key maps with dot scores (L8, L8q)
     keys: Literal["learned", "pca_fixed"] = "learned"
+    # L8b (ADR-057): "retrieved" = neighbours from exact search outside the model, read by an
+    # 8-way softmax; "product_key" = the learned in-loop lookup (L8, L8q, L8k; closed at screen)
+    mode: Literal["product_key", "retrieved"] = "product_key"
+    retrieval: RetrievalCfg | None = None
 
     @property
     def n_entries(self) -> int:
@@ -263,6 +282,8 @@ class ModelCfg:
             d_enc=mc.encoder_dim,
             k_m=mc.topk,
             fixed_keys=mc.keys == "pca_fixed",
+            retrieved_k=0 if mc.retrieval is None or mc.mode != "retrieved" else mc.retrieval.k,
+            retrieved_stride=1 if mc.retrieval is None else mc.retrieval.stride,
         )
 
     def validate(self) -> None:
@@ -278,6 +299,22 @@ class ModelCfg:
                 raise ValueError("memory key_dim and encoder_dim split into two halves")
             if not (1 < mc.topk <= mc.half_topk**2 and mc.half_topk <= mc.grid):
                 raise ValueError("memory needs 1 < topk <= half_topk**2 and half_topk <= grid")
+            if mc.mode not in ("product_key", "retrieved"):
+                raise ValueError("memory.mode must be product_key or retrieved (ADR-057)")
+            if mc.mode == "retrieved":
+                rc = mc.retrieval
+                if rc is None:
+                    raise ValueError("memory.mode retrieved (L8b) needs memory.retrieval")
+                if mc.query_aux is not None:
+                    raise ValueError("memory.query_aux (L8q) applies to the product-key lookup")
+                if rc.stride < 1 or self.context % rc.stride or rc.k < 1:
+                    raise ValueError("retrieval.stride must divide the context; k >= 1")
+                if not 1 <= rc.min_tokens <= rc.window:
+                    raise ValueError("retrieval needs 1 <= min_tokens <= window")
+                if self.attention.global_source == "final_vector" and (
+                    self.attention.window % rc.stride
+                ):
+                    raise ValueError("retrieval.stride must divide the segment length")
             if mc.keys not in ("learned", "pca_fixed"):
                 raise ValueError("memory.keys must be learned or pca_fixed (ADR-056)")
             if mc.keys == "pca_fixed" and mc.key_dim > mc.encoder_dim:
@@ -367,6 +404,8 @@ class ModelCfg:
                     v["lambdas"] = tuple(v["lambdas"])
                 if key == "memory" and isinstance(v.get("query_aux"), dict):
                     v["query_aux"] = QueryAuxCfg(**v["query_aux"])
+                if key == "memory" and isinstance(v.get("retrieval"), dict):
+                    v["retrieval"] = RetrievalCfg(**v["retrieval"])
                 d[key] = typ(**v)
         return cls(**d)
 
@@ -448,6 +487,17 @@ def ladder(step: str, **overrides: Any) -> ModelCfg:
                 table="/mnt/nvme/memory/wiki-20231101-lead",
                 query_aux=QueryAuxCfg(),
                 keys="pca_fixed",
+            ),
+        ),
+        # ADR-057: exact top-8 retrieval of the table's sentences every 16 tokens, read by the
+        # memory branch at every iteration (width re-solves to 704)
+        "L8b": replace(
+            rec,
+            memory=MemoryCfg(
+                enabled=True,
+                table="/mnt/nvme/memory/wiki-20231101-lead",
+                mode="retrieved",
+                retrieval=RetrievalCfg(),
             ),
         ),
         "L10a": replace(rec, numerics=NumericsCfg(sparsity_2_4=True)),

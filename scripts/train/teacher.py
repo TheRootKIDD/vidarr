@@ -116,3 +116,14 @@ class BgeTeacher:
 
     def __call__(self, ids: list[list[int]]) -> Tensor:
         return self.encode_texts(self.texts(ids))
+
+
+def attach_encoder(model: torch.nn.Module, device: torch.device) -> None:
+    """L8b (ADR-057): give the memory its frozen query encoder (the table's own BGE), so the
+    model computes its neighbours on every call path (training, in-training eval, wiki-lead
+    eval, probes). A no-op for every other rung and for the toy table."""
+    mem = getattr(getattr(model, "middle", None), "mem", None)
+    if mem is None or not mem.retrieved or mem.mc.table is None:
+        return
+    rc = mem.mc.retrieval
+    mem.encoder = BgeTeacher(rc.encoder_dir, CORPUS_TOKENIZER, device, rc.encoder_max_tokens)

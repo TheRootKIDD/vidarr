@@ -65,7 +65,10 @@ def memory_params(model: Model) -> int:
     if not m.enabled:
         return 0
     q_proj = (model.d + model.depth_embed) * m.d_m
-    key_maps = 1 if m.fixed_keys else 2 * (m.d_enc // 2) * (m.d_m // 2)
+    if m.retrieved_k:  # L8b (ADR-057): W_kappa maps each neighbour's vector to a key
+        key_maps = m.d_enc * m.d_m
+    else:
+        key_maps = 1 if m.fixed_keys else 2 * (m.d_enc // 2) * (m.d_m // 2)
     read_out = m.d_enc * model.d
     return q_proj + key_maps + read_out
 

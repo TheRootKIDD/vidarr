@@ -92,12 +92,21 @@ class BigMoE(nn.Module):
 
     # ---- forward -------------------------------------------------------------------
     def forward_hidden(
-        self, tokens: Tensor, r: int | None = None, q_target: Tensor | None = None
+        self,
+        tokens: Tensor,
+        r: int | None = None,
+        q_target: Tensor | None = None,
+        neighbours: Tensor | None = None,
     ) -> tuple[Tensor, Extras]:
-        """`q_target` [B, T, 2]: L8q's teacher PQ code per input position (-1 = none)."""
+        """`q_target` [B, T, 2]: L8q's teacher PQ code per input position (-1 = none).
+        `neighbours` [B, ceil(T / s), K]: L8b's table rows per boundary; computed from `tokens`
+        by the memory's attached encoder when not given (ADR-057)."""
         if self.cfg.arch == "layered":
             return self._forward_layered(tokens)
-        return self._forward_recurrent(tokens, r, q_target)
+        mem = self.middle.mem
+        if neighbours is None and mem is not None and mem.retrieved:
+            neighbours = mem.neighbours(tokens)
+        return self._forward_recurrent(tokens, r, q_target, neighbours)
 
     def _forward_layered(self, tokens: Tensor) -> tuple[Tensor, Extras]:
         b, t = tokens.shape
@@ -114,7 +123,11 @@ class BigMoE(nn.Module):
         return h, Extras(router_aux=aux, ponder=c.new_zeros(()), loads=loads)
 
     def _forward_recurrent(
-        self, tokens: Tensor, r: int | None, q_target: Tensor | None = None
+        self,
+        tokens: Tensor,
+        r: int | None,
+        q_target: Tensor | None = None,
+        neighbours: Tensor | None = None,
     ) -> tuple[Tensor, Extras]:
         cfg = self.cfg
         b, t = tokens.shape
@@ -127,6 +140,8 @@ class BigMoE(nn.Module):
         if expert:
             self.middle.apply_pending_tau()  # L6c: last step's quantiles (ADR-042)
         mem: tuple[Tensor, Tensor] | None = None
+        rc = cfg.memory.retrieval
+        nb_s = rc.stride if rc is not None else 1  # L8b: positions per neighbour row
         hs, r_maps, ponders, loads = [], [], [], []
         aux = torch.zeros((), device=dev)
         q_sum: Tensor | None = None  # L8q: summed (L_q, count) over segments and iterations
@@ -147,6 +162,9 @@ class BigMoE(nn.Module):
                 frozen=torch.zeros(b, seg, dtype=torch.bool, device=dev),
                 loads=[],
                 q_tgt=None if q_target is None else q_target[:, s0 : s0 + seg],
+                nbr=None
+                if neighbours is None
+                else neighbours[:, s0 // nb_s : -(-(s0 + seg) // nb_s)],
             )
             for j in range(1, n_iter + 1):
                 prev_active = st.active
@@ -210,13 +228,13 @@ class BigMoE(nn.Module):
         outs = checkpoint(
             self.middle.iteration_flat,
             j, pos, fixed, st.c, st.p, st.active, st.r, st.cum_halt, st.remainder,
-            fk, fv, st.frozen, mk, mv, st.q_tgt, st.q_loss,
+            fk, fv, st.frozen, mk, mv, st.q_tgt, st.q_loss, st.nbr,
             use_reentrant=False,
         )
         c, p, active, r, cum, rem, fk2, fv2, frozen, aux, load, q_loss = outs
         new = IterState(
             c, p, active, r, cum, rem, None if fk2 is None else (fk2, fv2), frozen,
-            [*st.loads, load], st.q_tgt, q_loss,
+            [*st.loads, load], st.q_tgt, q_loss, st.nbr,
         )
         return new, aux
 
@@ -247,9 +265,10 @@ class BigMoE(nn.Module):
         r: int | None = None,
         generator: torch.Generator | None = None,
         q_target: Tensor | None = None,
+        neighbours: Tensor | None = None,
     ) -> LossOut:
         """The training forward is the loss, so DDP's hooks wrap the whole computation."""
-        return self.loss(tokens, r, generator, q_target)
+        return self.loss(tokens, r, generator, q_target, neighbours)
 
     def loss(
         self,
@@ -257,11 +276,13 @@ class BigMoE(nn.Module):
         r: int | None = None,
         generator: torch.Generator | None = None,
         q_target: Tensor | None = None,
+        neighbours: Tensor | None = None,
     ) -> LossOut:
         """tokens [B, T+1]: positions 0..T-1 are inputs, the last is the final target.
-        `q_target` [B, T, 2] (L8q, ADR-055): the teacher's PQ code per input position."""
+        `q_target` [B, T, 2] (L8q, ADR-055): the teacher's PQ code per input position.
+        `neighbours` (L8b, ADR-057): per-boundary table rows of the inputs, else computed."""
         inp = tokens[:, :-1]
-        h, ex = self.forward_hidden(inp, r, q_target)
+        h, ex = self.forward_hidden(inp, r, q_target, neighbours)
         main = self._chunked_ce(h, tokens[:, 1:])
         metrics: dict[str, float] = {}
         if self.mtp is not None:
