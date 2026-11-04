@@ -1006,9 +1006,8 @@ Consequences:
 
 Bears on I40 and L8 (H17 indirectly).
 
-## Proposed / pending
 ### ADR-055 — L8q: L8 with a query-side retrieval loss distilled from the frozen encoder on the preceding chunk (I40, query side); rig `043`, run `174`
-2026-11-04 · proposed (the user: "yes, draft the query-side ADR")
+2026-11-04 · accepted (the user's decision: "yes, accept it, push, then continue"; drafted on "yes, draft the query-side ADR")
 
 Context: `173` weakens H17 by ADR-053 §10, and `042` (ADR-054) locates the failure. Under the model's own query, an article's cell ranks at chance among 2²⁰, and so do its row and column per half (reading 1). The keys are a second, smaller limit (reading 2: the own-key oracle reaches the top 32 for 7.8 % of cells). The query and key maps get 20–50× less gradient relative to their weights than the experts, because the only signal reaching them is the main loss through a near-uniform softmax over 32 candidates. Nothing in L8 says what a good query is. The table's own encoder does: for any text, BGE gives the PQ code $(a^*, b^*)$ that the lookup would need to hit. This ADR adds that as a training target for the query, and changes nothing else. It is not L8b: no neighbours are fed to the model, and at inference the query is the model's own.
 
@@ -1045,6 +1044,7 @@ Consequences:
 
 Bears on H17, L8 and I40.
 
+## Proposed / pending
 - **ADR-028** — Unit model revisions from the author's hardware document (`docs/07 §4`): (a) two compute classes per chip — an FF core with a large array ($s_{min,ff}$ = 256–1024) and attention cores with small arrays ($s_{min,attn}$ ≈ 64), hence $\phi_{ff}$, $\phi_{attn}$ as separate scenario inputs; (b) the tile floor is a *row* floor, $N$ = $M$ × (LHS bw / RHS bw) rows per weight tile, with each token contributing 1 + $m$ rows under $m$-token speculation — the scheduler's queues count rows; (c) the reduce leg of the local fabric carries ≥ 16-bit partial sums: `02 §2` traffic becomes $b d\, b_{act} + b d\, b_{sum}$, $b_{sum}$ ≥ 2; (d) full pipelining inside the unit doubles tokens in flight and per-token latency — the Little's-law budget $Z$ of `02 §5.5` carries the factor; (e) router-based unit fabrics are ≤ 50 % link-efficient (avg. 2 hops), torus collectives 100 %: `02 §1`'s "switch" option is not equivalent to a torus; (f) the asymmetric 4×4×4 torus all-gather costs ≈ 3X/(8B) vs ≈ X/(2B) on a flat ring (our derivation from the author's algorithm) — the number S1/S3 must reproduce; (g) the failure domain is the 4-chip ring board, and a failed rail port is bypassed through torus neighbours at ¼ load (`02 §11`); (h) the replica-rounding utilisation floor $\ell / \lceil \ell \rceil$ reported beside the Little's-law model in S4. Also fills `note64.yaml` with the sourced ratios of `docs/07 §6`; absolute $\phi$, $\beta_C$, $\lambda_C$, $\nu_C$ stay placeholders (I4). Bears on H1, H5, H8, H9, H10, H11, H16; changes `02 §1, §2, §5, §11`.
 - **ADR-024** — Parallel prefill mode for long prompts (the author's "less effective mode"): (a) all segments at once with local attention only, global cache filled afterwards from context-poor final vectors; (b) pipelined segments, segment $k+1$ at iteration $j$ attending globally to segment $k$'s iteration-$j$ caches (transient per-iteration global cache during prefill, in-flight depth up to $r$ segments). Both are inference-time modes of a sequentially trained model; E-Q12 evaluates both against sequential prefill on continuation loss and TTFT (S5). If both degrade, a mixed-mode training variant becomes a later ladder step.
 
@@ -1211,7 +1211,7 @@ Cost units from `docs/06 §4`: one `screen` run ≈ 8 h (1 B tokens, 1 seed); on
   - a variant that changes the lookup (for example an auxiliary retrieval loss on in-table text, or an initialisation of $W_m$ / $h^{1,2}$ from the encoder);
   - closing L8 at `screen`.
 
-  **Status after `042` (ADR-054, 2026-11-04):**
+  **Status after `042` (ADR-054, 2026-11-04):** (the query side is taken up by ADR-055, accepted 2026-11-04; run `174`)
   - **The query is not article-specific:** the own-cell rank is at chance at all eight iterations, and so are the row and column ranks per half (reading 1).
   - **The keys separate cells only partly:** the own-key oracle reaches the top 32 for 7.8 % of cells, at a median rank of 945 of 2²⁰ (reading 2).
   - **Not starved by scale:** the top-1 − top-32 gap is 0.6–1.2 (reading 3 does not fire).
@@ -2097,6 +2097,15 @@ and an ADR first, L6c likewise; the `small` programme (L0, L1, L2, L3, L5, L5d a
 the ladder's own next step and needs no new code. The choice between "more `screen` variants" and
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
+
+### 2026-11-04 (10:00) — **ADR-055 accepted** (the user: "yes, accept it, push, then continue")
+
+- ADR-055 moves to Accepted. I40 points to it for the query side.
+- **Spec:**
+  - `01 §4.6` gains the "L8q (ADR-055)" paragraph;
+  - `§11` gains `memory.query_aux`;
+  - `03 §2` lists L8q.
+- **Next:** build (config, loss, teacher, tests, probe), rig `043`, then `queue_screen_16` with `174-l8q-screen`.
 
 ### 2026-11-04 (09:45) — **ADR-055 proposed**: L8q, a query-side retrieval loss for L8 (I40), for approval
 

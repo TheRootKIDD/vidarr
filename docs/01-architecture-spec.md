@@ -138,6 +138,10 @@ $$q_m = W_m [u; e_j], \qquad \mathcal{N} = \text{top-}k_m\ \text{of}\ q_m^\top \
 - **Read-out.** $\mathrm{Mem} = W_v \sum_{n \in \mathcal{N}} \alpha_n e_n$ with $W_v$ = $W_o g_\theta$ (768 → $d$), one linear map applied after the weighted sum; $W_v$ starts at zero, so L8 starts as L5. The table $e$ and the codebooks $\mu$ are frozen buffers; $W_m$, $h^{1,2}_\theta$ and $W_v$ train. One module is shared by every middle iteration. Tenant tags are not built (L11).
 - **Matched FLOPs.** The memory is inside the budget (§10), so the expert width is re-solved for L8 (≈ 711 against L5's 896, a confound ADR-053 records).
 
+**L8q (ADR-055).** L8 plus a training-only target for the query. Each training window is cut into window-aligned chunks of 64 tokens. The frozen table encoder (BGE, as in the build, fp16, no gradient) encodes each chunk's decoded text and returns its PQ code $(a^*_c, b^*_c)$, the nearest codebook centroid per half. Tokens at positions $[64(c+1), 64(c+2))$ take chunk $c$'s code, so the target depends only on visible context. The first chunk gets no target, and a target is masked if an EOS lies in $[64c, 64(c+2))$. At every iteration the lookup's own half scores $s^{1,2}$ give
+$$\mathcal{L}_q = \tfrac12\big[\mathrm{CE}(s^1, a^*) + \mathrm{CE}(s^2, b^*)\big],$$
+averaged over valid tokens and iterations and added as $\lambda_q \mathcal{L}_q$ with $\lambda_q$ = 0.1. The query's inputs $[u; e_j]$ are detached for this loss, so it trains $W_m$ and $h^{1,2}_\theta$ only. Inference is unchanged, so active FLOPs are L8's. The teacher's cost is training-only and is reported as measured throughput.
+
 ### 4.7 Iteration count $r_t$ (note P7)
 **Status (ADR-046, 2026-11-02):** neither learned rule below (ACT, L6; expert-choice, L6c) beat a fixed $r$ at matched mean depth at `screen`, so both are closed there and the ladder trains with fixed $r$. The design and the ragged-depth semantics stay as written. They are P7, binding for `sim/` and for any reopening by ADR.
 
@@ -258,7 +262,9 @@ model:
     kv_share_every: 1              # L6b (transient local caches only)
     index: { enabled: false, block: 16, topk: 32, indexer_dim: 32 }
   memory: { enabled: false, n_entries: 1048576, grid: 1024, key_dim: 128, topk: 32, half_topk: 32, values: parametric,   # L8 (ADR-053)
-            encoder: bge-base-en-v1.5, source: wiki-20231101-lead, table: /mnt/nvme/memory/wiki-20231101-lead, encoder_finetune: false }   # GPU product-key memory (L8); L8b = chunk retrieval; L8c = encoder fine-tune
+            encoder: bge-base-en-v1.5, source: wiki-20231101-lead, table: /mnt/nvme/memory/wiki-20231101-lead, encoder_finetune: false,
+            query_aux: null }   # GPU product-key memory (L8); L8b = chunk retrieval; L8c = encoder fine-tune
+            # L8q (ADR-055): query_aux: { lambda_q: 0.1, chunk: 64, teacher: bge-base-en-v1.5 }; null = off
   halting: { mode: fixed, ponder_cost: 0.0, output: last, halted_kv: once,   # mode: fixed | act (L6) | expert (L6c)
              gate: true,                     # ADR-041/042: scale updates by the running probability (act) or the score (expert)
              survival: linear, survival_last: 0.3, tau_momentum: 0.99 }   # L6c schedule s_j and threshold EMA (ADR-042)
