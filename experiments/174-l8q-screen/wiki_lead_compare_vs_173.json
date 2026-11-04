@@ -1,0 +1,44 @@
+{
+ "arm": "174-l8q-screen",
+ "base": "173-l8-screen",
+ "splits": {
+  "in_first": {
+   "arm": 3.1235695933258,
+   "base": 3.132826854215156,
+   "delta": -0.00925726088935593,
+   "bootstrap_se": 0.0032544440485825416,
+   "floor": 0.013017776194330167,
+   "beats_floor": false,
+   "tokens": 70952.0
+  },
+  "in_rest": {
+   "arm": 3.4338962704241998,
+   "base": 3.431958278655712,
+   "delta": 0.0019379917684877886,
+   "bootstrap_se": 0.002778416083943475,
+   "floor": 0.012,
+   "beats_floor": false,
+   "tokens": 77911.0
+  },
+  "out_lead": {
+   "arm": 3.2725795590790234,
+   "base": 3.2748175246515965,
+   "delta": -0.002237965572573098,
+   "bootstrap_se": 0.0020635463426422764,
+   "floor": 0.012,
+   "beats_floor": false,
+   "tokens": 148298.0
+  }
+ },
+ "heldout": {
+  "arm": 3.3421447462722904,
+  "base": 3.340022518986561,
+  "relative": 0.0006353931069821762,
+  "delta": 0.0021222272857293056,
+  "within": true,
+  "within_2sigma": true,
+  "beyond_4sigma": false
+ },
+ "verdict_h17": "weakens",
+ "verdict_h17_literal_0p5pct": "weakens"
+}

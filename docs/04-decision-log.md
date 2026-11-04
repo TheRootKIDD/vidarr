@@ -1218,6 +1218,12 @@ Cost units from `docs/06 §4`: one `screen` run ≈ 8 h (1 B tokens, 1 seed); on
   - **Gradient coherence unresolved at 8 windows** (reading 4 does not fire). The query and key maps get 20–50× less gradient relative to their weights than the experts.
   - **Still open:** the variant choice (query side, key side, or both) is the user's call, and each variant needs an ADR.
 
+  **Status after `174` (ADR-055, 2026-11-04):**
+  - **The query side works by ADR-055's bar:** with the teacher loss, own row and column ranks reach a median of 227–251 at iterations 6–8, and lookup accuracy is 1.6–1.9 × 10⁻³ (52–60× chance). The query matches the teacher's top-1 row 13–30 % of the time on FineWeb-Edu.
+  - **It buys no loss:** every wiki-lead split is within its floor of `173`, FineWeb-Edu +0.0019. H17 is weakened against `110`, and by ADR-055 §6 that now bears on H17 itself.
+  - **The keys are the remaining limit:** the own-key oracle reaches the top 32 for 6.45 % of cells (`173` 7.8 %), so even a perfect query would miss 94 % of the time; lookup hits 0.19 % of first-sentence tokens. Reliance moved to general text (random cells +0.013 on FineWeb, −0.003 on in-table first sentences): the retrieval is used as a topic signal.
+  - **Still open:** the key side (reading 2), or closing L8 at `screen`, is the user's call; either needs an ADR.
+
 ## Session log
 
 ### 2026-09-02 — Phase 0 bootstrap and measurements
@@ -2097,6 +2103,16 @@ and an ADR first, L6c likewise; the `small` programme (L0, L1, L2, L3, L5, L5d a
 the ladder's own next step and needs no new code. The choice between "more `screen` variants" and
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
+
+### 2026-11-04 (19:40) — **`174` L8q = 3.3457, +0.0129 vs L5 `110` (4.3σ); the query now finds the article above chance, but no wiki-lead split beats `110` → H17 *weakened*, by ADR-055 §6 on H17 itself**; `queue_screen_16` done
+
+- **Run:** 11:25 → 19:07, 7.69 h, 36.5 k tok/s (0.86× `173`), teacher ≈ 16 % of the step, 5.72 GiB, `n_thermal` 0. $\mathcal{L}_q$ 6.93 → 3.64.
+- **H17 vs `110`:** in-table first sentence −0.0071 (floor 0.0133), rest of lead +0.0259, control +0.0112; FineWeb-Edu +0.0129, past 4σ. Weakens on both of ADR-055's grounds.
+- **vs `173`** (the query loss alone): −0.0093 / +0.0019 / −0.0022 on the three splits, all within floor; FineWeb +0.0019 (0.6σ).
+- **Mechanism (I40):** passes at iterations 6–8 (own row/column medians 251/251, 227/230, 232/237; lookup accuracy 1.6–1.9 × 10⁻³). Teacher agreement 13–30 % per row (chance 0.1 %). α 91.6 % of uniform (`173` 99.6 %), table use 7.0 %.
+- **The limit, recorded with the verdict:** the lookup still hits only 0.19 % of tokens, and the own-key oracle caps it at 6.45 % (worse than `173`'s 7.8 %). Random cells cost +0.013 on FineWeb but nothing on in-table first sentences (−0.003): the retrieval is a topic signal. So what is ruled out at `screen` is the query-side fix with these keys, not a lookup that hits often.
+- **No `small` pair** (ADR-055 §6 triggers one only on *supports*). I40 status updated. Next for L8 (the key side, or closing L8 at `screen`) is the user's call, by ADR.
+- Next ladder id 175, next rig id 044. Nothing running.
 
 ### 2026-11-04 (11:35) — **L8q built: code `3262716`, rig `043` passed, `queue_screen_16` running `174-l8q-screen`**
 
