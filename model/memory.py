@@ -13,6 +13,14 @@ With `memory.table = None` a seeded random table stands in (unit tests only).
 
 L8q (ADR-055) adds `query_loss`, a training-only target for the query; `forward` is unchanged.
 
+L8k (ADR-056, `memory.keys = "pca_fixed"`) replaces h^{1,2} by fixed keys and the dot score by a
+distance score:
+    k^h_i = P^h (mu^h_i - mean^h)        (P^h the top d_m/2 principal components of the table's
+                                          h-th half-embeddings, mean^h their mean; frozen)
+    s^h_i = tau (q^h . k^h_i - |k^h_i|^2 / 2) = -tau/2 |q^h - k^h_i|^2 + const(q)
+with tau = exp(log_tau) learned. P and the mean come from `build_memory_pca.py` (`pca*.npy`,
+`mean*.npy` beside the table); the toy table computes them in place.
+
 Probe knobs (ADR-053 §8; no effect on training): `random_cells` replaces the retrieved cells by
 uniformly random ones (reliance), `record` keeps each call's cells and alpha (lookup accuracy,
 table use, entropy).
@@ -41,6 +49,47 @@ def load_table(path: str | Path) -> tuple[Tensor, Tensor, Tensor, dict]:
     return table, mu1, mu2, manifest
 
 
+def pca_halves(
+    table: Tensor, dim: int, chunk: int = 1 << 16
+) -> list[tuple[Tensor, Tensor, float]]:
+    """ADR-056: per half of `table` [N, d_enc], (mean [d_enc/2], P [dim, d_enc/2], share of the
+    variance kept). Covariance in fp64 over row chunks on the table's device; each component's
+    sign is fixed so its largest-magnitude entry is positive (deterministic across runs)."""
+    n, d_enc = table.shape
+    half = d_enc // 2
+    out = []
+    for h in range(2):
+        cols = slice(h * half, (h + 1) * half)
+        s = torch.zeros(half, dtype=torch.float64, device=table.device)
+        ss = torch.zeros(half, half, dtype=torch.float64, device=table.device)
+        for i in range(0, n, chunk):
+            x = table[i : i + chunk, cols].double()
+            s += x.sum(0)
+            ss += x.T @ x
+        mean = s / n
+        cov = ss / n - torch.outer(mean, mean)
+        evals, evecs = torch.linalg.eigh(cov)  # ascending
+        top = evecs[:, -dim:].flip(-1).T  # [dim, half], largest variance first
+        idx = top.abs().argmax(-1, keepdim=True)
+        top = top * torch.sign(top.gather(-1, idx))
+        kept = float(evals[-dim:].sum() / evals.sum())
+        out.append((mean.float().cpu(), top.float().cpu(), kept))
+    return out
+
+
+def load_pca(path: str | Path, dim: int) -> list[tuple[Tensor, Tensor]]:
+    """(mean, P) per half from `build_memory_pca.py`'s output beside the table."""
+    p = Path(path)
+    out = []
+    for h in (1, 2):
+        mean = torch.from_numpy(np.load(p / f"mean{h}.npy"))
+        P = torch.from_numpy(np.load(p / f"pca{h}.npy"))
+        if P.shape[0] != dim:
+            raise ValueError(f"pca{h}.npy has {P.shape[0]} components, key_dim / 2 = {dim}")
+        out.append((mean.float(), P.float()))
+    return out
+
+
 def toy_table(mc: MemoryCfg, seed: int = 0) -> tuple[Tensor, Tensor, Tensor]:
     """A seeded random L2-normalised table and codebooks of the configured shape (tests)."""
     g = torch.Generator().manual_seed(seed)
@@ -57,8 +106,10 @@ class KnowledgeMemory(nn.Module):
         self.mc = mc
         half_enc, half_key = mc.encoder_dim // 2, mc.key_dim // 2
         self.q = nn.Linear(d + depth_dim, mc.key_dim, bias=False)  # W_m
-        self.h1 = nn.Linear(half_enc, half_key, bias=False)
-        self.h2 = nn.Linear(half_enc, half_key, bias=False)
+        self.fixed = mc.keys == "pca_fixed"
+        if not self.fixed:
+            self.h1 = nn.Linear(half_enc, half_key, bias=False)
+            self.h2 = nn.Linear(half_enc, half_key, bias=False)
         self.out = nn.Linear(mc.encoder_dim, d, bias=False)  # W_v = W_o g_theta
         nn.init.zeros_(self.out.weight)
         self.manifest: dict = {}
@@ -74,22 +125,45 @@ class KnowledgeMemory(nn.Module):
         self.register_buffer("table", table.to(torch.bfloat16), persistent=False)
         self.register_buffer("mu1", mu1.float(), persistent=False)
         self.register_buffer("mu2", mu2.float(), persistent=False)
+        if self.fixed:  # ADR-056: k^h = P^h (mu^h - mean^h), frozen; tau starts at 1 / median gap
+            if mc.table is None:
+                pca = [(m, P) for m, P, _ in pca_halves(table.float(), half_key)]
+            else:
+                pca = load_pca(mc.table, half_key)
+            keys = [(mu.float() - m) @ P.T for mu, (m, P) in zip((mu1, mu2), pca, strict=True)]
+            self.register_buffer("k1", keys[0], persistent=False)
+            self.register_buffer("k2", keys[1], persistent=False)
+            gap = torch.cat([torch.cdist(k, k).pow(2).flatten() for k in keys])
+            gap = gap[gap > 0].median()
+            self.log_tau = nn.Parameter(-torch.log(gap).reshape(()).float())
         self.random_cells = False
         self.record = False
         self.records: list[tuple[Tensor, Tensor]] = []  # (cells, alpha) per call while recording
 
     def sub_keys(self) -> tuple[Tensor, Tensor]:
-        """kappa^{1,2} = h^{1,2}(mu^{1,2}): the grid's learned row and column keys."""
+        """The grid's row and column keys: h^{1,2}(mu^{1,2}) learned, or the fixed PCA keys."""
+        if self.fixed:
+            return self.k1, self.k2
         return self.h1(self.mu1), self.h2(self.mu2)
+
+    def score_halves(self, q1: Tensor, q2: Tensor) -> tuple[Tensor, Tensor]:
+        """Each half's scores against its 1024 sub-keys: q . k (learned), or
+        tau (q . k - |k|^2 / 2) (ADR-056), i.e. -tau/2 |q - k|^2 up to a per-query constant."""
+        k1, k2 = (k.float() for k in self.sub_keys())
+        s1, s2 = q1.float() @ k1.T, q2.float() @ k2.T
+        if self.fixed:
+            tau = self.log_tau.float().exp()
+            s1 = tau * (s1 - 0.5 * (k1 * k1).sum(-1))
+            s2 = tau * (s2 - 0.5 * (k2 * k2).sum(-1))
+        return s1, s2
 
     def lookup(self, u: Tensor, e: Tensor) -> tuple[Tensor, Tensor]:
         """Cells [..., k_m] (row-major grid index) and their scores [..., k_m]."""
         mc = self.mc
         q = self.q(torch.cat([u, e.expand(*u.shape[:-1], -1)], dim=-1))
-        q1, q2 = q.float().chunk(2, dim=-1)
-        k1, k2 = self.sub_keys()
-        t1, i1 = (q1 @ k1.float().T).topk(mc.half_topk, dim=-1)
-        t2, i2 = (q2 @ k2.float().T).topk(mc.half_topk, dim=-1)
+        s1, s2 = self.score_halves(*q.float().chunk(2, dim=-1))
+        t1, i1 = s1.topk(mc.half_topk, dim=-1)
+        t2, i2 = s2.topk(mc.half_topk, dim=-1)
         cand = (t1[..., :, None] + t2[..., None, :]).flatten(-2)  # [..., half_topk^2]
         score, ci = cand.topk(mc.topk, dim=-1)
         a = i1.gather(-1, ci // mc.half_topk)
@@ -99,13 +173,11 @@ class KnowledgeMemory(nn.Module):
     def query_loss(self, u: Tensor, e: Tensor, target: Tensor) -> tuple[Tensor, Tensor]:
         """L8q (ADR-055): half-wise cross-entropy of the lookup's own sub-key scores toward the
         teacher's PQ code. `target` [..., 2] long (row a*, column b*; -1 = no target). The
-        query's inputs are detached, so this trains W_m and h^{1,2} only. Returns the summed
-        loss over valid positions and their count (the caller averages)."""
+        query's inputs are detached, so this trains W_m and h^{1,2} (or tau, L8k) only. Returns
+        the summed loss over valid positions and their count (the caller averages)."""
         q = self.q(torch.cat([u.detach(), e.detach().expand(*u.shape[:-1], -1)], dim=-1))
-        q1, q2 = q.float().chunk(2, dim=-1)
-        k1, k2 = self.sub_keys()
-        s1 = (q1 @ k1.float().T).flatten(0, -2)
-        s2 = (q2 @ k2.float().T).flatten(0, -2)
+        s1, s2 = self.score_halves(*q.float().chunk(2, dim=-1))
+        s1, s2 = s1.flatten(0, -2), s2.flatten(0, -2)
         t = target.reshape(-1, 2)
         ce1 = F.cross_entropy(s1, t[:, 0], ignore_index=-1, reduction="sum")
         ce2 = F.cross_entropy(s2, t[:, 1], ignore_index=-1, reduction="sum")

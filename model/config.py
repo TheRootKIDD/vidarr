@@ -146,6 +146,9 @@ class MemoryCfg:
     source: str = "wiki-20231101-lead"
     table: str | None = None  # directory from build_wiki_memory.py; None = random toy (tests)
     query_aux: QueryAuxCfg | None = None  # L8q (ADR-055); None = off
+    # L8k (ADR-056): "pca_fixed" = frozen per-half PCA sub-keys scored by distance, learned tau;
+    # "learned" = the h^{1,2} key maps with dot scores (L8, L8q)
+    keys: Literal["learned", "pca_fixed"] = "learned"
 
     @property
     def n_entries(self) -> int:
@@ -259,6 +262,7 @@ class ModelCfg:
             d_m=mc.key_dim,
             d_enc=mc.encoder_dim,
             k_m=mc.topk,
+            fixed_keys=mc.keys == "pca_fixed",
         )
 
     def validate(self) -> None:
@@ -274,6 +278,10 @@ class ModelCfg:
                 raise ValueError("memory key_dim and encoder_dim split into two halves")
             if not (1 < mc.topk <= mc.half_topk**2 and mc.half_topk <= mc.grid):
                 raise ValueError("memory needs 1 < topk <= half_topk**2 and half_topk <= grid")
+            if mc.keys not in ("learned", "pca_fixed"):
+                raise ValueError("memory.keys must be learned or pca_fixed (ADR-056)")
+            if mc.keys == "pca_fixed" and mc.key_dim > mc.encoder_dim:
+                raise ValueError("memory.keys pca_fixed needs key_dim <= encoder_dim")
         qa = mc.query_aux
         if qa is not None:
             if not mc.enabled:
@@ -430,6 +438,16 @@ def ladder(step: str, **overrides: Any) -> ModelCfg:
                 enabled=True,
                 table="/mnt/nvme/memory/wiki-20231101-lead",
                 query_aux=QueryAuxCfg(),
+            ),
+        ),
+        # ADR-056: L8q with fixed per-half PCA sub-keys scored by distance (same FLOPs and width)
+        "L8k": replace(
+            rec,
+            memory=MemoryCfg(
+                enabled=True,
+                table="/mnt/nvme/memory/wiki-20231101-lead",
+                query_aux=QueryAuxCfg(),
+                keys="pca_fixed",
             ),
         ),
         "L10a": replace(rec, numerics=NumericsCfg(sparsity_2_4=True)),

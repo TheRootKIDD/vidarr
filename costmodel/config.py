@@ -77,6 +77,8 @@ class Memory:
     """$d_{enc}$ — frozen encoder vector width (the value read before $W_v$)."""
     k_m: int = 32
     """$k_m$ — values retrieved (ADR-053: 1 gives no gradient)."""
+    fixed_keys: bool = False
+    """ADR-056 (L8k): frozen PCA sub-keys, no $h^{1,2}$ maps, one learned temperature."""
 
 
 @dataclass(frozen=True)

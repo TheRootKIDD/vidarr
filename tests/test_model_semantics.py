@@ -6,6 +6,7 @@ parameter counts (ADR-025). Everything runs on CPU at toy size."""
 from __future__ import annotations
 
 import dataclasses as dc
+import math
 from pathlib import Path
 
 import pytest
@@ -45,6 +46,7 @@ STEPS = [
     "L7b",
     "L8",
     "L8q",
+    "L8k",
     "L4",
 ]
 
@@ -67,7 +69,9 @@ def tiny(step: str, **kw) -> ModelCfg:
         experts=dc.replace(c.experts, d_ff=32),
         # L5e: K = 4 so that H runs inside the tiny loop, once, after iteration 2
         middle=dc.replace(c.middle, r_max=3, depth_embed=8, h_every=4 if c.middle.h_every else 0),
-        memory=dc.replace(TOY_MEM, query_aux=TOY_QA if c.memory.query_aux else None)
+        memory=dc.replace(
+            TOY_MEM, query_aux=TOY_QA if c.memory.query_aux else None, keys=c.memory.keys
+        )
         if c.memory.enabled
         else c.memory,
     )
@@ -1086,6 +1090,98 @@ def test_l8q_checkpointed_iterations_match() -> None:
         grads.append(m.middle.mem.q.weight.grad.clone())
     assert abs(losses[0] - losses[1]) < 1e-5
     assert torch.allclose(grads[0], grads[1], atol=1e-5)
+
+
+# ---- L8k: fixed PCA sub-keys scored by distance (ADR-056) ---------------------------------
+
+
+def _l8k_model(seed: int = 0) -> tuple[ModelCfg, BigMoE]:
+    torch.manual_seed(seed)
+    cfg = tiny("L8k")
+    m = BigMoE(cfg)
+    nn.init.normal_(m.middle.mem.out.weight, std=0.1)
+    return cfg, m
+
+
+def test_l8k_keys_are_fixed_pca_of_the_codebooks() -> None:
+    from model.memory import pca_halves
+
+    cfg, m = _l8k_model()
+    mem = m.middle.mem
+    assert mem.fixed and not hasattr(mem, "h1") and not hasattr(mem, "h2")
+    names = {n for n, _ in mem.named_parameters()}
+    assert names == {"q.weight", "out.weight", "log_tau"}
+    assert not {"k1", "k2"} & {k.split(".")[-1] for k in m.state_dict()}  # rebuilt, not saved
+    (m1, P1, v1), (m2, P2, _) = pca_halves(mem.table.float(), cfg.memory.key_dim // 2)
+    assert torch.allclose(mem.k1, (mem.mu1 - m1) @ P1.T, atol=1e-2)
+    assert torch.allclose(mem.k2, (mem.mu2 - m2) @ P2.T, atol=1e-2)
+    assert torch.allclose(P1 @ P1.T, torch.eye(P1.shape[0]), atol=1e-4) and 0 < v1 <= 1
+
+
+def test_l8k_score_is_negative_half_squared_distance() -> None:
+    """s^h_i = -tau/2 |q - k_i|^2 + c(q); a query equal to a key ranks that key first."""
+    _, m = _l8k_model()
+    mem = m.middle.mem
+    with torch.no_grad():
+        mem.log_tau.fill_(0.7)
+    q1, q2 = torch.randn(5, mem.k1.shape[1]), torch.randn(5, mem.k2.shape[1])
+    s1, s2 = mem.score_halves(q1, q2)
+    tau = math.exp(0.7)
+    for s, q, k in ((s1, q1, mem.k1), (s2, q2, mem.k2)):
+        c = s + 0.5 * tau * torch.cdist(q, k).pow(2)
+        assert torch.allclose(c, c[:, :1].expand_as(c), atol=1e-4)
+    s1, s2 = mem.score_halves(mem.k1, mem.k2)
+    assert torch.equal(s1.argmax(-1), torch.arange(len(mem.k1)))
+    assert torch.equal(s2.argmax(-1), torch.arange(len(mem.k2)))
+
+
+def test_l8k_loss_trains_only_the_query_and_tau() -> None:
+    cfg, m = _l8k_model()
+    m.train()
+    toks = torch.randint(0, cfg.vocab, (2, cfg.context))
+    _, ex = m.forward_hidden(toks, r=cfg.middle.r_max, q_target=_toy_targets(cfg, 2))
+    assert ex.q_loss is not None and ex.q_loss > 0
+    ex.q_loss.backward()
+    mem = m.middle.mem
+    learn = {id(mem.q.weight), id(mem.log_tau)}
+    for n, p in m.named_parameters():
+        if id(p) in learn:
+            assert p.grad is not None and p.grad.abs().sum() > 0, n
+        else:
+            assert p.grad is None or p.grad.abs().sum() == 0, n
+    assert mem.k1.grad is None and not mem.k1.requires_grad
+
+
+def test_l8k_matches_l8q_flops_width_and_counts_its_params() -> None:
+    """ADR-056 §4: same FLOPs and width as L8q; the h^{1,2} term becomes one scalar."""
+    from costmodel.config import Model as CmM
+    from costmodel.flops import memory_flops
+    from costmodel.params import memory_params
+
+    l8q, l8k = ladder("L8q"), ladder("L8k")
+    assert l8k.expert_width() == l8q.expert_width() == 704
+    de = l8k.middle.depth_embed
+    mq, mk = (CmM(d=c.d, depth_embed=de, mem=c.cm_memory()) for c in (l8q, l8k))
+    assert memory_flops(mq) == memory_flops(mk)
+    assert memory_params(mq) - memory_params(mk) == 2 * 384 * 64 - 1
+    cfg, m = _l8k_model()
+    tm = CmM(d=cfg.d, depth_embed=cfg.middle.depth_embed, mem=cfg.cm_memory())
+    assert sum(p.numel() for p in m.middle.mem.parameters()) == memory_params(tm)
+
+
+def test_l8k_checkpointed_iterations_match() -> None:
+    cfg, base = _l8k_model(seed=2)
+    gen = torch.Generator().manual_seed(9)
+    toks = torch.randint(0, cfg.vocab, (2, cfg.context + 1), generator=gen)
+    grads = []
+    for ckpt in (True, False):
+        m = BigMoE(dc.replace(cfg, checkpoint_iterations=ckpt))
+        m.load_state_dict(base.state_dict())
+        m.train()
+        o = m.loss(toks, r=cfg.middle.r_max, q_target=_toy_targets(cfg, 2))
+        o.loss.backward()
+        grads.append((m.middle.mem.q.weight.grad.clone(), m.middle.mem.log_tau.grad.clone()))
+    assert all(torch.allclose(a, b, atol=1e-5) for a, b in zip(*grads, strict=True))
 
 
 TABLE_DIR = Path("/mnt/nvme/memory/wiki-20231101-lead")

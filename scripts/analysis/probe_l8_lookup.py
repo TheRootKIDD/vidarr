@@ -54,9 +54,7 @@ def pair_rank(s1: Tensor, s2: Tensor, a: Tensor, b: Tensor) -> Tensor:
 
 def half_scores(mem: KnowledgeMemory, u: Tensor, e: Tensor) -> tuple[Tensor, Tensor]:
     q = mem.q(torch.cat([u, e.expand(*u.shape[:-1], -1)], dim=-1))
-    q1, q2 = q.float().chunk(2, dim=-1)
-    k1, k2 = mem.sub_keys()
-    return q1 @ k1.float().T, q2 @ k2.float().T
+    return mem.score_halves(*q.float().chunk(2, dim=-1))  # dot (L8, L8q) or distance (L8k)
 
 
 def stats(x: list[float] | np.ndarray) -> dict[str, float]:
@@ -142,7 +140,7 @@ def oracle(model: Any, items: list[dict[str, Any]], dev: torch.device) -> dict[s
     cells = torch.tensor([x["cell"] for x in items], device=dev)
     a, b = cells // grid, cells % grid
     k1, k2 = (x.float() for x in mem.sub_keys())
-    s1, s2 = k1[a] @ k1.T, k2[b] @ k2.T
+    s1, s2 = mem.score_halves(k1[a], k2[b])
     rank = pair_rank(s1, s2, a, b).double().cpu().numpy()
     ra = (s1 > s1.gather(-1, a[:, None])).sum(-1).double().cpu().numpy()
     rb = (s2 > s2.gather(-1, b[:, None])).sum(-1).double().cpu().numpy()
@@ -165,13 +163,9 @@ def oracle(model: Any, items: list[dict[str, Any]], dev: torch.device) -> dict[s
         "own_key_col_rank": stats(rb),
         "subkey_norm_h1": stats(k1.norm(dim=-1).cpu().numpy()),
         "subkey_norm_h2": stats(k2.norm(dim=-1).cpu().numpy()),
-        "singular_values": {
-            "W_m": sv(mem.q.weight),
-            "h1": sv(mem.h1.weight),
-            "h2": sv(mem.h2.weight),
-            "W_v": sv(mem.out.weight),
-        },
-    }
+        "singular_values": {"W_m": sv(mem.q.weight), "W_v": sv(mem.out.weight)}
+        | ({} if mem.fixed else {"h1": sv(mem.h1.weight), "h2": sv(mem.h2.weight)}),
+    } | ({"tau": float(mem.log_tau.exp())} if mem.fixed else {})
 
 
 def signal(model: Any, dev: torch.device, n_batches: int) -> dict[str, Any]:
@@ -180,7 +174,8 @@ def signal(model: Any, dev: torch.device, n_batches: int) -> dict[str, Any]:
     windows = MemmapCorpus(Path(CORPUS)).val_windows(cfg.context, None)[:n_batches]
     named = {n.removeprefix("module."): p for n, p in model.named_parameters()}
     groups = {g: [p for n, p in named.items() if n.startswith(pre)] for g, pre in GROUPS.items()}
-    grads: dict[str, list[Tensor]] = {g: [] for g in GROUPS}
+    groups = {g: ps for g, ps in groups.items() if ps}  # L8k has no h^{1,2}
+    grads: dict[str, list[Tensor]] = {g: [] for g in groups}
     model.train()
     for w in windows:
         model.zero_grad(set_to_none=True)

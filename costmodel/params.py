@@ -57,14 +57,15 @@ def router_params(model: Model) -> int:
 def memory_params(model: Model) -> int:
     """Trainable parameters of the knowledge memory (ADR-053). Zero when disabled.
 
-    $W_m$: $(d + d_e) d_m$; the two key maps $h^{1,2}$: $2 (d_{enc}/2)(d_m/2)$;
-    $W_v$: $d_{enc} d$. The table and its codebooks are frozen data, not parameters.
+    $W_m$: $(d + d_e) d_m$; the two key maps $h^{1,2}$: $2 (d_{enc}/2)(d_m/2)$, or one
+    temperature with fixed keys (ADR-056); $W_v$: $d_{enc} d$. The table, its codebooks and
+    fixed keys are frozen data, not parameters.
     """
     m = model.mem
     if not m.enabled:
         return 0
     q_proj = (model.d + model.depth_embed) * m.d_m
-    key_maps = 2 * (m.d_enc // 2) * (m.d_m // 2)
+    key_maps = 1 if m.fixed_keys else 2 * (m.d_enc // 2) * (m.d_m // 2)
     read_out = m.d_enc * model.d
     return q_proj + key_maps + read_out
 
