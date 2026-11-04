@@ -1134,6 +1134,15 @@ Cost units from `docs/06 §4`: one `screen` run ≈ 8 h (1 B tokens, 1 seed); on
   - **Flip the verdict, and decide it:**
     - the **per-GPU NIC speed** (0.67× at 200 Gb/s);
     - the **residual routing imbalance after EPLB** (0.62× at zipf 0.5, about no-EPLB imbalance).
+- **I40** *(2026-11-04, ADR-053, `173`)* **Why L8's lookup never learns to retrieve.** In `173-l8-screen`, lookup accuracy is at chance at all eight iterations (4.6 × 10⁻⁵ against 32 / 2²⁰), α stays 99.6 % uniform over the 32 candidates, and the queries use only 6.1 % of the cells. Each of the following might explain it, but none has been measured:
+  - the query $W_m[u; e_j]$ and the key maps $h^{1,2}$ receive gradient only through the softmax over 32 near-identical candidates and through $W_v$, which starts at zero;
+  - nothing ties the query to the encoder's space, so a task signal strong enough to align them may not exist at `screen`;
+  - the placement distortion (+24 %, 2.8 % of entries in the any-free tier, `040`).
+
+  The options are the user's call, and each needs an ADR:
+  - a diagnostic (gradient norms into $W_m$, $h^{1,2}$; scores of the true cell);
+  - a variant that changes the lookup (for example an auxiliary retrieval loss on in-table text, or an initialisation of $W_m$ / $h^{1,2}$ from the encoder);
+  - closing L8 at `screen`.
 
 ## Session log
 
@@ -2014,6 +2023,24 @@ and an ADR first, L6c likewise; the `small` programme (L0, L1, L2, L3, L5, L5d a
 the ladder's own next step and needs no new code. The choice between "more `screen` variants" and
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
+
+### 2026-11-04 (05:40) — **`173` L8 = 3.3438, +0.0110 vs L5 `110` (3.7σ); wiki-lead no better than L5 on any split → H17 *weakened* by ADR-053 §10, with the cause on the lookup (accuracy at chance)**; `queue_screen_15` done
+
+- **`173-l8-screen`** (gate `ba89ed2`, 22:36 → 05:16, 6.67 h, median 42,322 tok/s = 0.87× `110`, 5.31 GiB, `n_thermal` 0, max 77 °C): val **3.3438**, +0.0110 vs `110` (between 2σ and 4σ), +0.0078 vs $L_{ref}$.
+- **wiki-lead** (`wiki_lead_compare.json`):
+  - in-table first sentence +0.0021 (floor 0.0134);
+  - in-table rest of lead **+0.0240** (floor 0.0121);
+  - out-of-table control +0.0135 (floor 0.0120).
+  - Neither in-table split beats the floor, so the verdict is **weakens**.
+- **Probes** (`wiki_lead.json`):
+  - random cells cost +0.0103 / +0.0063 / +0.0078 on the three splits and +0.0025 on FineWeb, so reliance is low;
+  - lookup accuracy is 4.6 × 10⁻⁵ against chance 3.1 × 10⁻⁵, i.e. at chance at all eight iterations;
+  - α entropy is 99.6 % of ln 32;
+  - 6.1 % of the cells are used.
+  - By §10's last clause the cause is the lookup or the table, not H17. **I40 opened.**
+- **Correction, recorded rather than silently fixed:** ADR-053 §10's "≤ 0.5 %" regression clause and `eval_wiki_lead.py` test 0.5 % of $L$. ADR-013 reads "0.5 %" as Δ ≤ 2σ, the same slip the H8 entries made (corrected 2026-10-03). Under ADR-013 the +0.0110 is neither within 2σ nor past 4σ. The verdict is unchanged.
+- ADR-053 §6's confound (width 704 vs 896) is not separable without an L5-w704 control. That control matters only once the lookup retrieves.
+- No `small` pair (§10 triggers one only on *supports*). Nothing is running. The next step for L8 (I40's options) is the user's call. Next ladder id 174, next rig id 042.
 
 ### 2026-11-03 (22:40) — **L8 built: `040` table, `041` probe passed, `queue_screen_15` running `173-l8-screen`**
 
