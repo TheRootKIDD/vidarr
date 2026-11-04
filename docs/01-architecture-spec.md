@@ -142,6 +142,8 @@ $$q_m = W_m [u; e_j], \qquad \mathcal{N} = \text{top-}k_m\ \text{of}\ q_m^\top \
 $$\mathcal{L}_q = \tfrac12\big[\mathrm{CE}(s^1, a^*) + \mathrm{CE}(s^2, b^*)\big],$$
 averaged over valid tokens and iterations and added as $\lambda_q \mathcal{L}_q$ with $\lambda_q$ = 0.1. The query's inputs $[u; e_j]$ are detached for this loss, so it trains $W_m$ and $h^{1,2}_\theta$ only. Inference is unchanged, so active FLOPs are L8's. The teacher's cost is training-only and is reported as measured throughput.
 
+**L8k (ADR-056).** L8q with fixed sub-keys scored by distance. For each half, $P^h$ is the top-64 principal-component projection (384 → 64) of the table's half-embeddings, centred at their mean $\bar e^h$. The sub-keys are $k^h_i = P^h(\mu^h_i - \bar e^h)$, frozen buffers built once with the table, and $h^{1,2}_\theta$ are removed. Each half scores $s^h_i = \tau\,(q^h \cdot k^h_i - \tfrac12\lVert k^h_i\rVert^2)$, which is $-\tfrac{\tau}{2}\lVert q^h - k^h_i\rVert^2$ up to a per-query constant. The product search, $k_m$, read-out and $\mathcal{L}_q$ are unchanged, and $\mathcal{L}_q$'s CE runs over these scores. $\tau = \exp(t)$ is one learned scalar, and $t$ starts at $-\ln$ of the median squared sub-key gap. $d_m$ stays 128, so FLOPs and expert width are L8q's.
+
 ### 4.7 Iteration count $r_t$ (note P7)
 **Status (ADR-046, 2026-11-02):** neither learned rule below (ACT, L6; expert-choice, L6c) beat a fixed $r$ at matched mean depth at `screen`, so both are closed there and the ladder trains with fixed $r$. The design and the ragged-depth semantics stay as written. They are P7, binding for `sim/` and for any reopening by ADR.
 
@@ -213,7 +215,7 @@ $m$ heads on $p_t^{out}$ ($c_t^{out}$ single-stream): head 1 predicts $x_{t+1}$ 
 - Attention scores: $2 \cdot 2\, d\,(W + |\mathcal{G}_{visible}|)$ per stream, with $|\mathcal{G}_{visible}| = K_{idx} B_{idx}$ once indexed. **Budget convention (ADR-027):** at the training context un-indexed, $W + |\mathcal{G}_{visible}|$ averages $(L+1)/2$ = 1024 keys at $L$ = 2048; that is the figure every `06 §3` anchor uses.
 - KV bytes: persistent $2 H_{kv} d_h b_{kv}$ per token (one $\mathcal{G}$ entry); transient $\le W \cdot r_{max} \cdot 2 H_{kv} d_h b_{kv}$ per in-flight sequence.
 - MoE: $2 \cdot k \cdot 3\, d\, d_{ff}\, L_e$ per stream; router $O(d_r \sqrt{N_e})$.
-- Memory (ADR-053): $2 (d + d_e) d_m + 2 d_m \sqrt{N_m} + 2 k_m d_{enc} + 2 d_{enc} d$ per stream (query, sub-key scores, weighted sum, read-out; the 1,024-candidate top-$k$ is not counted) — ≈ 1.70 MFLOP per token-iteration at `small`/`screen`. The table is data, not parameters; the trainable parameters are $(d + d_e) d_m + d_{enc} d_m / 2 + d_{enc} d$ ($W_m$, $h^{1,2}_\theta$, $W_v$).
+- Memory (ADR-053): $2 (d + d_e) d_m + 2 d_m \sqrt{N_m} + 2 k_m d_{enc} + 2 d_{enc} d$ per stream (query, sub-key scores, weighted sum, read-out; the 1,024-candidate top-$k$ is not counted) — ≈ 1.70 MFLOP per token-iteration at `small`/`screen`. The table is data, not parameters; the trainable parameters are $(d + d_e) d_m + d_{enc} d_m / 2 + d_{enc} d$ ($W_m$, $h^{1,2}_\theta$, $W_v$). With fixed keys (L8k, ADR-056) the $h^{1,2}_\theta$ term is replaced by one scalar τ; FLOPs are unchanged (the ½‖k‖² bias is not counted).
 - Prefill: $c$ only → drop the per-stream doubling → ≈ ½ of decode per token.
 - Fabric bytes per token per iteration (activations): $2 \cdot k \cdot d \cdot b_{act}$ **per stream** (dispatch + combine; two streams double it — ADR-027), before multicast/reduction dedup.
 
@@ -263,7 +265,8 @@ model:
     index: { enabled: false, block: 16, topk: 32, indexer_dim: 32 }
   memory: { enabled: false, n_entries: 1048576, grid: 1024, key_dim: 128, topk: 32, half_topk: 32, values: parametric,   # L8 (ADR-053)
             encoder: bge-base-en-v1.5, source: wiki-20231101-lead, table: /mnt/nvme/memory/wiki-20231101-lead, encoder_finetune: false,
-            query_aux: null }   # GPU product-key memory (L8); L8b = chunk retrieval; L8c = encoder fine-tune
+            query_aux: null, keys: learned }   # GPU product-key memory (L8); L8b = chunk retrieval; L8c = encoder fine-tune
+            # L8k (ADR-056): keys: pca_fixed (frozen per-half PCA-64 of the codebooks, distance score, learned tau); learned = L8/L8q
             # L8q (ADR-055): query_aux: { lambda_q: 0.1, chunk: 64, teacher: bge-base-en-v1.5 }; null = off
   halting: { mode: fixed, ponder_cost: 0.0, output: last, halted_kv: once,   # mode: fixed | act (L6) | expert (L6c)
              gate: true,                     # ADR-041/042: scale updates by the running probability (act) or the score (expert)
