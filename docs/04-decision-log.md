@@ -1102,6 +1102,86 @@ Consequences:
 
 Bears on H17, L8 and I40.
 
+### ADR-057 — Close L8's learned in-loop lookup at `screen`; test H17 with L8b: exact chunk-level retrieval of the table's sentences, fed to every middle iteration; rig `045`, run `175`
+2026-11-04 · proposed (the user: "yes, draft the ADR to close L8 and test H17 via L8b")
+
+Context: three results now bound what L8 as ADR-053 built it can show about H17.
+- **`173` (ADR-053):** the lookup never learned to retrieve (accuracy at chance), and H17 is weakened with the cause on the lookup.
+- **`174` (ADR-055):** a teacher loss moved the query off chance (lookup accuracy 52–60× chance) but bought no loss. The retrieval was used as a topic signal, not as facts, and H17 is weakened.
+- **`044` (ADR-056's gate):** the product grid itself caps retrieval. Even with the sentence's exact embedding as the query and the full codebooks, the own cell comes back at $k_m$ 32 for 22.8 %, and ranks first for 1.25 %, because a cell's key is its centroid pair, not its sentence. No cheap key fix is left.
+
+So whether a knowledge memory that *does* retrieve the right sentence lowers loss (H17's question) has not been tested. L8 cannot test it. L8b (`03 §2`, `06 §5.1`), retrieval outside the model, removes the learned lookup entirely: the right sentence is found by exact search in the encoder's space, which `044` shows a perfect query would need.
+
+Decision:
+1. **L8 closes at `screen`.** This covers L8 (`173`), L8q (`174`) and L8k (not run, gate failed). L8c and L8d were conditional on L8's table being used (`03 §2`, ADR-009), so they close with it. Their verdicts stand as written: H17 *weakened* by `173` and `174`, each with its recorded limit (the lookup, then the grid). **I40 closes:** the query side can be trained (`174`), and the ceiling is the placement's (`044`). No `small` pair. Reopening an in-loop learned lookup needs a new ADR.
+2. **L8b: the store and the encoder** are `040`'s 2²⁰ Wikipedia first sentences and their frozen BGE-base vectors (CLS, L2-normalised), unchanged. No new data and no download.
+3. **Retrieval, causal.**
+   - **Query points:** every $s$ = **16** positions, the boundaries $b$ = 16, 32, … of the window. At each $b$, the query text is the decoded corpus tokens $[\max(b - 32, \text{first token after the last EOS before } b),\ b)$, at most 32 tokens of the current document. It needs at least 8 tokens, or the boundary gets no neighbours.
+   - **Neighbours:** the query is encoded by the frozen BGE exactly as the table was (≤ 128 BGE tokens, fp32 weights under fp16 autocast, CLS, L2-normalised). Exact top-$K$ inner-product search over the 2²⁰ table vectors on the GPU, with $K$ = **8**, gives the neighbours $\mathcal{N}_b$.
+   - **Use:** positions $p \in [b, b + 16)$ use $\mathcal{N}_b$. Every token the neighbours depend on precedes $p$. Positions before the first valid boundary get no neighbours, and the branch is zero there.
+   - **Online:** neighbours are computed in the training loop on each rank's micro-batch, as ADR-055's teacher was. This **amends `06 §5.1`'s "precomputed offline".** That clause existed because a CPU index cannot serve per-*iteration* queries (≈ 3 × 10⁵ QPS). L8b queries once per 16 tokens, not per iteration, and exact GPU search over 2²⁰ × 768 is ≈ 1.6 GFLOP per query (≈ 0.8 TFLOP per micro-batch, tiled). So online gives the same neighbours an offline pass would, without coupling to the sampler over 11 B tokens or storing them. Evals compute neighbours by the same code.
+4. **The branch** (the slot L8 used: a fourth parallel branch of the shared middle block, read at every iteration $j$). Values are the neighbours' frozen sentence vectors $e_n$, as ADR-009 and L8 had them.
+   - **Keys:** $\kappa_n = W_\kappa e_n$ (768 → 128), computed once per boundary, not per token.
+   - **Query:** $q = W_m[u; e_j]$ (832 → 128).
+   - **Weights:** $\alpha = \mathrm{softmax}_{n \in \mathcal{N}_b}(q \cdot \kappa_n / \sqrt{128})$.
+   - **Read-out:** $\mathrm{Mem} = W_v \sum_n \alpha_n e_n$ with $W_v$ (768 → $d$) zero-initialised, so L8b starts as L5.
+   - **What trains:** $W_m$, $W_\kappa$ and $W_v$. No auxiliary loss: the model only has to learn to *read* precise neighbours, not to find them.
+5. **Accounting.**
+   - **Model FLOPs:** per token-iteration, query $2(d + d_e)\,d_m$ + scores $2 d_m K$ + weighted sum $2 K d_{enc}$ + read-out $2 d_{enc} d$ + the key map amortised over a boundary, $2 d_{enc} d_m K / s$. That is 0.21 + 0.002 + 0.012 + 1.18 + 0.098 ≈ **1.51 MFLOP**, against L8's 1.70.
+   - **Width:** H17 is at matched active FLOPs, so the expert width is re-solved. It snaps to **704**, as L8's (checked while drafting: exact 734). So `175` matches `173`/`174` in width and `110` in FLOPs.
+   - **Retrieval cost** (the encoder at ≈ 2 × 110 M × 40 BGE tokens per 16-token boundary ≈ 0.55 GFLOP per token, about the size of the model's own 0.6 GFLOP training budget per token, plus the search ≈ 0.1 GFLOP per token) is *not* model FLOPs, by RETRO's convention and as ADR-055 reported its teacher. It is a real inference-time cost, recorded as a caveat on "matched active FLOPs" and reported as measured tok/s and seconds per micro-batch.
+   - `01 §10` and `costmodel` gain an L8b memory term.
+6. **Evals and probes** (ADR-053 §7–§8, with retrieval):
+   - wiki-lead, all three splits, plus FineWeb-Edu held-out against `110` (H17) and `174`;
+   - **coverage:** the share of in-table first-sentence tokens that have neighbours;
+   - **retrieval accuracy:** the share of covered in-table first-sentence tokens whose $\mathcal{N}_b$ contains the article's own sentence. This is a pipeline property, measurable without a model;
+   - **reliance:** neighbours replaced by uniformly random table rows, per split, plus in-table first sentence restricted to covered tokens whose own sentence was retrieved;
+   - α entropy (of ln 8);
+   - wiki-lead also reported on covered tokens only, beside the full splits.
+7. **Readings and verdict, set now** (one seed).
+   - **Pipeline** (rig `045`, before training): retrieval accuracy on covered in-table first-sentence tokens.
+     - ≥ 50 %: "precise". This is ADR-054's line, and `044`'s 1.25 % top-1 is the grid's.
+     - Below 50 %: the run goes ahead, but the verdict is read as on a partly precise pipeline.
+   - **H17 against `110`:** ADR-055 §6's rule unchanged. Supports if both in-table splits beat §7's floor and the FineWeb-Edu Δ ≤ 2σ. Weakens if neither split beats the floor, or Δ > 4σ. Silent otherwise.
+   - **Usage:** the model *reads* the neighbours if the reliance on in-table first-sentence tokens whose own sentence was retrieved is ≥ §7's floor (random rows cost at least the floor there). Otherwise it does not.
+   - **How they combine:**
+     - Retrieval precise, read, and H17 not supported: at `screen`, a memory handed the right sentence as a vector does not lower loss. That is evidence on H17 itself, under the caveat of (8).
+     - Retrieval precise and not read: the training corpus does not teach the model to read the memory (FineWeb-Edu rarely restates a Wikipedia lead). The next step is the user's call, for example mixing a held-out slice of Wikipedia into training, by ADR.
+     - H17 supported: a `small` pair follows by ADR (ADR-031).
+8. **Recorded limits, set before the run:**
+   - **Values are sentence vectors, as ADR-009 specifies.** A 768-d CLS vector cannot carry a sentence's exact tokens, so the in-table first sentence's gain is capped below what token-level neighbours (RETRO's chunked cross-attention) could give. That variant is not this ADR.
+   - **Corpus mismatch:** the store is Wikipedia, and the training text is FineWeb-Edu (ADR-014, unchanged).
+9. **Build and runs.**
+   - (a) **Code:** `MemoryCfg.mode` (`"product_key"` = L8 as now | `"retrieved"`), the neighbour builder (`scripts/train/retrieval.py`: boundaries, document masking, the encoder from `teacher.py`, tiled exact top-$K$ on the GPU table), the branch in `model/memory.py`, the `L8b` preset, neighbours threaded through `IterState` and the checkpointed iteration as L8q's targets are, the eval and probe additions of (6), and the costmodel term.
+   - (b) **Unit tests:**
+     - causality: no neighbour depends on a token at or after its use position, and a perturbed future leaves earlier neighbours unchanged;
+     - document masking, and the 8-token minimum;
+     - exact top-$K$ equals a brute-force reference;
+     - the branch is zero without neighbours, and L8b with $W_v$ = 0 equals L5 at width 704;
+     - checkpointed equals plain;
+     - the costmodel term.
+   - (c) **Rig `045`:** retrieval accuracy and coverage on wiki-lead (the pipeline reading of (7)), and a sizing probe of `L8b` (peak ≤ 10 GiB per GPU; tok/s against `174`; the retrieval share of the step).
+   - (d) **`175-l8b-screen`:** one seed, 1 B tokens, against `110` and `174`, via `queue_screen_17.sh` with the usual gate (ruff + pytest), then the evals of (6).
+   - Expect ≈ 8–9 h (`174`'s 7.7 h with ≈ 2× the encoder tokens, less the teacher; `045` gives the number). No CPU probes beside the run.
+10. **Cost:** ≈ 10 min of probes and ≈ 9 h of training and evals on the local rig. The table, encoder and corpus are on `/mnt/nvme`, so there are no downloads, no external services and no purchases.
+
+Not chosen, and why:
+- **Offline neighbours over the corpus:** this would be ≈ 14 h to encode every 64-token chunk of 11 B tokens (or a sampler refactor to precompute only the windows read), for the same neighbours. See (3).
+- **RETRO's chunked cross-attention over neighbour tokens:** it departs from ADR-009's vector values and costs FLOPs, so the width falls below 704. It is a later ADR if (7)'s first reading lands.
+- **A 64-token chunk as in RETRO:** the wiki-lead first sentence (≈ 35 tokens, after a ≈ 7-token title) would fall almost entirely in chunk 0, which has no neighbours. That leaves H17's main split untested. Stride 16 over a 32-token window covers it from position 16 on.
+
+Consequences:
+- **Spec:**
+  - `01 §4.6` gains an "L8b (ADR-057)" paragraph and marks L8 / L8q / L8k / L8c / L8d closed at `screen`.
+  - `01 §10` gains the L8b memory line, and `§11` gains `memory.mode` and the retrieval knobs ($s$ 16, window 32, minimum 8, $K$ 8).
+  - `06 §5.1`'s "precomputed offline" is amended, with (3)'s reason.
+  - `03 §2` updates L8's row: L8 closed, L8b the H17 arm.
+  - CLAUDE.md's compute-envelope line on L8b follows.
+- **Code:** as (9a).
+- **GPU time:** as (10).
+
+Bears on H17, L8 and I40 (closed).
+
 ## Proposed / pending
 - **ADR-028** — Unit model revisions from the author's hardware document (`docs/07 §4`): (a) two compute classes per chip — an FF core with a large array ($s_{min,ff}$ = 256–1024) and attention cores with small arrays ($s_{min,attn}$ ≈ 64), hence $\phi_{ff}$, $\phi_{attn}$ as separate scenario inputs; (b) the tile floor is a *row* floor, $N$ = $M$ × (LHS bw / RHS bw) rows per weight tile, with each token contributing 1 + $m$ rows under $m$-token speculation — the scheduler's queues count rows; (c) the reduce leg of the local fabric carries ≥ 16-bit partial sums: `02 §2` traffic becomes $b d\, b_{act} + b d\, b_{sum}$, $b_{sum}$ ≥ 2; (d) full pipelining inside the unit doubles tokens in flight and per-token latency — the Little's-law budget $Z$ of `02 §5.5` carries the factor; (e) router-based unit fabrics are ≤ 50 % link-efficient (avg. 2 hops), torus collectives 100 %: `02 §1`'s "switch" option is not equivalent to a torus; (f) the asymmetric 4×4×4 torus all-gather costs ≈ 3X/(8B) vs ≈ X/(2B) on a flat ring (our derivation from the author's algorithm) — the number S1/S3 must reproduce; (g) the failure domain is the 4-chip ring board, and a failed rail port is bypassed through torus neighbours at ¼ load (`02 §11`); (h) the replica-rounding utilisation floor $\ell / \lceil \ell \rceil$ reported beside the Little's-law model in S4. Also fills `note64.yaml` with the sourced ratios of `docs/07 §6`; absolute $\phi$, $\beta_C$, $\lambda_C$, $\nu_C$ stay placeholders (I4). Bears on H1, H5, H8, H9, H10, H11, H16; changes `02 §1, §2, §5, §11`.
 - **ADR-024** — Parallel prefill mode for long prompts (the author's "less effective mode"): (a) all segments at once with local attention only, global cache filled afterwards from context-poor final vectors; (b) pipelined segments, segment $k+1$ at iteration $j$ attending globally to segment $k$'s iteration-$j$ caches (transient per-iteration global cache during prefill, in-flight depth up to $r$ segments). Both are inference-time modes of a sequentially trained model; E-Q12 evaluates both against sequential prefill on continuation loss and TTFT (S5). If both degrade, a mixed-mode training variant becomes a later ladder step.
@@ -1285,7 +1365,7 @@ Cost units from `docs/06 §4`: one `screen` run ≈ 8 h (1 B tokens, 1 seed); on
   **Status after `044` (ADR-056's gate, 2026-11-04): the gate fails, so `175` does not run.**
   - **The ceiling is low:** a perfect query (the sentence's own embedding) retrieves its cell 16.8 % of the time with PCA-64 keys, and 22.8 % with the full 384-d codebooks (`174`'s learned keys: 0.35 %).
   - **The limit is the placement, not the keys:** a cell's key is its centroid pair. With one sentence per cell, only 23 % of sentences sit in their nearest row, and the own cell ranks first among 2²⁰ for 1.25 %. The product path tops out at 72.8 % even reading all 1,024 candidates.
-  - **Still open:** what remains for L8 is re-ranking by the entries' embeddings (a FLOP and width cost), re-placing the table, or closing L8 at `screen` and testing H17 through L8b. This is the user's call, and each needs an ADR.
+  - **Still open:** what remains for L8 is re-ranking by the entries' embeddings (a FLOP and width cost), re-placing the table, or closing L8 at `screen` and testing H17 through L8b. This is the user's call, and each needs an ADR. (Closing L8 and testing H17 through L8b is drafted as ADR-057, proposed 2026-11-04; on acceptance I40 closes.)
 
 ## Session log
 
@@ -2166,6 +2246,16 @@ and an ADR first, L6c likewise; the `small` programme (L0, L1, L2, L3, L5, L5d a
 the ladder's own next step and needs no new code. The choice between "more `screen` variants" and
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
+
+### 2026-11-04 (23:20) — **ADR-057 proposed**: close L8 at `screen` (L8, L8q, L8k; L8c/L8d with it; I40 closes) and test H17 with L8b, for approval
+
+- **L8b:** the same table and encoder. Every 16 positions, the last ≤ 32 tokens of the document are encoded and exact top-8 search runs on the GPU. The neighbours feed the next 16 positions' memory branch at every iteration through a learned 8-way softmax (vector values, no auxiliary loss).
+- **Online, not offline:** this amends `06 §5.1`. That clause was about per-iteration CPU QPS; this queries once per 16 tokens with exact GPU search, which gives the same neighbours.
+- **Width:** the FLOPs re-solve to width **704** (1.51 MFLOP per token-iteration), the same as `173`/`174`.
+- **Readings set in advance:** retrieval accuracy ≥ 50 % = precise (rig `045`, before training); H17 by ADR-055 §6's rule; reliance on retrieved-own-sentence tokens ≥ floor = the model reads them.
+- **Recorded limits:** vector values cap copying, and the store is Wikipedia while the training text is FineWeb-Edu.
+- **Cost:** ≈ 10 min of probes and ≈ 9 h on the rig. Run `175-l8b-screen` via `queue_screen_17`.
+- Nothing built, nothing running. Next ladder id 175, next rig id 045.
 
 ### 2026-11-04 (22:50) — **ADR-056 built (`672e3b4`); gate `044` fails: the perfect-query ceiling is 16.8 % (PCA-64) / 22.8 % (full 384) against 50 % → no `175`**
 
