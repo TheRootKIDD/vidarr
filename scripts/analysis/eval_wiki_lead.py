@@ -41,8 +41,10 @@ TOKENIZER = "/mnt/nvme/corpus/tokenizer/mistral-7b-v0.1/tokenizer.json"
 POOLS = "/mnt/nvme/memory/wiki-20231101-lead/eval_pools.jsonl"
 EOS, MAX_TOK = 2, 256
 SPLITS = ("in_first", "in_rest", "out_lead")
-SIGMA_SCREEN = 0.0030  # ADR-053 §7's floor: max(this, bootstrap SE), times 4
-REGRESSION = 0.005  # H17's "<= 0.5 %" on the general held-out loss
+SIGMA_SCREEN = 0.0030  # ADR-053 §7's floor: max(this, bootstrap SE), times 4; ADR-013's sigma
+REGRESSION = 0.005  # ADR-053 §10 as written: "<= 0.5 %" of L (kept for the 173 record)
+# ADR-055 §6 / ADR-013: H17's "0.5 %" is "no detectable regression", delta <= 2 sigma; > 4 sigma
+# (T + 2 sigma) weakens; in between neither meets nor fails the clause at one seed
 
 
 def build_items(tok: Tokenizer) -> list[dict[str, Any]]:
@@ -222,18 +224,29 @@ def compare(arm: str, base: str, n_boot: int = 2000) -> dict[str, Any]:
             "tokens": float(c.sum()),
         }
     va, vb = A["heldout"]["val_loss"], B["heldout"]["val_loss"]
-    reg = (va - vb) / vb
-    out["heldout"] = {"arm": va, "base": vb, "relative": reg, "within": reg <= REGRESSION}
+    reg, dn = (va - vb) / vb, va - vb
+    out["heldout"] = {
+        "arm": va,
+        "base": vb,
+        "relative": reg,
+        "delta": dn,
+        "within": reg <= REGRESSION,  # ADR-053 §10's literal 0.5 %
+        "within_2sigma": dn <= 2 * SIGMA_SCREEN,  # ADR-013 / ADR-055 §6
+        "beyond_4sigma": dn > 4 * SIGMA_SCREEN,
+    }
     sp = out["splits"]
     both = sp["in_first"]["beats_floor"] and sp["in_rest"]["beats_floor"]
     neither = not sp["in_first"]["beats_floor"] and not sp["in_rest"]["beats_floor"]
-    if both and reg <= REGRESSION:
-        verdict = "supports"
-    elif neither or reg > REGRESSION:
-        verdict = "weakens"
-    else:
-        verdict = "silent"
-    out["verdict_h17"] = verdict
+
+    def rule(ok: bool, bad: bool) -> str:
+        if both and ok:
+            return "supports"
+        if neither or bad:
+            return "weakens"
+        return "silent"
+
+    out["verdict_h17"] = rule(dn <= 2 * SIGMA_SCREEN, dn > 4 * SIGMA_SCREEN)  # ADR-055 §6
+    out["verdict_h17_literal_0p5pct"] = rule(reg <= REGRESSION, reg > REGRESSION)  # ADR-053
     return out
 
 
@@ -247,9 +260,13 @@ def main() -> None:
     a = ap.parse_args()
     if a.compare:
         res = compare(*a.compare)
-        (RESULTS_DIR / a.compare[0] / "wiki_lead_compare.json").write_text(
-            json.dumps(res, indent=1)
+        base = a.compare[1]
+        name = (
+            "wiki_lead_compare.json"
+            if base == "110-l5-screen"
+            else f"wiki_lead_compare_vs_{base.split('-')[0]}.json"
         )
+        (RESULTS_DIR / a.compare[0] / name).write_text(json.dumps(res, indent=1))
         print(json.dumps(res, indent=1))
     else:
         run_eval(a)

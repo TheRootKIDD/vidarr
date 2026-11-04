@@ -2098,6 +2098,21 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-11-04 (11:35) — **L8q built: code `3262716`, rig `043` passed, `queue_screen_16` running `174-l8q-screen`**
+
+- **Code** `3262716`:
+  - `QueryAuxCfg` and the `L8q` preset;
+  - `KnowledgeMemory.query_loss`, with $\mathcal{L}_q$ threaded through the checkpointed iteration;
+  - `scripts/train/teacher.py`, wired into the trainer per micro-batch;
+  - the agreement probe;
+  - the ADR-055 §7b tests, including the GPU teacher test against `040`'s encoding.
+- **One addition, recorded:** the teacher keeps fp32 weights under fp16 autocast, as `040` encoded the table. ADR-055 §1 said "fp16".
+- **`eval_wiki_lead --compare` now applies ADR-055 §6's regression clause** (Δ ≤ 2σ, past 4σ). It also writes ADR-053's literal 0.5 % verdict beside it, and names a non-`110` base's file `wiki_lead_compare_vs_<id>.json`.
+  - Rechecking `173` gives *weakens* under both rules. The rewritten file was restored, because `173` is append-only.
+- **`043-l8q-sizing`:** 5.72 GiB, 36.1 k tok/s (0.88× L8, 0.74× L5), teacher ≈ 16 % of the step, $\mathcal{L}_q$ 6.93 → 6.65 in 6 steps. Agreement baseline on `173` is at or below chance.
+- **`queue_screen_16`:** the gate, then `174-l8q-screen` (≈ 7.7 h), then the evals: wiki-lead with probes, compare vs `110` and vs `173`, and the `042` diagnostic plus agreement on `174`. The verdict lands in `/mnt/nvme/post_queue16/compare_110.log`.
+- Next ladder id 175, next rig id 044. **No CPU probes beside the DDP run.**
+
 ### 2026-11-04 (10:00) — **ADR-055 accepted** (the user: "yes, accept it, push, then continue")
 
 - ADR-055 moves to Accepted. I40 points to it for the query side.
