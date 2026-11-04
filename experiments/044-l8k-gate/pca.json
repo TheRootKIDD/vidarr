@@ -1,0 +1,19 @@
+{
+  "dim": 64,
+  "inputs": {
+    "table.npy": "08dec4b1bfa3260b9b5ea0cf638cd4cb4810217769c793ce68f78b98194eb832",
+    "mu1.npy": "c81da3bb3c8009a8a183740183fd01d58297b9debce4f70163a0e66ff46e3481",
+    "mu2.npy": "87bf85cca30ee37db879583c049291cfd94ec227f59e11e1280ef625342ef37c"
+  },
+  "outputs": {
+    "mean1.npy": "a489eb032e39732a5bf3b7b24d7d8e62de673c1bf59cae99a68e1ea74967b71e",
+    "mean2.npy": "4e8add4cc6d43666560b5498cb1a52df0a8889a05954d868688a0112b6ff0a64",
+    "pca1.npy": "d2c580545e0009ea6990d2f1e97ad0987c07179d3a4546964f04a88fb90a8066",
+    "pca2.npy": "7db6ab7897e97a34391ee8afe90c8579bd0a10f3e87b9822eab013fb78f63f57"
+  },
+  "variance_kept": [
+    0.5136990659767718,
+    0.5080083849828371
+  ],
+  "wall_s": 5.881350517272949
+}

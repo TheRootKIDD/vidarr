@@ -1,0 +1,14 @@
+# 044-l8k-gate — ADR-056 §5 gate probe (rig series); no training
+date: 2026-11-04
+tree: 672e3b4
+hardware: 1 x RTX 3060 12 GB (GPU 0), rig otherwise idle, driver 615.71.09
+commands:
+  - python -m scripts.data.build_memory_pca --id 044-l8k-gate          # pca.json; 5.9 s
+  - python -m scripts.analysis.probe_l8_keys --out 044-l8k-gate --learned-id 174-l8q-screen   # ceiling.json; 2.9 s
+  - inline sweep over k_m / half_topk with the same functions (retrieve, dist_score, pair_rank)  # ceiling_by_k.json
+inputs:
+  table: /mnt/nvme/memory/wiki-20231101-lead   # build 040; hashes in pca.json
+  eval_pool: in_table (2,000 articles, ADR-053 §7)
+  learned_keys: 174-l8q-screen step 1907
+lookup: { grid: 1024, half_topk: 32, k_m: 32, pca_dim_per_half: 64 }
+gate: pca64 own_cell_retrieved_share >= 0.5

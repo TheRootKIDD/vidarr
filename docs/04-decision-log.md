@@ -1282,6 +1282,11 @@ Cost units from `docs/06 §4`: one `screen` run ≈ 8 h (1 B tokens, 1 seed); on
   - **The keys are the remaining limit:** the own-key oracle reaches the top 32 for 6.45 % of cells (`173` 7.8 %), so even a perfect query would miss 94 % of the time; lookup hits 0.19 % of first-sentence tokens. Reliance moved to general text (random cells +0.013 on FineWeb, −0.003 on in-table first sentences): the retrieval is used as a topic signal.
   - **Still open:** the key side (reading 2), or closing L8 at `screen`, is the user's call; either needs an ADR. (The key side is taken up by ADR-056, accepted 2026-11-04; gate `044`, run `175`.)
 
+  **Status after `044` (ADR-056's gate, 2026-11-04): the gate fails, so `175` does not run.**
+  - **The ceiling is low:** a perfect query (the sentence's own embedding) retrieves its cell 16.8 % of the time with PCA-64 keys, and 22.8 % with the full 384-d codebooks (`174`'s learned keys: 0.35 %).
+  - **The limit is the placement, not the keys:** a cell's key is its centroid pair. With one sentence per cell, only 23 % of sentences sit in their nearest row, and the own cell ranks first among 2²⁰ for 1.25 %. The product path tops out at 72.8 % even reading all 1,024 candidates.
+  - **Still open:** what remains for L8 is re-ranking by the entries' embeddings (a FLOP and width cost), re-placing the table, or closing L8 at `screen` and testing H17 through L8b. This is the user's call, and each needs an ADR.
+
 ## Session log
 
 ### 2026-09-02 — Phase 0 bootstrap and measurements
@@ -2161,6 +2166,20 @@ and an ADR first, L6c likewise; the `small` programme (L0, L1, L2, L3, L5, L5d a
 the ladder's own next step and needs no new code. The choice between "more `screen` variants" and
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
+
+### 2026-11-04 (22:50) — **ADR-056 built (`672e3b4`); gate `044` fails: the perfect-query ceiling is 16.8 % (PCA-64) / 22.8 % (full 384) against 50 % → no `175`**
+
+- **Code** `672e3b4`:
+  - `memory.keys` and the `L8k` preset;
+  - fixed PCA sub-keys and distance scoring with τ in `KnowledgeMemory`;
+  - the costmodel `fixed_keys` switch;
+  - `build_memory_pca.py` and `probe_l8_keys.py`;
+  - tests. Ruff and the full suite pass.
+- **One deviation, recorded:** ADR-056 §7a named `build_wiki_memory.py --pca`. The projection is built by a separate `scripts/data/build_memory_pca.py`, which writes `pca*.npy`, `mean*.npy` and `pca.json` beside the table and leaves `040`'s files and manifest untouched.
+- **`044-l8k-gate`:** PCA-64 keeps 51 % of each half's variance. Ceiling at $k_m$ 32: PCA-64 16.8 %, full 384 22.8 %, `174`'s learned keys 0.35 % (`174` achieved 0.19 %).
+- **The cause is the placement:** the own cell ranks first for 1.25 % even with the full codebooks, and only 23 % of sentences sit in their nearest row. ADR-056's "Not chosen" case applies ("a separate ADR if `044` says the ceiling is the placement's").
+- **Not run:** the `L8k` sizing probe, and `queue_screen_17` / `175-l8k-screen`. Their ids stay free: next ladder id 175, next rig id 045.
+- I40 status updated. Next for L8 (re-rank, re-place, or close at `screen` with H17 left to L8b) is the user's call. Nothing running.
 
 ### 2026-11-04 (20:25) — **ADR-056 accepted** (the user: "yes, accept it, push, then continue")
 
