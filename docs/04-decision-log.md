@@ -1045,7 +1045,7 @@ Consequences:
 Bears on H17, L8 and I40.
 
 ### ADR-056 — L8k: L8q with fixed sub-keys, a PCA projection of the codebooks, scored by distance (I40, key side); rig `044`, run `175`
-2026-11-04 · proposed (the user: "yes, draft the key-side ADR. Just draft what makes sense and don't cost anything other than the power for my rig and the time spent")
+2026-11-04 · accepted (the user's decision: "yes, accept it, push, then continue"; drafted on "yes, draft the key-side ADR. Just draft what makes sense and don't cost anything other than the power for my rig and the time spent")
 
 Context: `174` (ADR-055) moves the query off chance. Own row and column ranks reach a median of 227–251, lookup accuracy is 1.6–1.9 × 10⁻³, and teacher agreement is 13–30 % per row. But the keys cap what any query can do: the own-key oracle puts a cell in the top 32 for only 6.45 % of cells (`173` 7.8 %). Two things in ADR-053 §4–5's key design cause this, and neither is a matter of training time:
 - **Dot-product scoring with learned, unnormalised keys.** Under $s = q \cdot k$, a cell's own key is not the arg max of its own score whenever another key is longer along it. The own-key row and column ranks per half are 49 / 18 in `174` (4 / 25 in `173`), not 0. Under the teacher loss the key maps grew (sub-key norms 0.17 → 0.54–0.67) and lost rank (61 → 49 of 64), so this got worse.
@@ -1280,7 +1280,7 @@ Cost units from `docs/06 §4`: one `screen` run ≈ 8 h (1 B tokens, 1 seed); on
   - **The query side works by ADR-055's bar:** with the teacher loss, own row and column ranks reach a median of 227–251 at iterations 6–8, and lookup accuracy is 1.6–1.9 × 10⁻³ (52–60× chance). The query matches the teacher's top-1 row 13–30 % of the time on FineWeb-Edu.
   - **It buys no loss:** every wiki-lead split is within its floor of `173`, FineWeb-Edu +0.0019. H17 is weakened against `110`, and by ADR-055 §6 that now bears on H17 itself.
   - **The keys are the remaining limit:** the own-key oracle reaches the top 32 for 6.45 % of cells (`173` 7.8 %), so even a perfect query would miss 94 % of the time; lookup hits 0.19 % of first-sentence tokens. Reliance moved to general text (random cells +0.013 on FineWeb, −0.003 on in-table first sentences): the retrieval is used as a topic signal.
-  - **Still open:** the key side (reading 2), or closing L8 at `screen`, is the user's call; either needs an ADR. (The key side is drafted as ADR-056, proposed 2026-11-04.)
+  - **Still open:** the key side (reading 2), or closing L8 at `screen`, is the user's call; either needs an ADR. (The key side is taken up by ADR-056, accepted 2026-11-04; gate `044`, run `175`.)
 
 ## Session log
 
@@ -2161,6 +2161,12 @@ and an ADR first, L6c likewise; the `small` programme (L0, L1, L2, L3, L5, L5d a
 the ladder's own next step and needs no new code. The choice between "more `screen` variants" and
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
+
+### 2026-11-04 (20:25) — **ADR-056 accepted** (the user: "yes, accept it, push, then continue")
+
+- ADR-056 is accepted. I40 points to it for the key side.
+- **Spec:** `01 §4.6` gains the L8k paragraph, `§10`'s memory parameter line covers fixed keys, `§11` gains `memory.keys`, and `03 §2` lists L8k.
+- **Next:** build (code and tests), the `044` gate probe and sizing, then `queue_screen_17` with `175-l8k-screen` if the gate passes.
 
 ### 2026-11-04 (20:15) — **ADR-056 proposed**: L8k, fixed PCA sub-keys scored by distance (I40, key side), for approval
 
