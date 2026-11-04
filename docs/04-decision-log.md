@@ -2249,6 +2249,26 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-11-04 (23:30) — **L8b built (`6f6ed73`); `045` passed: retrieval precise (98.3 % of covered first-sentence tokens retrieve their own sentence; coverage 78.2 %), 5.72 GiB, 33.8 k tok/s; `queue_screen_17` running `175-l8b-screen`**
+
+- **Code** `6f6ed73`:
+  - `RetrievalCfg`, `memory.mode` and the `L8b` preset (width 704);
+  - `boundary_queries`, `exact_topk` and `retrieve` in `model/memory.py`, plus the retrieved branch;
+  - neighbours threaded through the (checkpointed) iteration, computed by the memory's attached encoder on every path;
+  - the costmodel term;
+  - `attach_encoder` in the trainer and `load_run`;
+  - `eval_wiki_lead --covered/--out/--base-file/--name`;
+  - tests. Ruff passes, 170 passed.
+- **Recorded:**
+  - **Search precision.** The search runs over the model's bf16 table buffer, keeps a table-precision top-32, then rescores in fp32. So it is exact for the stored table up to that candidate cut (the unit test matches brute force).
+  - **Covered splits.** `110`'s covered re-score is written to `045` (append-only) and reproduces `110`'s own `wiki_lead.json` exactly.
+- **`045-l8b-gate`:**
+  - Pipeline: coverage 78.2 %, accuracy 98.3 % → *precise*.
+  - Sizing: 5.72 GiB, 33.8 k tok/s (0.93× `174`), retrieval 0.31 s per micro-batch (≈ 32 % of the step), 159 s per full held-out eval.
+  - One false start under `torchrun` (the trainer spawns its own workers) is not a run.
+- **`queue_screen_17`:** the gate, then `175-l8b-screen` (≈ 9.1 h), then the wiki-lead eval with probes and covered splits, the compare vs `110` (base: `045`'s re-score) and vs `174`. The verdict lands in `/mnt/nvme/post_queue17/compare_110.log`.
+- Next ladder id 176, next rig id 046. **No CPU probes beside the DDP run.**
+
 ### 2026-11-04 (23:35) — **ADR-057 accepted** (the user: "yes, accept it, push, then continue")
 
 - ADR-057 is accepted. L8, L8q and L8k close at `screen`, with L8c/L8d. I40 is closed.

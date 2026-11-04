@@ -1,0 +1,9 @@
+# 045-l8b-gate — ADR-057 §9c: the L8b pipeline reading and the L8b sizing probe (rig series); no science run
+date: 2026-11-04
+tree: 6f6ed73   # ruff + full suite (170 passed) on it
+hardware: 4 x RTX 3060 12 GB, rig otherwise idle, driver 615.71.09
+commands:
+  - python -m scripts.analysis.eval_wiki_lead --id 110-l5-screen --covered --out experiments/045-l8b-gate/wiki_lead_110_covered.json   # GPU 0, 82 s
+  - python -m scripts.train.train --rung L8b --id 045-l8b-gate --tokens 1e9 --micro-batch 4 --seed 0 --smoke-steps 6 --out-dir /mnt/nvme/ckpt/045-l8b-sizing   # DDP, 4.4 min
+retrieval: { stride: 16, window: 32, min_tokens: 8, k: 8, encoder: bge-base-en-v1.5 (040's revision), table: /mnt/nvme/memory/wiki-20231101-lead (040) }
+reading: accuracy_on_covered >= 0.5 is "precise" (ADR-057 §7)
