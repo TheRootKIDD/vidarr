@@ -1103,7 +1103,7 @@ Consequences:
 Bears on H17, L8 and I40.
 
 ### ADR-057 — Close L8's learned in-loop lookup at `screen`; test H17 with L8b: exact chunk-level retrieval of the table's sentences, fed to every middle iteration; rig `045`, run `175`
-2026-11-04 · proposed (the user: "yes, draft the ADR to close L8 and test H17 via L8b")
+2026-11-04 · accepted (the user's decision: "yes, accept it, push, then continue"; drafted on "yes, draft the ADR to close L8 and test H17 via L8b")
 
 Context: three results now bound what L8 as ADR-053 built it can show about H17.
 - **`173` (ADR-053):** the lookup never learned to retrieve (accuracy at chance), and H17 is weakened with the cause on the lookup.
@@ -1339,7 +1339,7 @@ Cost units from `docs/06 §4`: one `screen` run ≈ 8 h (1 B tokens, 1 seed); on
   - **Flip the verdict, and decide it:**
     - the **per-GPU NIC speed** (0.67× at 200 Gb/s);
     - the **residual routing imbalance after EPLB** (0.62× at zipf 0.5, about no-EPLB imbalance).
-- **I40** *(2026-11-04, ADR-053, `173`)* **Why L8's lookup never learns to retrieve.** In `173-l8-screen`, lookup accuracy is at chance at all eight iterations (4.6 × 10⁻⁵ against 32 / 2²⁰), α stays 99.6 % uniform over the 32 candidates, and the queries use only 6.1 % of the cells. Each of the following might explain it, but none has been measured:
+- **I40** *(2026-11-04, ADR-053, `173`; **closed 2026-11-04 by ADR-057**)* **Why L8's lookup never learns to retrieve.** In `173-l8-screen`, lookup accuracy is at chance at all eight iterations (4.6 × 10⁻⁵ against 32 / 2²⁰), α stays 99.6 % uniform over the 32 candidates, and the queries use only 6.1 % of the cells. Each of the following might explain it, but none has been measured:
   - the query $W_m[u; e_j]$ and the key maps $h^{1,2}$ receive gradient only through the softmax over 32 near-identical candidates and through $W_v$, which starts at zero;
   - nothing ties the query to the encoder's space, so a task signal strong enough to align them may not exist at `screen`;
   - the placement distortion (+24 %, 2.8 % of entries in the any-free tier, `040`).
@@ -1365,7 +1365,9 @@ Cost units from `docs/06 §4`: one `screen` run ≈ 8 h (1 B tokens, 1 seed); on
   **Status after `044` (ADR-056's gate, 2026-11-04): the gate fails, so `175` does not run.**
   - **The ceiling is low:** a perfect query (the sentence's own embedding) retrieves its cell 16.8 % of the time with PCA-64 keys, and 22.8 % with the full 384-d codebooks (`174`'s learned keys: 0.35 %).
   - **The limit is the placement, not the keys:** a cell's key is its centroid pair. With one sentence per cell, only 23 % of sentences sit in their nearest row, and the own cell ranks first among 2²⁰ for 1.25 %. The product path tops out at 72.8 % even reading all 1,024 candidates.
-  - **Still open:** what remains for L8 is re-ranking by the entries' embeddings (a FLOP and width cost), re-placing the table, or closing L8 at `screen` and testing H17 through L8b. This is the user's call, and each needs an ADR. (Closing L8 and testing H17 through L8b is drafted as ADR-057, proposed 2026-11-04; on acceptance I40 closes.)
+  - **Still open:** what remains for L8 is re-ranking by the entries' embeddings (a FLOP and width cost), re-placing the table, or closing L8 at `screen` and testing H17 through L8b. This is the user's call, and each needs an ADR. 
+
+  **Closed 2026-11-04 by ADR-057** (accepted): L8, L8q and L8k close at `screen`, with L8c/L8d. The query side can be trained (`174`); the ceiling is the placement's (`044`). H17 moves to L8b (`175`).
 
 ## Session log
 
@@ -2246,6 +2248,17 @@ and an ADR first, L6c likewise; the `small` programme (L0, L1, L2, L3, L5, L5d a
 the ladder's own next step and needs no new code. The choice between "more `screen` variants" and
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
+
+### 2026-11-04 (23:35) — **ADR-057 accepted** (the user: "yes, accept it, push, then continue")
+
+- ADR-057 is accepted. L8, L8q and L8k close at `screen`, with L8c/L8d. I40 is closed.
+- **Spec:**
+  - `01 §4.6` gains the L8b paragraph and the closure note;
+  - `01 §10` gains the L8b memory line, and `§11` gains `memory.mode` and the retrieval knobs;
+  - `06 §5.1`'s offline clause is amended;
+  - `03 §2`'s L8 row is updated;
+  - CLAUDE.md's envelope line follows.
+- **Next:** build, then rig `045` (retrieval accuracy, coverage, sizing), then `queue_screen_17` with `175-l8b-screen`.
 
 ### 2026-11-04 (23:20) — **ADR-057 proposed**: close L8 at `screen` (L8, L8q, L8k; L8c/L8d with it; I40 closes) and test H17 with L8b, for approval
 
