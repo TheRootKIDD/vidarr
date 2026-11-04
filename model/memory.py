@@ -11,6 +11,8 @@ the branch starts as a no-op. The table and codebooks are non-persistent buffers
 derived data (Wikipedia, CC BY-SA 3.0) loaded from `memory.table`, never saved in a checkpoint.
 With `memory.table = None` a seeded random table stands in (unit tests only).
 
+L8q (ADR-055) adds `query_loss`, a training-only target for the query; `forward` is unchanged.
+
 Probe knobs (ADR-053 §8; no effect on training): `random_cells` replaces the retrieved cells by
 uniformly random ones (reliance), `record` keeps each call's cells and alpha (lookup accuracy,
 table use, entropy).
@@ -93,6 +95,21 @@ class KnowledgeMemory(nn.Module):
         a = i1.gather(-1, ci // mc.half_topk)
         b = i2.gather(-1, ci % mc.half_topk)
         return a * mc.grid + b, score
+
+    def query_loss(self, u: Tensor, e: Tensor, target: Tensor) -> tuple[Tensor, Tensor]:
+        """L8q (ADR-055): half-wise cross-entropy of the lookup's own sub-key scores toward the
+        teacher's PQ code. `target` [..., 2] long (row a*, column b*; -1 = no target). The
+        query's inputs are detached, so this trains W_m and h^{1,2} only. Returns the summed
+        loss over valid positions and their count (the caller averages)."""
+        q = self.q(torch.cat([u.detach(), e.detach().expand(*u.shape[:-1], -1)], dim=-1))
+        q1, q2 = q.float().chunk(2, dim=-1)
+        k1, k2 = self.sub_keys()
+        s1 = (q1 @ k1.float().T).flatten(0, -2)
+        s2 = (q2 @ k2.float().T).flatten(0, -2)
+        t = target.reshape(-1, 2)
+        ce1 = F.cross_entropy(s1, t[:, 0], ignore_index=-1, reduction="sum")
+        ce2 = F.cross_entropy(s2, t[:, 1], ignore_index=-1, reduction="sum")
+        return 0.5 * (ce1 + ce2), (t[:, 0] >= 0).sum().to(ce1.dtype)
 
     def forward(self, u: Tensor, e: Tensor) -> Tensor:
         cells, score = self.lookup(u, e)

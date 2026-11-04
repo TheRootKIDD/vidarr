@@ -120,6 +120,19 @@ class MTPCfg:
 
 
 @dataclass(frozen=True)
+class QueryAuxCfg:
+    """L8q (ADR-055, `docs/01 §4.6`): a training-only target for the memory's query. The frozen
+    teacher encodes each window-aligned chunk; the next chunk's tokens are trained toward its PQ
+    code (nearest codebook centroid per half). Inference is unchanged."""
+
+    lambda_q: float = 0.1
+    chunk: int = 64  # tokens per chunk, window-aligned
+    teacher: str = "BAAI/bge-base-en-v1.5"  # the table's own encoder (ADR-053 §3)
+    teacher_dir: str = "/mnt/nvme/memory/encoder/bge-base-en-v1.5"
+    teacher_max_tokens: int = 128
+
+
+@dataclass(frozen=True)
 class MemoryCfg:
     """L8, the knowledge memory as built (ADR-053, `docs/01 §4.6`)."""
 
@@ -132,6 +145,7 @@ class MemoryCfg:
     encoder: str = "BAAI/bge-base-en-v1.5"
     source: str = "wiki-20231101-lead"
     table: str | None = None  # directory from build_wiki_memory.py; None = random toy (tests)
+    query_aux: QueryAuxCfg | None = None  # L8q (ADR-055); None = off
 
     @property
     def n_entries(self) -> int:
@@ -260,6 +274,14 @@ class ModelCfg:
                 raise ValueError("memory key_dim and encoder_dim split into two halves")
             if not (1 < mc.topk <= mc.half_topk**2 and mc.half_topk <= mc.grid):
                 raise ValueError("memory needs 1 < topk <= half_topk**2 and half_topk <= grid")
+        qa = mc.query_aux
+        if qa is not None:
+            if not mc.enabled:
+                raise ValueError("memory.query_aux (L8q) needs the memory enabled")
+            if qa.chunk < 1 or self.context % qa.chunk or self.context // qa.chunk < 2:
+                raise ValueError("query_aux.chunk must divide the context into >= 2 chunks")
+            if qa.lambda_q < 0:
+                raise ValueError("query_aux.lambda_q must be >= 0")
         if self.halting.mode == "expert" and not (
             self.arch == "recurrent" and self.middle.r_max > self.middle.r_min
         ):
@@ -335,6 +357,8 @@ class ModelCfg:
                 v = dict(d[key])
                 if key == "mtp" and "lambdas" in v:
                     v["lambdas"] = tuple(v["lambdas"])
+                if key == "memory" and isinstance(v.get("query_aux"), dict):
+                    v["query_aux"] = QueryAuxCfg(**v["query_aux"])
                 d[key] = typ(**v)
         return cls(**d)
 
@@ -398,6 +422,15 @@ def ladder(step: str, **overrides: Any) -> ModelCfg:
         # ADR-053: the Wikipedia lead-sentence memory in every middle iteration, FLOPs matched
         "L8": replace(
             rec, memory=MemoryCfg(enabled=True, table="/mnt/nvme/memory/wiki-20231101-lead")
+        ),
+        # ADR-055: L8 plus the query-side retrieval loss from the frozen teacher
+        "L8q": replace(
+            rec,
+            memory=MemoryCfg(
+                enabled=True,
+                table="/mnt/nvme/memory/wiki-20231101-lead",
+                query_aux=QueryAuxCfg(),
+            ),
         ),
         "L10a": replace(rec, numerics=NumericsCfg(sparsity_2_4=True)),
         "L4": replace(

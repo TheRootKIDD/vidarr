@@ -199,6 +199,12 @@ def worker(rank: int, world: int, a: TrainArgs, cfg: ModelCfg, out: Path) -> Non
             model, device_ids=[rank], broadcast_buffers=False
         )
     opt = make_optimizer(raw, a)
+    qa = cfg.memory.query_aux
+    teacher = None
+    if qa is not None:  # L8q (ADR-055): the frozen encoder on this rank's micro-batches
+        from scripts.train.teacher import CORPUS_TOKENIZER, BgeTeacher
+
+        teacher = BgeTeacher(qa.teacher_dir, CORPUS_TOKENIZER, dev, qa.teacher_max_tokens)
 
     accum = a.batch_tokens // (world * a.micro_batch * cfg.context)
     if accum < 1:
@@ -254,9 +260,18 @@ def worker(rank: int, world: int, a: TrainArgs, cfg: ModelCfg, out: Path) -> Non
         t0 = time.time()
         for micro in range(accum):
             toks = corpus.train_batch(rng, a.micro_batch, cfg.context).to(dev, non_blocking=True)
+            q_t = None
+            if teacher is not None:
+                from scripts.train.teacher import targets
+
+                t_q = time.time()
+                mem = raw.middle.mem
+                q_t = targets(toks[:, :-1], qa.chunk, teacher, mem.mu1, mem.mu2)
+                torch.cuda.synchronize(dev)
+                metric_sums["teacher_s"] = metric_sums.get("teacher_s", 0.0) + time.time() - t_q
             ctx = model.no_sync() if (world > 1 and micro < accum - 1) else _nullctx()
             with ctx, torch.autocast("cuda", dtype=torch.bfloat16):
-                o = model(toks, r=r)
+                o = model(toks, r=r, q_target=q_t)
                 (o.loss / accum).backward()
             sums += torch.stack(
                 [

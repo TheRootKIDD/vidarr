@@ -35,6 +35,7 @@ class Extras:
     ponder: Tensor  # ACT ponder cost (mean over tokens), zero in fixed mode
     r_map: Tensor | None = None  # [B, T] iterations executed per token (recurrent)
     loads: list[Tensor] = field(default_factory=list)  # expert load per iteration / layer
+    q_loss: Tensor | None = None  # L8q's L_q, mean over valid positions and iterations (ADR-055)
 
 
 @dataclass
@@ -90,10 +91,13 @@ class BigMoE(nn.Module):
         return F.linear(self.out_norm(h), self.emb.weight)  # tied
 
     # ---- forward -------------------------------------------------------------------
-    def forward_hidden(self, tokens: Tensor, r: int | None = None) -> tuple[Tensor, Extras]:
+    def forward_hidden(
+        self, tokens: Tensor, r: int | None = None, q_target: Tensor | None = None
+    ) -> tuple[Tensor, Extras]:
+        """`q_target` [B, T, 2]: L8q's teacher PQ code per input position (-1 = none)."""
         if self.cfg.arch == "layered":
             return self._forward_layered(tokens)
-        return self._forward_recurrent(tokens, r)
+        return self._forward_recurrent(tokens, r, q_target)
 
     def _forward_layered(self, tokens: Tensor) -> tuple[Tensor, Extras]:
         b, t = tokens.shape
@@ -109,7 +113,9 @@ class BigMoE(nn.Module):
         h = p if p is not None else c
         return h, Extras(router_aux=aux, ponder=c.new_zeros(()), loads=loads)
 
-    def _forward_recurrent(self, tokens: Tensor, r: int | None) -> tuple[Tensor, Extras]:
+    def _forward_recurrent(
+        self, tokens: Tensor, r: int | None, q_target: Tensor | None = None
+    ) -> tuple[Tensor, Extras]:
         cfg = self.cfg
         b, t = tokens.shape
         dev = tokens.device
@@ -123,6 +129,7 @@ class BigMoE(nn.Module):
         mem: tuple[Tensor, Tensor] | None = None
         hs, r_maps, ponders, loads = [], [], [], []
         aux = torch.zeros((), device=dev)
+        q_sum: Tensor | None = None  # L8q: summed (L_q, count) over segments and iterations
         for s0 in range(0, t, seg):
             pos = torch.arange(s0, s0 + seg, device=dev)
             c, p = self.embed(tokens[:, s0 : s0 + seg])
@@ -139,6 +146,7 @@ class BigMoE(nn.Module):
                 frozen_kv=None,
                 frozen=torch.zeros(b, seg, dtype=torch.bool, device=dev),
                 loads=[],
+                q_tgt=None if q_target is None else q_target[:, s0 : s0 + seg],
             )
             for j in range(1, n_iter + 1):
                 prev_active = st.active
@@ -152,6 +160,8 @@ class BigMoE(nn.Module):
                 if not fixed and not st.active.any():
                     break
             loads.extend(st.loads)
+            if st.q_loss is not None:
+                q_sum = st.q_loss if q_sum is None else q_sum + st.q_loss
             c, p = st.c, st.p
             for blk in self.final:
                 c, p, a = blk(c, p, pos)
@@ -170,7 +180,10 @@ class BigMoE(nn.Module):
         h = torch.cat(hs, dim=1)
         r_map = torch.cat(r_maps, dim=1)
         ponder = torch.cat(ponders, dim=1).mean() if not fixed else torch.zeros((), device=dev)
-        return h, Extras(router_aux=aux, ponder=ponder, r_map=r_map, loads=loads)
+        # L_q (ADR-055 §3): the mean over valid positions and iterations; every iteration sees
+        # the same targets, so this equals the mean over iterations of the per-iteration means
+        q_loss = None if q_sum is None else q_sum[0] / q_sum[1].clamp_min(1.0)
+        return h, Extras(router_aux=aux, ponder=ponder, r_map=r_map, loads=loads, q_loss=q_loss)
 
     def _apply_h(self, st: IterState, pos: Tensor) -> IterState:
         """L5e (ADR-034): H reads every token's current state and writes active tokens only."""
@@ -197,13 +210,13 @@ class BigMoE(nn.Module):
         outs = checkpoint(
             self.middle.iteration_flat,
             j, pos, fixed, st.c, st.p, st.active, st.r, st.cum_halt, st.remainder,
-            fk, fv, st.frozen, mk, mv,
+            fk, fv, st.frozen, mk, mv, st.q_tgt, st.q_loss,
             use_reentrant=False,
         )
-        c, p, active, r, cum, rem, fk2, fv2, frozen, aux, load = outs
+        c, p, active, r, cum, rem, fk2, fv2, frozen, aux, load, q_loss = outs
         new = IterState(
             c, p, active, r, cum, rem, None if fk2 is None else (fk2, fv2), frozen,
-            [*st.loads, load],
+            [*st.loads, load], st.q_tgt, q_loss,
         )
         return new, aux
 
@@ -229,17 +242,26 @@ class BigMoE(nn.Module):
 
     # ---- loss ------------------------------------------------------------------------
     def forward(
-        self, tokens: Tensor, r: int | None = None, generator: torch.Generator | None = None
+        self,
+        tokens: Tensor,
+        r: int | None = None,
+        generator: torch.Generator | None = None,
+        q_target: Tensor | None = None,
     ) -> LossOut:
         """The training forward is the loss, so DDP's hooks wrap the whole computation."""
-        return self.loss(tokens, r, generator)
+        return self.loss(tokens, r, generator, q_target)
 
     def loss(
-        self, tokens: Tensor, r: int | None = None, generator: torch.Generator | None = None
+        self,
+        tokens: Tensor,
+        r: int | None = None,
+        generator: torch.Generator | None = None,
+        q_target: Tensor | None = None,
     ) -> LossOut:
-        """tokens [B, T+1]: positions 0..T-1 are inputs, the last is the final target."""
+        """tokens [B, T+1]: positions 0..T-1 are inputs, the last is the final target.
+        `q_target` [B, T, 2] (L8q, ADR-055): the teacher's PQ code per input position."""
         inp = tokens[:, :-1]
-        h, ex = self.forward_hidden(inp, r)
+        h, ex = self.forward_hidden(inp, r, q_target)
         main = self._chunked_ce(h, tokens[:, 1:])
         metrics: dict[str, float] = {}
         if self.mtp is not None:
@@ -249,6 +271,11 @@ class BigMoE(nn.Module):
             mtp = main.new_zeros(())
         ponder = self.cfg.halting.ponder_cost * ex.ponder
         total = main + mtp + ex.router_aux + ponder
+        if ex.q_loss is not None:  # L8q (ADR-055): lambda_q L_q, reported apart from the main loss
+            qa = self.cfg.memory.query_aux
+            assert qa is not None, "q_target given but memory.query_aux is off"
+            total = total + qa.lambda_q * ex.q_loss
+            metrics["q_loss"] = float(ex.q_loss.detach())
         if ex.r_map is not None:
             metrics["r_mean"] = float(ex.r_map.float().mean())
         return LossOut(total, main, mtp, ex.router_aux, ponder, metrics)

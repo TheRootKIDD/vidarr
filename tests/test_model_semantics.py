@@ -6,6 +6,7 @@ parameter counts (ADR-025). Everything runs on CPU at toy size."""
 from __future__ import annotations
 
 import dataclasses as dc
+from pathlib import Path
 
 import pytest
 import torch
@@ -16,7 +17,7 @@ from costmodel.config import Experts as CmExperts
 from costmodel.config import Model as CmModel
 from costmodel.params import dense_baseline_params, total_params
 from model.block import Block
-from model.config import HaltingCfg, MemoryCfg, ModelCfg, StreamsCfg, ladder
+from model.config import HaltingCfg, MemoryCfg, ModelCfg, QueryAuxCfg, StreamsCfg, ladder
 from model.layers import Expert, causal_mask, local_window_mask
 from model.middle import IterState
 from model.model import BigMoE
@@ -43,11 +44,14 @@ STEPS = [
     "L7-g4",
     "L7b",
     "L8",
+    "L8q",
     "L4",
 ]
 
 # L8 at toy size: a 4 x 4 random grid of 16-d vectors, 4 of 9 candidates read (ADR-053)
 TOY_MEM = MemoryCfg(enabled=True, grid=4, key_dim=8, topk=4, half_topk=3, encoder_dim=16)
+# L8q at toy size: chunks of 8 tokens in the 64-token context (ADR-055)
+TOY_QA = QueryAuxCfg(chunk=8)
 
 
 def tiny(step: str, **kw) -> ModelCfg:
@@ -63,7 +67,9 @@ def tiny(step: str, **kw) -> ModelCfg:
         experts=dc.replace(c.experts, d_ff=32),
         # L5e: K = 4 so that H runs inside the tiny loop, once, after iteration 2
         middle=dc.replace(c.middle, r_max=3, depth_embed=8, h_every=4 if c.middle.h_every else 0),
-        memory=TOY_MEM if c.memory.enabled else c.memory,
+        memory=dc.replace(TOY_MEM, query_aux=TOY_QA if c.memory.query_aux else None)
+        if c.memory.enabled
+        else c.memory,
     )
     c = dc.replace(c, **kw)
     c.validate()
@@ -964,3 +970,144 @@ def test_l8_width_and_flops_follow_costmodel() -> None:
     with torch.device("meta"):
         mem = BigMoE(dc.replace(l8, memory=dc.replace(l8.memory, table=None))).middle.mem
     assert sum(p.numel() for p in mem.parameters()) == memory_params(model)
+
+
+# ---- L8q: the query-side retrieval loss (ADR-055) --------------------------------------
+def _toy_encode(ids: list[list[int]]) -> torch.Tensor:
+    """A deterministic stand-in for the teacher: a fixed random embedding per token, averaged."""
+    g = torch.Generator().manual_seed(7)
+    table = torch.randn(97, TOY_MEM.encoder_dim, generator=g)
+    return torch.nn.functional.normalize(
+        torch.stack([table[torch.tensor(x)].mean(0) for x in ids]), dim=-1
+    )
+
+
+def _toy_codebooks() -> tuple[torch.Tensor, torch.Tensor]:
+    g = torch.Generator().manual_seed(3)
+    half = TOY_MEM.encoder_dim // 2
+    mu1 = torch.randn(TOY_MEM.grid, half, generator=g)
+    return mu1, torch.randn(TOY_MEM.grid, half, generator=g)
+
+
+def test_l8q_targets_are_causal() -> None:
+    """A target's value at position p depends only on inputs before p (ADR-055 §2)."""
+    from scripts.train.teacher import targets
+
+    torch.manual_seed(0)
+    mu1, mu2 = _toy_codebooks()
+    inp = torch.randint(3, 97, (2, 64))  # no EOS, so every chunk after the first has a target
+    base = targets(inp, 8, _toy_encode, mu1, mu2)
+    assert (base[:, :8] == -1).all() and (base[:, 8:] >= 0).all()
+    for x in range(64):
+        pert = inp.clone()
+        pert[:, x] = 3 + (pert[:, x] - 3 + 1) % 94  # a different non-EOS token
+        t2 = targets(pert, 8, _toy_encode, mu1, mu2)
+        assert torch.equal(t2[:, : x + 1], base[:, : x + 1]), x
+    # a chunk's own code reaches exactly the next chunk's tokens
+    assert torch.equal(base[:, 8:16], base[:, 8:9].expand(-1, 8, -1))
+
+
+def test_l8q_targets_mask_documents() -> None:
+    """A target is masked if an EOS lies in its chunk or in the chunk it supervises."""
+    from scripts.train.teacher import EOS, targets
+
+    torch.manual_seed(0)
+    mu1, mu2 = _toy_codebooks()
+    inp = torch.randint(3, 97, (1, 64))
+    inp[0, 20] = EOS  # chunk 2
+    t = targets(inp, 8, _toy_encode, mu1, mu2)
+    assert (t[0, 0:8] == -1).all()  # first chunk: never a target
+    assert (t[0, 8:16] >= 0).all()  # chunk 0 -> chunk 1: no EOS in either
+    assert (t[0, 16:32] == -1).all()  # chunk 1 -> 2 and chunk 2 -> 3 touch the EOS
+    assert (t[0, 32:] >= 0).all()
+
+
+def _l8q_model(lambda_q: float = 0.1, seed: int = 0) -> tuple[ModelCfg, BigMoE]:
+    torch.manual_seed(seed)
+    cfg = tiny("L8q")
+    qa = QueryAuxCfg(chunk=8, lambda_q=lambda_q)
+    cfg = dc.replace(cfg, memory=dc.replace(cfg.memory, query_aux=qa))
+    m = BigMoE(cfg)
+    nn.init.normal_(m.middle.mem.out.weight, std=0.1)
+    return cfg, m
+
+
+def _toy_targets(cfg: ModelCfg, b: int) -> torch.Tensor:
+    g = torch.Generator().manual_seed(1)
+    t = torch.randint(0, cfg.memory.grid, (b, cfg.context, 2), generator=g)
+    t[:, :8] = -1
+    return t
+
+
+def test_l8q_loss_trains_only_the_query_and_keys() -> None:
+    """The query's inputs are detached: L_q reaches W_m and h^{1,2} and nothing else."""
+    cfg, m = _l8q_model()
+    m.train()
+    toks = torch.randint(0, cfg.vocab, (2, cfg.context))
+    _, ex = m.forward_hidden(toks, r=cfg.middle.r_max, q_target=_toy_targets(cfg, 2))
+    assert ex.q_loss is not None and ex.q_loss > 0
+    ex.q_loss.backward()
+    mem = m.middle.mem
+    learn = {id(p) for p in (mem.q.weight, mem.h1.weight, mem.h2.weight)}
+    for n, p in m.named_parameters():
+        if id(p) in learn:
+            assert p.grad is not None and p.grad.abs().sum() > 0, n
+        else:
+            assert p.grad is None or p.grad.abs().sum() == 0, n
+
+
+def test_l8q_lambda_zero_and_no_target_reproduce_l8() -> None:
+    cfg, m = _l8q_model(lambda_q=0.0)
+    m.eval()
+    toks = torch.randint(0, cfg.vocab, (2, cfg.context + 1))
+    with torch.no_grad():
+        plain = m.loss(toks, r=cfg.middle.r_max)
+        with_t = m.loss(toks, r=cfg.middle.r_max, q_target=_toy_targets(cfg, 2))
+        l8 = BigMoE(dc.replace(cfg, memory=dc.replace(cfg.memory, query_aux=None))).eval()
+        l8.load_state_dict(m.state_dict())
+        ref = l8.loss(toks, r=cfg.middle.r_max)
+    assert torch.equal(plain.loss, with_t.loss) and torch.equal(plain.loss, ref.loss)
+    assert "q_loss" in with_t.metrics and "q_loss" not in plain.metrics
+
+
+def test_l8q_checkpointed_iterations_match() -> None:
+    """L_q and its gradient are the same with and without recomputing iterations in backward."""
+    cfg, base = _l8q_model(seed=2)
+    gen = torch.Generator().manual_seed(9)
+    toks = torch.randint(0, cfg.vocab, (2, cfg.context + 1), generator=gen)
+    grads, losses = [], []
+    for ckpt in (True, False):
+        m = BigMoE(dc.replace(cfg, checkpoint_iterations=ckpt))
+        m.load_state_dict(base.state_dict())
+        m.train()
+        o = m.loss(toks, r=cfg.middle.r_max, q_target=_toy_targets(cfg, 2))
+        o.loss.backward()
+        losses.append(o.metrics["q_loss"])
+        grads.append(m.middle.mem.q.weight.grad.clone())
+    assert abs(losses[0] - losses[1]) < 1e-5
+    assert torch.allclose(grads[0], grads[1], atol=1e-5)
+
+
+TABLE_DIR = Path("/mnt/nvme/memory/wiki-20231101-lead")
+ENC_DIR = Path("/mnt/nvme/memory/encoder/bge-base-en-v1.5")
+
+
+@pytest.mark.skipif(
+    not (torch.cuda.is_available() and TABLE_DIR.exists() and ENC_DIR.exists()),
+    reason="needs a GPU, build 040 and the encoder",
+)
+def test_l8q_teacher_matches_the_table_encoding() -> None:
+    """The training-time teacher reproduces 040's encoding of the same sentences."""
+    import json
+
+    import numpy as np
+
+    from scripts.train.teacher import CORPUS_TOKENIZER, BgeTeacher
+
+    rows = [json.loads(x) for x in TABLE_DIR.joinpath("sentences.jsonl").open().readlines()[:16]]
+    t = BgeTeacher(ENC_DIR, CORPUS_TOKENIZER, torch.device("cuda:0"), max_tokens=512)
+    emb = t.encode_texts([r["sentence"] for r in rows]).cpu()
+    table = np.load(TABLE_DIR / "table.npy", mmap_mode="r")
+    ref = torch.from_numpy(np.array(table[[r["cell"] for r in rows]], dtype=np.float32))
+    cos = (emb * torch.nn.functional.normalize(ref, dim=-1)).sum(-1)
+    assert cos.min() > 0.999

@@ -42,6 +42,8 @@ class IterState:
     frozen_kv: tuple[Tensor, Tensor] | None  # [B, Hkv, T, dh] K/V of halted tokens (ADR-011)
     frozen: Tensor  # [B, T] bool — K/V frozen from this iteration on
     loads: list[Tensor]  # per-iteration expert load histograms (logging)
+    q_tgt: Tensor | None = None  # [B, T, 2] L8q teacher PQ code per position, -1 = none (ADR-055)
+    q_loss: Tensor | None = None  # [2] running (summed L_q, valid count) over iterations
 
 
 class MiddleBlock(nn.Module):
@@ -112,10 +114,12 @@ class MiddleBlock(nn.Module):
         frozen: Tensor,
         mem_k: Tensor | None,
         mem_v: Tensor | None,
-    ) -> tuple[Tensor, ...]:
+        q_tgt: Tensor | None = None,
+        q_loss: Tensor | None = None,
+    ) -> tuple[Tensor | None, ...]:
         """`iteration` over flat tensors so `torch.utils.checkpoint` can replay it."""
         st = IterState(
-            c, p, active, r, cum, rem, None if fk is None else (fk, fv), frozen, []
+            c, p, active, r, cum, rem, None if fk is None else (fk, fv), frozen, [], q_tgt, q_loss
         )
         mem = None if mem_k is None else (mem_k, mem_v)
         out, aux = self.iteration(st, j, positions, mem, force_active)
@@ -123,7 +127,7 @@ class MiddleBlock(nn.Module):
         load = out.loads[-1]
         return (
             out.c, out.p, out.active, out.r, out.cum_halt, out.remainder,
-            fk2, fv2, out.frozen, aux, load,
+            fk2, fv2, out.frozen, aux, load, out.q_loss,
         )
 
     # ---- L6c thresholds (ADR-042) ------------------------------------------------
@@ -222,6 +226,7 @@ class MiddleBlock(nn.Module):
         if st.p is not None:
             streams.append((st.p, self.norm(st.p, e)))
         new, aux = [], st.c.new_zeros(())
+        q_loss = st.q_loss
         for i, (x, u) in enumerate(streams):
             m_i = mask
             if i == 1 and not cfg.streams.p_sees_own_context:
@@ -237,6 +242,10 @@ class MiddleBlock(nn.Module):
             upd = a + y
             if self.mem is not None:
                 upd = upd + self.mem(u, e)
+                if i == 0 and st.q_tgt is not None:  # L8q, context stream (ADR-055)
+                    ql, qn = self.mem.query_loss(u, e, st.q_tgt)
+                    step_q = torch.stack([ql, qn])
+                    q_loss = step_q if q_loss is None else q_loss + step_q
             if cfg.halting.gate and not force_active:
                 if mode == "act":  # ADR-041: P(still running) = 1 - H^(j-1), Graves's mean field
                     upd = upd * (1 - st.cum_halt)[..., None].to(upd.dtype)
@@ -252,7 +261,9 @@ class MiddleBlock(nn.Module):
             active, rem = act_in, st.remainder
             cum = torch.zeros_like(st.cum_halt) if g is None else g.detach().float()
             p_new = new[1] if len(new) > 1 else None
-            return IterState(new[0], p_new, active, r, cum, rem, frozen_kv, frozen, st.loads), aux
+            return IterState(
+                new[0], p_new, active, r, cum, rem, frozen_kv, frozen, st.loads, st.q_tgt, q_loss
+            ), aux
         # halting head on the context stream (§4.7)
         h = torch.sigmoid(self.halt(torch.cat([uc, e.expand(b, t, -1)], dim=-1))).squeeze(-1)
         if force_active:
@@ -268,5 +279,7 @@ class MiddleBlock(nn.Module):
             rem = torch.where(halts_now, 1 - (st.cum_halt), st.remainder)
             active = st.active & ~halts_now
         p_new = new[1] if len(new) > 1 else None
-        out = IterState(new[0], p_new, active, r, cum, rem, frozen_kv, frozen, st.loads)
+        out = IterState(
+            new[0], p_new, active, r, cum, rem, frozen_kv, frozen, st.loads, st.q_tgt, q_loss
+        )
         return out, aux

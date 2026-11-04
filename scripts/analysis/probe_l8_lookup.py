@@ -9,7 +9,9 @@ Four measurements, each read against ADR-054's fixed readings:
   4. training signal: cross-batch cosine of the gradients and |g| / |w| per parameter group on
      held-out FineWeb-Edu windows, and the branch's output norm against the MoE's per iteration.
 
-Hooks read the memory's inputs; the module is not changed. Run on an idle GPU:
+With `--teacher-windows N` (ADR-055 §5): the top-1 row / column agreement with L8q's teacher
+on N held-out windows, per iteration. Hooks read the memory's inputs; the module is unchanged.
+Run on an idle GPU:
   python -m scripts.analysis.probe_l8_lookup --id 173-l8-screen --out 042-l8-lookup-diag
 """
 
@@ -240,12 +242,66 @@ def signal(model: Any, dev: torch.device, n_batches: int) -> dict[str, Any]:
     return res
 
 
+@torch.no_grad()
+def teacher_agreement(model: Any, dev: torch.device, n_windows: int) -> dict[str, Any]:
+    """ADR-055 §5: on held-out windows, the share of valid positions whose top-1 row and column
+    under the model's query equal the teacher's PQ code of the preceding chunk, per iteration
+    (chance 1 / grid per half). Runs on any L8 checkpoint (173 gives the baseline)."""
+    from model.config import QueryAuxCfg
+    from scripts.train.teacher import CORPUS_TOKENIZER, BgeTeacher, targets
+
+    cfg = model.cfg
+    mem: KnowledgeMemory = model.middle.mem
+    qa = cfg.memory.query_aux or QueryAuxCfg()
+    teacher = BgeTeacher(qa.teacher_dir, CORPUS_TOKENIZER, dev, qa.teacher_max_tokens)
+    windows = MemmapCorpus(Path(CORPUS)).val_windows(cfg.context, None)[:n_windows]
+    hits: list[list[float]] = []
+    ctx: dict[str, Any] = {}
+
+    def hook(_m: Any, args: tuple[Tensor, Tensor], _out: Tensor) -> None:
+        u, e = args
+        j = ctx["j"]
+        ctx["j"] += 1
+        tgt = ctx["tgt"]
+        ok = tgt[..., 0] >= 0
+        s1, s2 = half_scores(mem, u, e)
+        row = (s1.argmax(-1) == tgt[..., 0]) & ok
+        col = (s2.argmax(-1) == tgt[..., 1]) & ok
+        while len(hits) <= j:
+            hits.append([0.0, 0.0, 0.0, 0.0])
+        hits[j][0] += float(row.sum())
+        hits[j][1] += float(col.sum())
+        hits[j][2] += float((row & col).sum())
+        hits[j][3] += float(ok.sum())
+
+    h = mem.register_forward_hook(hook)
+    try:
+        for w in windows:
+            inp = w[:, :-1].to(dev)
+            ctx.update(j=0, tgt=targets(inp, qa.chunk, teacher, mem.mu1, mem.mu2))
+            with torch.autocast("cuda", dtype=torch.bfloat16):
+                model.forward_hidden(inp)
+    finally:
+        h.remove()
+    del teacher
+    return {
+        "windows": n_windows,
+        "chunk": qa.chunk,
+        "chance_per_half": 1 / cfg.memory.grid,
+        "by_iteration": [
+            {"row": r / max(n, 1), "col": c / max(n, 1), "both": b / max(n, 1), "positions": n}
+            for r, c, b, n in hits
+        ],
+    }
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--id", default="173-l8-screen")
     ap.add_argument("--out", default="042-l8-lookup-diag")
     ap.add_argument("--device", default="cuda:0")
     ap.add_argument("--grad-batches", type=int, default=8)
+    ap.add_argument("--teacher-windows", type=int, default=0, help="ADR-055 agreement probe")
     a = ap.parse_args()
     dev = torch.device(a.device)
     t0 = time.time()
@@ -256,6 +312,8 @@ def main() -> None:
     res["own_cell"] = own_cell(model, items, dev)
     res["oracle"] = oracle(model, items, dev)
     res["signal"] = signal(model, dev, a.grad_batches)
+    if a.teacher_windows:
+        res["teacher_agreement"] = teacher_agreement(model, dev, a.teacher_windows)
     res["peak_gib"] = torch.cuda.max_memory_allocated(dev) / 2**30
     res["wall_s"] = time.time() - t0
     out = RESULTS_DIR / a.out
