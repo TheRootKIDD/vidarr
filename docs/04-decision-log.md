@@ -1223,7 +1223,7 @@ Not chosen, and why:
 Consequences: `03 §2`'s L8 row and `§1`'s `small` list gain L8b. No model or spec change; a code change in the eval script only (`--compare-pair`, with a unit test). Bears on H17 and I41.
 
 ### ADR-059 — H17's first-sentence clause is read on covered tokens (I42 option (b)); amends ADR-055 §6 as used by ADR-057 §7 and ADR-058 §3
-2026-11-05 · proposed (drafted on the user's "yes, draft the ADR for I42 option (b)")
+2026-11-05 · accepted (the user's decision: "yes, accept it, push, then continue"; drafted on "yes, draft the ADR for I42 option (b)")
 
 Context: `046` scored the two seeds of one config, the L5 `small` pair `132`/`133`, on wiki-lead.
 - Seed 1 beats seed 0 past ADR-055 §6's floor on all three full splits (−0.066 / −0.013 / −0.042 against 0.015 / 0.013 / 0.012). The rule calls that "supports".
@@ -1456,7 +1456,7 @@ Cost units from `docs/06 §4`: one `screen` run ≈ 8 h (1 B tokens, 1 seed); on
   - **Not measured:** whether it is the width (704 against L5's), training with a memory branch, or position-specific. `173` and a FineWeb-Edu loss-by-position split would tell. It is a probe on an idle rig, or nothing; the user's call.
   - **Status 2026-11-05 (`046`):** the L5 `small` pair's two seeds differ by 0.29 nats on these same tokens (2.653 / 2.359), about three times the gap I41 asks about. The likely answer is seed noise on title-adjacent tokens, not an L8-family effect (at `small`, not `screen`). `176`/`177` against `132`/`133` will show it at matched budget. Kept open until then.
 
-- **I42** *(2026-11-05, ADR-058, `046`)* **The wiki-lead floor has no seed term.**
+- **I42** *(2026-11-05, ADR-058, `046`; **answered 2026-11-05 by ADR-059, option (b)**: the first-sentence clause is read on `in_first_cov`; `in_rest`'s own seed spread, 0.013 at its floor, is the recorded limit)* **The wiki-lead floor has no seed term.**
   - **Measured:** two seeds of one config (`132`, `133`, L5 `small`) differ past ADR-055 §6's floor on all three full splits: −0.066 / −0.013 / −0.042 against 0.015 / 0.013 / 0.012. Between seeds, the rule gives "supports".
   - **Where the variation sits:** it is concentrated on tokens before the first retrieval boundary (0.29 nats). The covered first-sentence split differs by 0.002.
   - **Why:** the floor is 4 × max(σ, article-bootstrap SE). The bootstrap resamples articles, not training runs, and σ (0.0030) is FineWeb-Edu's seed spread, which wiki-lead's 4,000 short articles exceed.
@@ -2347,6 +2347,11 @@ and an ADR first, L6c likewise; the `small` programme (L0, L1, L2, L3, L5, L5d a
 the ladder's own next step and needs no new code. The choice between "more `screen` variants" and
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
+
+### 2026-11-05 (15:44) — **ADR-059 accepted** (the user: "yes, accept it, push, then continue"); I42 answered by option (b)
+
+- H17's first-sentence clause is now read on `in_first_cov`. `175` stays *silent* and `174` *weakens*; `173`'s covered re-score follows after `queue_small_11`.
+- Code: `verdict_h17_covered` on branch `adr059` (worktree `../vidarr-adr059`), merged into main only after `177` has started. `queue_small_11` is running `176`.
 
 ### 2026-11-05 (15:50) — **ADR-059 proposed**: H17's first-sentence clause read on covered tokens (I42 option (b)), for approval
 
