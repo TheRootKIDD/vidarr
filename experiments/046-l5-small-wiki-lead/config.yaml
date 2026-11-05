@@ -1,0 +1,10 @@
+# Rig 046 (ADR-058 §2): wiki-lead with the covered masks for the L5 small pair (ADR-058's matched arm).
+# No training. One GPU each, rig otherwise idle, 2026-11-05 ~09:05.
+runs:
+  - {id: 132-l5-small-s0, device: cuda:0, out: wiki_lead_132.json}
+  - {id: 133-l5-small-s1, device: cuda:1, out: wiki_lead_133.json}
+command: python -m scripts.analysis.eval_wiki_lead --id <run> --covered --device <dev> --out experiments/046-l5-small-wiki-lead/wiki_lead_<n>.json
+code: 0c32ba0
+pools: /mnt/nvme/memory/wiki-20231101-lead/eval_pools.jsonl  # 2,000 in-table + 2,000 out-of-table articles
+retrieval: {stride: 16, window: 32, min_tokens: 8, k: 8}  # the pipeline's masks only; L5 reads no neighbours
+seed_spread: seed_spread_133_vs_132.json  # score(133, 132): the H17 rule between the two seeds of one config

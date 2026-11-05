@@ -1413,6 +1413,19 @@ Cost units from `docs/06 §4`: one `screen` run ≈ 8 h (1 B tokens, 1 seed); on
   - **What was measured:** on the 15,436 in-table first-sentence tokens before L8b's first retrieval boundary, `175` scores 2.779 and `174` 2.795, against `110`'s 2.895. `175`'s memory branch is exactly zero there (random rows: 2.779).
   - **Why it matters:** this part is about half of `175`'s in-table first-sentence gain over `110`. The covered half beats the floor alone, so the H17 reading does not rest on it, but it inflates the full split.
   - **Not measured:** whether it is the width (704 against L5's), training with a memory branch, or position-specific. `173` and a FineWeb-Edu loss-by-position split would tell. It is a probe on an idle rig, or nothing; the user's call.
+  - **Status 2026-11-05 (`046`):** the L5 `small` pair's two seeds differ by 0.29 nats on these same tokens (2.653 / 2.359), about three times the gap I41 asks about. The likely answer is seed noise on title-adjacent tokens, not an L8-family effect (at `small`, not `screen`). `176`/`177` against `132`/`133` will show it at matched budget. Kept open until then.
+
+- **I42** *(2026-11-05, ADR-058, `046`)* **The wiki-lead floor has no seed term.**
+  - **Measured:** two seeds of one config (`132`, `133`, L5 `small`) differ past ADR-055 §6's floor on all three full splits: −0.066 / −0.013 / −0.042 against 0.015 / 0.013 / 0.012. Between seeds, the rule gives "supports".
+  - **Where the variation sits:** it is concentrated on tokens before the first retrieval boundary (0.29 nats). The covered first-sentence split differs by 0.002.
+  - **Why:** the floor is 4 × max(σ, article-bootstrap SE). The bootstrap resamples articles, not training runs, and σ (0.0030) is FineWeb-Edu's seed spread, which wiki-lead's 4,000 short articles exceed.
+  - **Affects:** `175`'s *silent* (its rest-of-lead miss and its control gain are inside this spread; its covered first-sentence gain, −0.037, is 18× the covered spread); ADR-058's pair verdict; not the direction of `173`/`174`'s *weakens*.
+  - **Options (the user's call, by ADR; `176`/`177` run unchanged either way):**
+    - (a) keep ADR-058 §3 as accepted;
+    - (b) read the first-sentence clause on the covered splits, whose seed spread is small, and keep the full splits as reported;
+    - (c) add a seed term to every floor, estimated from the `132`/`133` spread (one pair, so itself noisy; it would put the rest-of-lead floor near 0.04);
+    - (d) (b) plus (c) for the rest-of-lead split.
+
 
 ## Session log
 
@@ -2294,19 +2307,29 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
-### 2026-11-05 (09:00) — **ADR-058 accepted** (the user: "yes, accept it, push, then continue")
+### 2026-11-05 (15:35) — **Rig `046`: the L5 pair on wiki-lead; its two seeds differ past the H17 floor on every full split (I42 opened); `queue_small_11` running `176`**
+
+- **`046`:**
+  - `132` / `133` scored with the covered masks: pair means 2.8095 / 3.1317 / 2.9654, covered 2.8940, own retrieved 2.8825.
+  - Seed 1 vs seed 0 is −0.066 / −0.013 / −0.042 on the full splits (the rule says "supports" between seeds of one config) and −0.002 on covered tokens.
+  - The spread sits on pre-boundary tokens (0.29 nats). **I42 opened** (the floor has no seed term; options for the user). **I41** updated: likely seed noise.
+- **`queue_small_11`:** armed 15:27, gate passed on `0c32ba0`, `176-l8b-small-s0` started 15:27. ETA ≈ 12:30 2026-11-06, then its eval; `177` ETA ≈ 09:50 2026-11-07, then the pair compare (`/mnt/nvme/post_queue_small11/compare_pair.log`). Commits during the queue must not touch `model/`, `scripts/` or `costmodel/` (the queue aborts at the next run).
+- **Recorded:** today's three earlier entry times were written as 08:20 / 08:45 / 09:00. Corrected to the commit times 07:55 / 13:50 / 15:20.
+- Next ladder id 178, next rig id 047. **No CPU probes beside the DDP run.**
+
+### 2026-11-05 (15:20) — **ADR-058 accepted** (the user: "yes, accept it, push, then continue")
 
 - `03 §1` lists L8b among the `small` pairs; `03 §2`'s L8 row names `176`/`177`.
 - Build: `eval_wiki_lead --compare-pair` (seed merge: per-article sums and counts added, held-out = mean of the seeds' final full held-out losses; `tokens` in its output counts both seeds), `tests/test_eval_wiki_lead.py`.
 - Then rig `046` (wiki-lead of `132`/`133` with the covered masks) and `queue_small_11` (`176`, `177`, evals, pair compare).
 
-### 2026-11-05 (08:45) — **ADR-058 proposed**: L8b `small` pair (`176`/`177`) against the L5 pair `132`/`133`, for approval
+### 2026-11-05 (13:50) — **ADR-058 proposed**: L8b `small` pair (`176`/`177`) against the L5 pair `132`/`133`, for approval
 
 - Drafted on the user's "Continue" after `175`. The recommendation is the `small` pair over a second `screen` seed (ADR-058 §Not chosen).
 - ≈ 42 h of training on the local rig, plus rig `046`'s two L5 wiki-lead evals.
 - Nothing is built or running until the user accepts.
 
-### 2026-11-05 (08:20) — **`175` L8b = 3.3321, −0.0007 vs L5 `110`; in-table first sentence −0.0541 (beats its floor), rest of lead −0.0105 (misses its 0.0121 floor) → H17 *silent* at one seed, leaning supports; the retrieval is precise and read**; `queue_screen_17` done
+### 2026-11-05 (07:55) — **`175` L8b = 3.3321, −0.0007 vs L5 `110`; in-table first sentence −0.0541 (beats its floor), rest of lead −0.0105 (misses its 0.0121 floor) → H17 *silent* at one seed, leaning supports; the retrieval is precise and read**; `queue_screen_17` done
 
 - **The run:** 1 B tokens in 8.34 h, 34.1 k tok/s (0.94× `174`), retrieval ≈ 33 % of the step, 5.72 GiB, `n_thermal` 0.
 - **General loss:** within 2σ of `110`. The +0.011 / +0.013 regression that `173` and `174` carried at the same width is gone (−0.0136 vs `174`).
