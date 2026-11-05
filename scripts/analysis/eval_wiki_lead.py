@@ -25,6 +25,8 @@ Run on an idle GPU:
   python -m scripts.analysis.eval_wiki_lead --id 110-l5-screen
   python -m scripts.analysis.eval_wiki_lead --id 173-l8-screen --probes
   python -m scripts.analysis.eval_wiki_lead --compare 173-l8-screen 110-l5-screen
+  python -m scripts.analysis.eval_wiki_lead --compare-pair 176-l8b-small-s0 177-l8b-small-s1 \
+      132-l5-small-s0 133-l5-small-s1 --base-files <046>/wiki_lead_132.json <046>/wiki_lead_133.json
 """
 
 from __future__ import annotations
@@ -276,6 +278,54 @@ def compare(
     A = json.loads((RESULTS_DIR / arm / "wiki_lead.json").read_text())
     bpath = Path(base_file) if base_file else RESULTS_DIR / base / "wiki_lead.json"
     B = json.loads(bpath.read_text())
+    return score(A, B, arm, base, n_boot)
+
+
+def merge_seeds(files: list[dict[str, Any]], val_losses: list[float]) -> dict[str, Any]:
+    """ADR-058 §3: a pair as one side. Per-article loss sums and counts are added over the seeds
+    (so every split's loss is the token-weighted pair mean, and the bootstrap still resamples
+    articles), and the held-out loss is the mean of the seeds' final full held-out losses."""
+    ids = files[0]["per_article"]["id"]
+    out: dict[str, Any] = {"per_article": {"id": ids, "pool": files[0]["per_article"]["pool"]}}
+    for f in files:
+        assert f["per_article"]["id"] == ids, "the seeds were scored on different pools"
+    for k in files[0]["per_article"]:
+        if k.startswith(("sum_", "cnt_")) and all(k in f["per_article"] for f in files):
+            out["per_article"][k] = np.sum([np.array(f["per_article"][k]) for f in files], 0)
+    out["heldout"] = {"val_loss": float(np.mean(val_losses))}
+    return out
+
+
+def compare_pair(
+    arms: list[str], bases: list[str], base_files: list[str] | None = None, n_boot: int = 2000
+) -> dict[str, Any]:
+    """ADR-058 §3: ADR-055 §6's rule on pair means. Held-out losses are each run's final full
+    held-out val loss (`summary.json`), not the eval's 2 M-token subset."""
+
+    def side(ids: list[str], paths: list[Path]) -> dict[str, Any]:
+        files = [json.loads(p.read_text()) for p in paths]
+        vals = [
+            json.loads((RESULTS_DIR / i / "summary.json").read_text())["final"]["val_loss"]
+            for i in ids
+        ]
+        return merge_seeds(files, vals) | {"val_losses": vals}
+
+    A = side(arms, [RESULTS_DIR / i / "wiki_lead.json" for i in arms])
+    bp = (
+        [Path(f) for f in base_files]
+        if base_files
+        else [RESULTS_DIR / i / "wiki_lead.json" for i in bases]
+    )
+    B = side(bases, bp)
+    res = score(A, B, "+".join(arms), "+".join(bases), n_boot)
+    res["heldout"]["arm_seeds"], res["heldout"]["base_seeds"] = A["val_losses"], B["val_losses"]
+    return res
+
+
+def score(
+    A: dict[str, Any], B: dict[str, Any], arm: str, base: str, n_boot: int = 2000
+) -> dict[str, Any]:
+    """The rule itself, on two loaded (or seed-merged) wiki_lead records."""
     pa, pb = A["per_article"], B["per_article"]
     assert pa["id"] == pb["id"], "the two runs were scored on different pools"
     rng = np.random.default_rng(0)
@@ -342,8 +392,21 @@ def main() -> None:
     ap.add_argument("--out", help="output file instead of <id>/wiki_lead.json")
     ap.add_argument("--base-file", help="--compare: the base's wiki_lead file, if elsewhere")
     ap.add_argument("--name", help="--compare: output file name in the arm's directory")
+    ap.add_argument(
+        "--compare-pair",
+        nargs=4,
+        metavar=("ARM0", "ARM1", "BASE0", "BASE1"),
+        help="ADR-058: the rule on pair means; written to ARM1's directory",
+    )
+    ap.add_argument("--base-files", nargs=2, help="--compare-pair: the bases' wiki_lead files")
     a = ap.parse_args()
-    if a.compare:
+    if a.compare_pair:
+        arms, bases = list(a.compare_pair[:2]), list(a.compare_pair[2:])
+        res = compare_pair(arms, bases, a.base_files)
+        name = a.name or "wiki_lead_compare_pair.json"
+        (RESULTS_DIR / arms[1] / name).write_text(json.dumps(res, indent=1))
+        print(json.dumps(res, indent=1))
+    elif a.compare:
         res = compare(*a.compare, base_file=a.base_file)
         base = a.compare[1]
         name = a.name or (
