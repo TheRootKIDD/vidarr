@@ -1,0 +1,44 @@
+{
+ "arm": "175-l8b-screen",
+ "base": "174-l8q-screen",
+ "splits": {
+  "in_first": {
+   "arm": 3.0766357108992617,
+   "base": 3.1235695933258,
+   "delta": -0.04693388242653814,
+   "bootstrap_se": 0.0034231661100851568,
+   "floor": 0.013692664440340627,
+   "beats_floor": true,
+   "tokens": 70952.0
+  },
+  "in_rest": {
+   "arm": 3.397433211222591,
+   "base": 3.4338962704241998,
+   "delta": -0.0364630592016088,
+   "bootstrap_se": 0.0028977104629241764,
+   "floor": 0.012,
+   "beats_floor": true,
+   "tokens": 77911.0
+  },
+  "out_lead": {
+   "arm": 3.233736363259067,
+   "base": 3.2725795590790234,
+   "delta": -0.03884319581995634,
+   "bootstrap_se": 0.0022321690748175597,
+   "floor": 0.012,
+   "beats_floor": true,
+   "tokens": 148298.0
+  }
+ },
+ "heldout": {
+  "arm": 3.3288768305153145,
+  "base": 3.3421447462722904,
+  "relative": -0.003969880649775719,
+  "delta": -0.013267915756975945,
+  "within": true,
+  "within_2sigma": true,
+  "beyond_4sigma": false
+ },
+ "verdict_h17": "supports",
+ "verdict_h17_literal_0p5pct": "supports"
+}

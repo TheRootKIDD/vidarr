@@ -1,0 +1,62 @@
+{
+ "arm": "175-l8b-screen",
+ "base": "110-l5-screen",
+ "splits": {
+  "in_first": {
+   "arm": 3.0766357108992617,
+   "base": 3.1307138522322653,
+   "delta": -0.054078141333003336,
+   "bootstrap_se": 0.003456795041486972,
+   "floor": 0.013827180165947889,
+   "beats_floor": true,
+   "tokens": 70952.0
+  },
+  "in_rest": {
+   "arm": 3.397433211222591,
+   "base": 3.4079508910081397,
+   "delta": -0.010517679785548652,
+   "bootstrap_se": 0.003025267166891901,
+   "floor": 0.012101068667567603,
+   "beats_floor": false,
+   "tokens": 77911.0
+  },
+  "out_lead": {
+   "arm": 3.233736363259067,
+   "base": 3.2613364947001515,
+   "delta": -0.027600131441084513,
+   "bootstrap_se": 0.0022894033780747254,
+   "floor": 0.012,
+   "beats_floor": true,
+   "tokens": 148298.0
+  },
+  "in_first_cov": {
+   "arm": 3.1594086086636652,
+   "base": 3.1962689394454067,
+   "delta": -0.0368603307817415,
+   "bootstrap_se": 0.003509771352093391,
+   "floor": 0.014039085408373564,
+   "beats_floor": true,
+   "tokens": 55516.0
+  },
+  "in_first_hit": {
+   "arm": 3.1473292663712806,
+   "base": 3.1855803146631656,
+   "delta": -0.03825104829188478,
+   "bootstrap_se": 0.0036974316991316572,
+   "floor": 0.014789726796526629,
+   "beats_floor": true,
+   "tokens": 54597.0
+  }
+ },
+ "heldout": {
+  "arm": 3.3288768305153145,
+  "base": 3.3283905777774874,
+  "relative": 0.00014609245113047695,
+  "delta": 0.00048625273782709755,
+  "within": true,
+  "within_2sigma": true,
+  "beyond_4sigma": false
+ },
+ "verdict_h17": "silent",
+ "verdict_h17_literal_0p5pct": "silent"
+}

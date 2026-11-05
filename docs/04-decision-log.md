@@ -1369,6 +1369,11 @@ Cost units from `docs/06 §4`: one `screen` run ≈ 8 h (1 B tokens, 1 seed); on
 
   **Closed 2026-11-04 by ADR-057** (accepted): L8, L8q and L8k close at `screen`, with L8c/L8d. The query side can be trained (`174`); the ceiling is the placement's (`044`). H17 moves to L8b (`175`).
 
+- **I41** *(2026-11-05, ADR-057, `175`)* **Why the L8-family models beat L5 by ≈ 0.1 nats on a wiki-lead's first tokens, before any retrieval.**
+  - **What was measured:** on the 15,436 in-table first-sentence tokens before L8b's first retrieval boundary, `175` scores 2.779 and `174` 2.795, against `110`'s 2.895. `175`'s memory branch is exactly zero there (random rows: 2.779).
+  - **Why it matters:** this part is about half of `175`'s in-table first-sentence gain over `110`. The covered half beats the floor alone, so the H17 reading does not rest on it, but it inflates the full split.
+  - **Not measured:** whether it is the width (704 against L5's), training with a memory branch, or position-specific. `173` and a FineWeb-Edu loss-by-position split would tell. It is a probe on an idle rig, or nothing; the user's call.
+
 ## Session log
 
 ### 2026-09-02 — Phase 0 bootstrap and measurements
@@ -2248,6 +2253,22 @@ and an ADR first, L6c likewise; the `small` programme (L0, L1, L2, L3, L5, L5d a
 the ladder's own next step and needs no new code. The choice between "more `screen` variants" and
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
+
+### 2026-11-05 (08:20) — **`175` L8b = 3.3321, −0.0007 vs L5 `110`; in-table first sentence −0.0541 (beats its floor), rest of lead −0.0105 (misses its 0.0121 floor) → H17 *silent* at one seed, leaning supports; the retrieval is precise and read**; `queue_screen_17` done
+
+- **The run:** 1 B tokens in 8.34 h, 34.1 k tok/s (0.94× `174`), retrieval ≈ 33 % of the step, 5.72 GiB, `n_thermal` 0.
+- **General loss:** within 2σ of `110`. The +0.011 / +0.013 regression that `173` and `174` carried at the same width is gone (−0.0136 vs `174`).
+- **wiki-lead vs `110`:** first sentence −0.0541 (floor 0.0138), rest −0.0105 (0.0121), control −0.0276. ADR-055 §6's rule gives *silent*: one in-table split beats its floor, and FineWeb-Edu is within 2σ.
+- **Covered tokens** (pipeline masks; `174` re-scored on them after the queue, written to `175`):
+  - covered −0.0369 vs `110`, −0.0556 vs `174`;
+  - own sentence retrieved −0.0383 / −0.0557;
+  - before the first boundary, where the branch is zero, `175` and `174` both beat `110` by ≈ 0.1. That is about half of the full split's gain and not retrieval → **I41 opened**.
+- **Usage:**
+  - Reliance on own-retrieved tokens +0.0621 against a 0.0148 floor → **reads**.
+  - Reliance is +0.040–0.048 on every wiki-lead split and +0.034 on FineWeb-Edu, so most of what the neighbours carry is related Wikipedia content rather than the stored fact.
+  - α entropy 95.3 % of ln 8; 13.7 % of rows used.
+- **Recorded:** ADR-057 §7's combination for "precise, read, not supported" was worded for a null result ("does not lower loss"). Here loss falls past the floor on the stored sentence, so `175` is recorded as silent, not as evidence against H17.
+- **Next is the user's call.** ADR-031's `small` pair triggers only on *supports*. A second `screen` seed or a `small` pair would decide the rest-of-lead split, each by ADR. Nothing is running. Next ladder id 176, next rig id 046.
 
 ### 2026-11-04 (23:30) — **L8b built (`6f6ed73`); `045` passed: retrieval precise (98.3 % of covered first-sentence tokens retrieve their own sentence; coverage 78.2 %), 5.72 GiB, 33.8 k tok/s; `queue_screen_17` running `175-l8b-screen`**
 
