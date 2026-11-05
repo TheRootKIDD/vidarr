@@ -322,6 +322,16 @@ def compare_pair(
     return res
 
 
+def h17_rule(first: bool, rest: bool, ok: bool, bad: bool) -> str:
+    """ADR-055 §6 (and ADR-059): supports if both in-table clauses beat their floors and the
+    held-out clause holds; weakens if neither beats or the held-out regression is past 4 sigma."""
+    if first and rest and ok:
+        return "supports"
+    if (not first and not rest) or bad:
+        return "weakens"
+    return "silent"
+
+
 def score(
     A: dict[str, Any], B: dict[str, Any], arm: str, base: str, n_boot: int = 2000
 ) -> dict[str, Any]:
@@ -378,6 +388,13 @@ def score(
 
     out["verdict_h17"] = rule(dn <= 2 * SIGMA_SCREEN, dn > 4 * SIGMA_SCREEN)  # ADR-055 §6
     out["verdict_h17_literal_0p5pct"] = rule(reg <= REGRESSION, reg > REGRESSION)  # ADR-053
+    if "in_first_cov" in sp:  # ADR-059: the first-sentence clause on covered tokens
+        out["verdict_h17_covered"] = h17_rule(
+            sp["in_first_cov"]["beats_floor"],
+            sp["in_rest"]["beats_floor"],
+            dn <= 2 * SIGMA_SCREEN,
+            dn > 4 * SIGMA_SCREEN,
+        )
     return out
 
 
