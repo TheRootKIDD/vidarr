@@ -1182,6 +1182,46 @@ Consequences:
 
 Bears on H17, L8 and I40 (closed).
 
+### ADR-058 — L8b at `small`: a two-seed pair decides H17 against the L5 pair; rig `046`, runs `176`/`177`
+2026-11-05 · proposed (drafted on "Continue" after `175`'s write-up; for the user's approval)
+
+Context: `175` (ADR-057) left H17 *silent* at one `screen` seed, leaning supports.
+- The pipeline is precise and the model reads it (reliance on own-retrieved first-sentence tokens +0.062 against a 0.0148 floor).
+- The in-table first sentence beats its floor against `110` (−0.0541; the covered tokens alone −0.037). The rest of the lead misses by 0.0016 (−0.0105 against 0.0121). FineWeb-Edu is within 2σ (−0.0007).
+- ADR-031 sends an arm to `small` only when it *supports*, so nothing follows automatically. The ladder decides at `small` (H6, H13, H8, H15a were all settled there), and H17 is the only open Phase 3 hypothesis with a working arm.
+
+Decision:
+1. **Run L8b at `small`**: `176-l8b-small-s0` and `177-l8b-small-s1`, 2.5 B tokens, micro-batch 4, seeds 0 / 1. The config is `175`'s, unchanged (table `040`, BGE, $s$ 16, window 32, $K$ 8, width 704). `175` is the finished `screen` of this config.
+2. **The matched arm is the L5 `small` pair** `132`/`133` (3.0748). Its checkpoints exist. Rig `046` scores both on wiki-lead with the covered masks (`eval_wiki_lead --covered --out experiments/046-…/`, ≈ 2 min each, idle rig, before the runs). They are written to `046`, because `132`/`133` are closed.
+3. **The verdict is ADR-055 §6's rule on pair means.**
+   - Per article, the two seeds' loss sums are added for each side. The bootstrap over articles is as in `compare` (a `--compare-pair` mode in `eval_wiki_lead`, the only code change).
+   - Floor per split is 4 × max(σ, bootstrap SE), with σ = 0.0030 (twelve `small` pairs).
+   - FineWeb-Edu Δ is the pair mean of the final full held-out loss against 3.0748: ≤ 2σ (0.0059) for *supports*, > 4σ (0.0119) for *weakens*.
+   - **Supports:** both in-table splits beat their floor, and Δ ≤ 2σ. **Weakens:** neither beats its floor, or Δ > 4σ. **Silent:** otherwise. At two seeds the verdict closes H17's L8b arm at this budget either way. Any further arm (token-level neighbours, Wikipedia in the training mix) is a new ADR.
+4. **Reported beside the verdict**, as at `175`:
+   - coverage and accuracy (pipeline-only, identical to `045`);
+   - covered and own-retrieved splits;
+   - the uncovered remainder (I41: whether the ≈ 0.1 pre-boundary gain over L5 holds at `small`);
+   - reliance per split and on FineWeb-Edu;
+   - α entropy, row use, tok/s, retrieval share, `n_thermal`.
+5. **Limits carried over from ADR-057 §8:** vector values, corpus mismatch, and the retrieval cost (≈ 0.65 GFLOP per token, ≈ 33 % of the step) outside "matched active FLOPs".
+6. **Queue** `queue_small_11.sh`:
+   - the gate (ruff + pytest on the commit);
+   - rig `046` (the two L5 evals);
+   - `176`, then `177`, each followed by its wiki-lead eval with probes and covered splits;
+   - the pair compare vs `132`/`133`.
+   - No CPU probes beside the runs.
+7. **Cost:**
+   - Training: ≈ 2 × 21 h (`175`'s 8.34 h × 2.5; each run under one node-day) plus ≈ 15 min of evals, on the local rig.
+   - Checkpoints: ≈ 0.9 GB each on `/mnt/nvme`, which has 3.2 TB free.
+   - Everything (table, encoder, corpus, `132`/`133`'s checkpoints) is local: no downloads, no services, no purchases.
+
+Not chosen, and why:
+- **A second `screen` seed (≈ 8.3 h):** the wiki-lead floors come from the 0.0030 σ floor and the article bootstrap, not from seed noise. A second seed near `175`'s −0.0105 would leave the rest-of-lead split where it is, still short of its floor. It would also stay at the budget the ladder already treats as provisional.
+- **Leaving H17 silent and moving on (L9, S5–S7):** this is possible. But it would leave the one memory arm that retrieves the right sentence one split short, at the cheaper budget.
+
+Consequences: `03 §2`'s L8 row and `§1`'s `small` list gain L8b. No model or spec change; a code change in the eval script only (`--compare-pair`, with a unit test). Bears on H17 and I41.
+
 ## Proposed / pending
 - **ADR-028** — Unit model revisions from the author's hardware document (`docs/07 §4`): (a) two compute classes per chip — an FF core with a large array ($s_{min,ff}$ = 256–1024) and attention cores with small arrays ($s_{min,attn}$ ≈ 64), hence $\phi_{ff}$, $\phi_{attn}$ as separate scenario inputs; (b) the tile floor is a *row* floor, $N$ = $M$ × (LHS bw / RHS bw) rows per weight tile, with each token contributing 1 + $m$ rows under $m$-token speculation — the scheduler's queues count rows; (c) the reduce leg of the local fabric carries ≥ 16-bit partial sums: `02 §2` traffic becomes $b d\, b_{act} + b d\, b_{sum}$, $b_{sum}$ ≥ 2; (d) full pipelining inside the unit doubles tokens in flight and per-token latency — the Little's-law budget $Z$ of `02 §5.5` carries the factor; (e) router-based unit fabrics are ≤ 50 % link-efficient (avg. 2 hops), torus collectives 100 %: `02 §1`'s "switch" option is not equivalent to a torus; (f) the asymmetric 4×4×4 torus all-gather costs ≈ 3X/(8B) vs ≈ X/(2B) on a flat ring (our derivation from the author's algorithm) — the number S1/S3 must reproduce; (g) the failure domain is the 4-chip ring board, and a failed rail port is bypassed through torus neighbours at ¼ load (`02 §11`); (h) the replica-rounding utilisation floor $\ell / \lceil \ell \rceil$ reported beside the Little's-law model in S4. Also fills `note64.yaml` with the sourced ratios of `docs/07 §6`; absolute $\phi$, $\beta_C$, $\lambda_C$, $\nu_C$ stay placeholders (I4). Bears on H1, H5, H8, H9, H10, H11, H16; changes `02 §1, §2, §5, §11`.
 - **ADR-024** — Parallel prefill mode for long prompts (the author's "less effective mode"): (a) all segments at once with local attention only, global cache filled afterwards from context-poor final vectors; (b) pipelined segments, segment $k+1$ at iteration $j$ attending globally to segment $k$'s iteration-$j$ caches (transient per-iteration global cache during prefill, in-flight depth up to $r$ segments). Both are inference-time modes of a sequentially trained model; E-Q12 evaluates both against sequential prefill on continuation loss and TTFT (S5). If both degrade, a mixed-mode training variant becomes a later ladder step.
@@ -2253,6 +2293,12 @@ and an ADR first, L6c likewise; the `small` programme (L0, L1, L2, L3, L5, L5d a
 the ladder's own next step and needs no new code. The choice between "more `screen` variants" and
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
+
+### 2026-11-05 (08:45) — **ADR-058 proposed**: L8b `small` pair (`176`/`177`) against the L5 pair `132`/`133`, for approval
+
+- Drafted on the user's "Continue" after `175`. The recommendation is the `small` pair over a second `screen` seed (ADR-058 §Not chosen).
+- ≈ 42 h of training on the local rig, plus rig `046`'s two L5 wiki-lead evals.
+- Nothing is built or running until the user accepts.
 
 ### 2026-11-05 (08:20) — **`175` L8b = 3.3321, −0.0007 vs L5 `110`; in-table first sentence −0.0541 (beats its floor), rest of lead −0.0105 (misses its 0.0121 floor) → H17 *silent* at one seed, leaning supports; the retrieval is precise and read**; `queue_screen_17` done
 
