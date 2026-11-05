@@ -1183,7 +1183,7 @@ Consequences:
 Bears on H17, L8 and I40 (closed).
 
 ### ADR-058 — L8b at `small`: a two-seed pair decides H17 against the L5 pair; rig `046`, runs `176`/`177`
-2026-11-05 · proposed (drafted on "Continue" after `175`'s write-up; for the user's approval)
+2026-11-05 · accepted (the user's decision: "yes, accept it, push, then continue"; drafted on "Continue" after `175`'s write-up)
 
 Context: `175` (ADR-057) left H17 *silent* at one `screen` seed, leaning supports.
 - The pipeline is precise and the model reads it (reliance on own-retrieved first-sentence tokens +0.062 against a 0.0148 floor).
@@ -2293,6 +2293,12 @@ and an ADR first, L6c likewise; the `small` programme (L0, L1, L2, L3, L5, L5d a
 the ladder's own next step and needs no new code. The choice between "more `screen` variants" and
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
+
+### 2026-11-05 (09:00) — **ADR-058 accepted** (the user: "yes, accept it, push, then continue")
+
+- `03 §1` lists L8b among the `small` pairs; `03 §2`'s L8 row names `176`/`177`.
+- Build: `eval_wiki_lead --compare-pair` (seed merge: per-article sums and counts added, held-out = mean of the seeds' final full held-out losses; `tokens` in its output counts both seeds), `tests/test_eval_wiki_lead.py`.
+- Then rig `046` (wiki-lead of `132`/`133` with the covered masks) and `queue_small_11` (`176`, `177`, evals, pair compare).
 
 ### 2026-11-05 (08:45) — **ADR-058 proposed**: L8b `small` pair (`176`/`177`) against the L5 pair `132`/`133`, for approval
 
