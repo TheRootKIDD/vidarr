@@ -1222,6 +1222,47 @@ Not chosen, and why:
 
 Consequences: `03 §2`'s L8 row and `§1`'s `small` list gain L8b. No model or spec change; a code change in the eval script only (`--compare-pair`, with a unit test). Bears on H17 and I41.
 
+### ADR-059 — H17's first-sentence clause is read on covered tokens (I42 option (b)); amends ADR-055 §6 as used by ADR-057 §7 and ADR-058 §3
+2026-11-05 · proposed (drafted on the user's "yes, draft the ADR for I42 option (b)")
+
+Context: `046` scored the two seeds of one config, the L5 `small` pair `132`/`133`, on wiki-lead.
+- Seed 1 beats seed 0 past ADR-055 §6's floor on all three full splits (−0.066 / −0.013 / −0.042 against 0.015 / 0.013 / 0.012). The rule calls that "supports".
+- On the in-table first sentence, the spread sits on the 15,436 tokens before the first retrieval boundary: the title and the lead's opening words, 0.29 nats between seeds. The 55,516 covered first-sentence tokens differ by only 0.002, a ninth of their floor.
+- The floor, 4 × max(σ, article-bootstrap SE), resamples articles, not training runs (I42).
+- Those pre-boundary tokens carry no retrieval in any L8b run: the branch is exactly zero there (`175`'s random-rows probe leaves them unchanged). So they add seed noise to H17's main split and no signal.
+
+Decision:
+1. **The first-sentence clause is read on `in_first_cov`:** in-table first-sentence tokens that have neighbours. The mask is ADR-057 §6's, set by the retrieval pipeline alone, identical for every run and base, and reproduced by `045` and `046`. It is not `in_first_hit`, because that subset is chosen by retrieval success. The full `in_first` split is still reported, but it does not enter the verdict.
+2. **Everything else in ADR-055 §6 is unchanged.**
+   - The rest-of-lead clause stays on the full `in_rest`.
+   - Floors stay at 4 × max(0.0030, bootstrap SE), with no seed term (option (c) not taken).
+   - FineWeb-Edu Δ ≤ 2σ for *supports*, > 4σ for *weakens*.
+   - **Supports:** `in_first_cov` and `in_rest` both beat their floors, and Δ ≤ 2σ.
+   - **Weakens:** neither beats its floor, or Δ > 4σ.
+   - **Silent:** otherwise.
+3. **Recorded limit:** the rest-of-lead split's own seed spread in `046`, −0.013, is at its floor (0.013). That spread is not on pre-boundary tokens, so this ADR does not remove it. A *supports* that rests on `in_rest` beating its floor by less than ≈ 0.013 is therefore within one pair's seed spread, and the write-up says so. Option (d), a seed term on `in_rest`, is not taken.
+4. **Scope:**
+   - **ADR-058's pair verdict** (`176`/`177` vs `132`/`133`) uses this rule, on pair means.
+   - **Earlier runs are re-read:**
+     - `175` vs `110`: `in_first_cov` −0.0369 (floor 0.0140) beats, `in_rest` −0.0105 (0.0121) misses → *silent*, unchanged.
+     - `174` vs `110`: `in_first_cov` +0.0187 and `in_rest` +0.0259, neither beats → *weakens*, unchanged.
+     - `173` has no covered score. It is re-scored on the masks once the rig is idle after `queue_small_11` (≈ 2 min, written to a new rig id, since `173` is closed). Its *weakens* stands unless its `in_first_cov` beats the floor, in which case it becomes *silent*, and that is recorded.
+   - Verdicts on other hypotheses do not use wiki-lead and are untouched.
+5. **Code:**
+   - `compare` and `compare_pair` gain a field `verdict_h17_covered`, the rule of (2) on `in_first_cov`. It is present whenever both sides have covered splits. `verdict_h17` keeps ADR-055 §6's full-split reading, for the record.
+   - A unit test covers it: covered beats and full misses → covered verdict *supports* where the full verdict is *silent*.
+   - **Timing:** `queue_small_11` aborts if `model/`, `scripts/` or `costmodel/` change before a run starts. So the change is built on a branch now and merged only after `177` has started (≈ 12:35 2026-11-06). The pair compare at the end of the queue then runs the merged code.
+   - If the merge misses that window, the pair verdict is read from the pair compare's existing `in_first_cov` fields under (2) by hand, and the field is added after.
+6. **Cost:** a few minutes of idle-rig time for `173`'s re-score. No training, no downloads.
+
+Not chosen, and why:
+- **(a) keep the rule:** `046` shows it calls two seeds of one config "supports".
+- **(c) a seed term on every floor:** one pair is a poor estimate of seed variance, and it would put the rest-of-lead floor near 0.04, past anything `175` showed. It would also punish the covered split for noise it does not have.
+- **(d) (b) plus a seed term on `in_rest`:** the same estimation problem on the clause where it would bite. It is left as the recorded limit of (3) instead.
+- **`in_first_hit` instead of covered:** it conditions on retrieval having worked, which is what the run is testing.
+
+Consequences: `01`/`03` unchanged (the rule lives here and in the eval script). I42 is answered by option (b) on acceptance, with (3)'s limit recorded. Bears on H17, I41 and I42.
+
 ## Proposed / pending
 - **ADR-028** — Unit model revisions from the author's hardware document (`docs/07 §4`): (a) two compute classes per chip — an FF core with a large array ($s_{min,ff}$ = 256–1024) and attention cores with small arrays ($s_{min,attn}$ ≈ 64), hence $\phi_{ff}$, $\phi_{attn}$ as separate scenario inputs; (b) the tile floor is a *row* floor, $N$ = $M$ × (LHS bw / RHS bw) rows per weight tile, with each token contributing 1 + $m$ rows under $m$-token speculation — the scheduler's queues count rows; (c) the reduce leg of the local fabric carries ≥ 16-bit partial sums: `02 §2` traffic becomes $b d\, b_{act} + b d\, b_{sum}$, $b_{sum}$ ≥ 2; (d) full pipelining inside the unit doubles tokens in flight and per-token latency — the Little's-law budget $Z$ of `02 §5.5` carries the factor; (e) router-based unit fabrics are ≤ 50 % link-efficient (avg. 2 hops), torus collectives 100 %: `02 §1`'s "switch" option is not equivalent to a torus; (f) the asymmetric 4×4×4 torus all-gather costs ≈ 3X/(8B) vs ≈ X/(2B) on a flat ring (our derivation from the author's algorithm) — the number S1/S3 must reproduce; (g) the failure domain is the 4-chip ring board, and a failed rail port is bypassed through torus neighbours at ¼ load (`02 §11`); (h) the replica-rounding utilisation floor $\ell / \lceil \ell \rceil$ reported beside the Little's-law model in S4. Also fills `note64.yaml` with the sourced ratios of `docs/07 §6`; absolute $\phi$, $\beta_C$, $\lambda_C$, $\nu_C$ stay placeholders (I4). Bears on H1, H5, H8, H9, H10, H11, H16; changes `02 §1, §2, §5, §11`.
 - **ADR-024** — Parallel prefill mode for long prompts (the author's "less effective mode"): (a) all segments at once with local attention only, global cache filled afterwards from context-poor final vectors; (b) pipelined segments, segment $k+1$ at iteration $j$ attending globally to segment $k$'s iteration-$j$ caches (transient per-iteration global cache during prefill, in-flight depth up to $r$ segments). Both are inference-time modes of a sequentially trained model; E-Q12 evaluates both against sequential prefill on continuation loss and TTFT (S5). If both degrade, a mixed-mode training variant becomes a later ladder step.
@@ -2306,6 +2347,13 @@ and an ADR first, L6c likewise; the `small` programme (L0, L1, L2, L3, L5, L5d a
 the ladder's own next step and needs no new code. The choice between "more `screen` variants" and
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
+
+### 2026-11-05 (15:50) — **ADR-059 proposed**: H17's first-sentence clause read on covered tokens (I42 option (b)), for approval
+
+- Drafted on the user's "yes, draft the ADR for I42 option (b)".
+- Re-read under it, `175` stays *silent* and `174` stays *weakens*. `173` needs a ≈ 2-min covered re-score after `queue_small_11`.
+- The code (a `verdict_h17_covered` field) goes on a branch and is merged only after `177` has started, so the queue's code check does not abort it.
+- `queue_small_11` is running `176`.
 
 ### 2026-11-05 (15:35) — **Rig `046`: the L5 pair on wiki-lead; its two seeds differ past the H17 floor on every full split (I42 opened); `queue_small_11` running `176`**
 
