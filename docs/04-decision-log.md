@@ -2348,6 +2348,18 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-11-06 (12:22) — **`176` L8b `small` seed 0 = 3.0904, +0.0126 vs `132` (4.2σ) → per-seed H17 *weakens* (held-out clause); covered first sentence −0.0276 (beats), rest −0.0057 (misses)**; `adr059` merged; `177` running
+
+- **`176`:**
+  - 20.81 h, 34.1 k tok/s (0.69× `132`), retrieval ≈ 33 % of the step, 5.72 GiB, `n_thermal` 1 sample (no slowdown).
+  - The held-out gap to `132` crosses zero at 0.4–0.7 B tokens and settles at +0.012. `175`'s `screen` parity was a 1 B-token effect.
+  - wiki-lead vs `132`: covered −0.0276 (floor 0.0146), own retrieved −0.0285, full first sentence −0.0446, rest −0.0057 (0.0125), control −0.0234. Uncovered tokens 2.547, between the L5 seeds (I41).
+  - Reliance on own-retrieved tokens +0.0514 (reads), on FineWeb-Edu +0.0205; α 91.1 % of ln 8.
+  - The per-seed compare ran pre-merge code, so `verdict_h17_covered` was read from its covered row by hand: *weakens*.
+- **The pair** decides (ADR-058): `177` must finish below 3.0830 for the pair's Δ to fall inside 4σ, and below 3.0710 for ≤ 2σ.
+- **`adr059` merged** after `177` started (12:21). Ruff passes. The full test suite waits for an idle rig (no CPU load beside the DDP run); the branch's own tests passed.
+- **`queue_small_11`:** `177` started 12:21, ETA ≈ 09:30 2026-11-07, then its eval and the pair compare.
+
 ### 2026-11-05 (15:44) — **ADR-059 accepted** (the user: "yes, accept it, push, then continue"); I42 answered by option (b)
 
 - H17's first-sentence clause is now read on `in_first_cov`. `175` stays *silent* and `174` *weakens*; `173`'s covered re-score follows after `queue_small_11`.
