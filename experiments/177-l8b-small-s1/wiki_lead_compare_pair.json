@@ -1,0 +1,71 @@
+{
+ "arm": "176-l8b-small-s0+177-l8b-small-s1",
+ "base": "132-l5-small-s0+133-l5-small-s1",
+ "splits": {
+  "in_first": {
+   "arm": 2.785655605321216,
+   "base": 2.8094583185546522,
+   "delta": -0.02380271323343613,
+   "bootstrap_se": 0.0024461398103463065,
+   "floor": 0.012,
+   "beats_floor": true,
+   "tokens": 141904.0
+  },
+  "in_rest": {
+   "arm": 3.1347087615155442,
+   "base": 3.1317355915600134,
+   "delta": 0.002973169955530862,
+   "bootstrap_se": 0.0021933518244434957,
+   "floor": 0.012,
+   "beats_floor": false,
+   "tokens": 155822.0
+  },
+  "out_lead": {
+   "arm": 2.9580760512580735,
+   "base": 2.9654464409528805,
+   "delta": -0.007370389694807353,
+   "bootstrap_se": 0.0015760444906099346,
+   "floor": 0.012,
+   "beats_floor": false,
+   "tokens": 296596.0
+  },
+  "in_first_cov": {
+   "arm": 2.8636643316190638,
+   "base": 2.89395166320403,
+   "delta": -0.030287331584965823,
+   "bootstrap_se": 0.0027266144384399723,
+   "floor": 0.012,
+   "beats_floor": true,
+   "tokens": 111032.0
+  },
+  "in_first_hit": {
+   "arm": 2.8516169639081945,
+   "base": 2.8825054428969983,
+   "delta": -0.030888478988803918,
+   "bootstrap_se": 0.002818278173365422,
+   "floor": 0.012,
+   "beats_floor": true,
+   "tokens": 109194.0
+  }
+ },
+ "heldout": {
+  "arm": 3.086992859840393,
+  "base": 3.0747554302215576,
+  "relative": 0.003979968454906886,
+  "delta": 0.01223742961883545,
+  "within": true,
+  "within_2sigma": false,
+  "beyond_4sigma": true,
+  "arm_seeds": [
+   3.090394973754883,
+   3.0835907459259033
+  ],
+  "base_seeds": [
+   3.077788829803467,
+   3.0717220306396484
+  ]
+ },
+ "verdict_h17": "weakens",
+ "verdict_h17_literal_0p5pct": "silent",
+ "verdict_h17_covered": "weakens"
+}

@@ -1450,7 +1450,7 @@ Cost units from `docs/06 §4`: one `screen` run ≈ 8 h (1 B tokens, 1 seed); on
 
   **Closed 2026-11-04 by ADR-057** (accepted): L8, L8q and L8k close at `screen`, with L8c/L8d. The query side can be trained (`174`); the ceiling is the placement's (`044`). H17 moves to L8b (`175`).
 
-- **I41** *(2026-11-05, ADR-057, `175`)* **Why the L8-family models beat L5 by ≈ 0.1 nats on a wiki-lead's first tokens, before any retrieval.**
+- **I41** *(2026-11-05, ADR-057, `175`; **closed 2026-11-07**: seed noise — the L8b and L5 `small` pair means differ by −0.0005 on these tokens, `177`)* **Why the L8-family models beat L5 by ≈ 0.1 nats on a wiki-lead's first tokens, before any retrieval.**
   - **What was measured:** on the 15,436 in-table first-sentence tokens before L8b's first retrieval boundary, `175` scores 2.779 and `174` 2.795, against `110`'s 2.895. `175`'s memory branch is exactly zero there (random rows: 2.779).
   - **Why it matters:** this part is about half of `175`'s in-table first-sentence gain over `110`. The covered half beats the floor alone, so the H17 reading does not rest on it, but it inflates the full split.
   - **Not measured:** whether it is the width (704 against L5's), training with a memory branch, or position-specific. `173` and a FineWeb-Edu loss-by-position split would tell. It is a probe on an idle rig, or nothing; the user's call.
@@ -2347,6 +2347,26 @@ and an ADR first, L6c likewise; the `small` programme (L0, L1, L2, L3, L5, L5d a
 the ladder's own next step and needs no new code. The choice between "more `screen` variants" and
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
+
+### 2026-11-07 (09:20) — **L8b `small` pair `176`/`177` = 3.0870, +0.0122 vs the L5 pair (4.1σ) → H17 *weakened* at two seeds (ADR-059's rule, held-out clause); covered first sentence −0.0303 (beats), rest +0.0030 (misses); the L8b arm closes at `small` (ADR-058 §3)**; `queue_small_11` done; `047`: `173` stays *weakens*
+
+- **`177`:**
+  - 3.0836, +0.0118 vs `133`. Per seed *silent* (eval-subset Δ +0.0119, just under 4σ).
+  - 20.82 h, 34.1 k tok/s (0.70× `133`), `n_thermal` 1 sample.
+- **The pair** (`--compare-pair`, ADR-058 §3 under ADR-059):
+  - held-out +0.0122 (0.0003 past 4σ). The gap opens at 0.4–0.7 B tokens and still widens at 2.5 B (+0.0116 at step 4300).
+  - covered −0.0303, own retrieved −0.0309, full first sentence −0.0238 (per seed −0.045 / −0.003), rest +0.0030, control −0.0074.
+  - Reliance on own-retrieved tokens +0.051 in both seeds (reads); α 91–92 % of ln 8.
+  - Verdict **weakens** on both rules.
+- **I41 closed:** pre-boundary tokens differ by −0.0005 between the pair means, against ±0.1 per seed. It was seed noise, not an L8-family effect.
+- **`047`** (ADR-059 §4): `173` re-scored on the covered masks. Covered +0.0281 vs `110`, no clause beats → *weakens*, unchanged. Every earlier H17 verdict stands. A stray file written into `173`'s directory by a mistyped compare was deleted uncommitted (recorded in `047`).
+- Full test suite on the idle rig after the `adr059` merge: 173 passed.
+- **Where H17 stands:**
+  - weakened by `173` and `174` (L8, `screen`) and by the L8b `small` pair;
+  - L8b's memory does lower loss on the stored sentence (−0.03, 2.5× floor), but not on the rest of the article, and it costs +0.012 on general text at matched FLOPs.
+  - ADR-057 §8's limits apply: vector values, corpus mismatch, and retrieval cost outside the FLOP match.
+  - A further arm is a new ADR, the user's call. Options: token-level (RETRO) neighbours; Wikipedia in the training mix; a branch that does not take width from the experts. Or move on to L9 / S5–S7.
+- Nothing is running. Next ladder id 178, next rig id 048.
 
 ### 2026-11-06 (12:22) — **`176` L8b `small` seed 0 = 3.0904, +0.0126 vs `132` (4.2σ) → per-seed H17 *weakens* (held-out clause); covered first sentence −0.0276 (beats), rest −0.0057 (misses)**; `adr059` merged; `177` running
 

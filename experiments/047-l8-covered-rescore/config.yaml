@@ -1,0 +1,5 @@
+# Rig 047 (ADR-059 §4): 173-l8-screen re-scored on wiki-lead with the covered masks, to re-read its H17 verdict.
+# No training. cuda:0, rig idle (after queue_small_11), 2026-11-07 ~09:20, code a6c429a.
+command: python -m scripts.analysis.eval_wiki_lead --id 173-l8-screen --covered --device cuda:0 --out experiments/047-l8-covered-rescore/wiki_lead_173_covered.json
+base: experiments/045-l8b-gate/wiki_lead_110_covered.json
+compare: scripts.analysis.eval_wiki_lead.score(173 covered, 110 covered) -> wiki_lead_compare_173_vs_110.json
