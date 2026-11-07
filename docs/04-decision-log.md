@@ -1264,7 +1264,7 @@ Not chosen, and why:
 Consequences: `01`/`03` unchanged (the rule lives here and in the eval script). I42 is answered by option (b) on acceptance, with (3)'s limit recorded. Bears on H17, I41 and I42.
 
 ### ADR-060 — L8b-pv: L8b with its value and key maps applied once per boundary, so the memory stops taking width from the experts; rig `048`, runs `178`/`179` at `small`
-2026-11-07 · proposed (drafted on the user's "Go with: A further H17 attempt needs a new ADR")
+2026-11-07 · accepted (the user's decision: "yes, accept it, push, then continue"; drafted on "Go with: A further H17 attempt needs a new ADR")
 
 Context: the L8b pair (`176`/`177`, ADR-058/059) weakened H17 on its held-out clause: +0.0122 vs the L5 pair (4.1σ), still widening at 2.5 B tokens. Meanwhile the memory did real work on what it holds (covered first sentence −0.030, 2.5× floor; reliance +0.051 in both seeds).
 
@@ -2396,6 +2396,11 @@ and an ADR first, L6c likewise; the `small` programme (L0, L1, L2, L3, L5, L5d a
 the ladder's own next step and needs no new code. The choice between "more `screen` variants" and
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
+
+### 2026-11-07 (15:24) — **ADR-060 accepted** (the user: "yes, accept it, push, then continue")
+
+- `01 §4.6` gains the L8b-pv paragraph and `§10` its memory line; `03 §2`'s L8 row names the L8b-pv arm.
+- Build, then rig `048` (equivalence on real shapes, sizing), then `queue_small_12` (`178`/`179`).
 
 ### 2026-11-07 (15:22) — **ADR-060 proposed**: L8b-pv, L8b's value and key maps applied once per boundary (same function), width 704 → 832; a `small` pair `178`/`179` vs the L5 pair, for approval
 
