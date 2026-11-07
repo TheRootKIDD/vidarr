@@ -1263,6 +1263,55 @@ Not chosen, and why:
 
 Consequences: `01`/`03` unchanged (the rule lives here and in the eval script). I42 is answered by option (b) on acceptance, with (3)'s limit recorded. Bears on H17, I41 and I42.
 
+### ADR-060 — L8b-pv: L8b with its value and key maps applied once per boundary, so the memory stops taking width from the experts; rig `048`, runs `178`/`179` at `small`
+2026-11-07 · proposed (drafted on the user's "Go with: A further H17 attempt needs a new ADR")
+
+Context: the L8b pair (`176`/`177`, ADR-058/059) weakened H17 on its held-out clause: +0.0122 vs the L5 pair (4.1σ), still widening at 2.5 B tokens. Meanwhile the memory did real work on what it holds (covered first sentence −0.030, 2.5× floor; reliance +0.051 in both seeds).
+
+The cost on general text has an obvious candidate cause: matched active FLOPs take the branch out of expert width. L5 solves to $d_{ff}$ = 896 and L8b to 704 (−21 %). In ADR-057's costmodel term the branch is 1.505 MFLOP per token-iteration, and 1.18 M of that is the read-out $W_v$ (768 × 768), charged at every token and every iteration. But the read-out is linear in the values:
+
+$$\mathrm{Mem} = W_v \textstyle\sum_n \alpha_n e_n = \sum_n \alpha_n (W_v e_n),$$
+
+and $e_n$, $\kappa_n = W_\kappa e_n$ and so $V_n = W_v e_n$ depend only on the boundary, not on the token or the iteration. Computing $V_n$ and $\kappa_n$ once per boundary leaves the function unchanged and cuts the branch to:
+- per token and iteration: the query $2(d + d_e) d_m$, scores $2 d_m K$, and the weighted sum $2 K d$, ≈ 0.227 MFLOP;
+- once per token, amortised over the 16-token boundary: the maps $(2 d_{enc} d_m + 2 d_{enc} d) K / s$, ≈ 0.69 MFLOP.
+
+Over 8 iterations that is ≈ 2.5 MFLOP per token, against 12.0 now. The width re-solves to $d_{ff}$ = 832 (exact 863.5, rounded down to a multiple of 64 by ADR-025/027), so the gap to L5 is −7 % instead of −21 %. The current code also re-applies $W_\kappa$ at every iteration (`read_neighbours`). So ADR-057's costmodel was right about what the code did; the code did more than the function needs.
+
+Decision:
+1. **L8b-pv = L8b with the per-boundary maps hoisted.**
+   - $\kappa_n$ and $V_n$ are computed once per segment from the neighbours' $e_n$, before the middle iterations, and threaded through `IterState` as the neighbours are.
+   - Each iteration computes only $q$, the 8 scores, α, and $\sum_n \alpha_n V_n$.
+   - Everything else is `176`/`177`'s: table, encoder, retrieval ($s$ 16, window 32, minimum 8, $K$ 8), $W_v$ zero-initialised, no auxiliary loss, $r$ = 8.
+   - The only change in the trained model is the width, 704 → 832, which the costmodel re-solves from the new memory term.
+2. **Costmodel:** `memory_flops` gains the hoisted form (per-iteration terms plus the per-token maps divided by $r$, so the per-iteration sum stays the interface). L8b keeps ADR-057's term, so `175`–`177`'s accounting is unchanged.
+3. **Spec first:** `01 §4.6` gains an "L8b-pv (ADR-060)" sentence, and `01 §10`'s L8b memory line gains the hoisted cost and width 832.
+4. **Unit tests:**
+   - At equal weights, L8b-pv's branch output equals L8b's, forward and backward, at fp32 tolerance.
+   - The costmodel term and the solved width (832).
+   - Checkpointed equals plain.
+   - Random-rows and record probes behave as in L8b.
+5. **Rig `048`:** a sizing probe of L8b-pv (peak ≤ 10 GiB per GPU, tok/s, retrieval share) and the equivalence test on real shapes.
+6. **Runs:** `178-l8b-pv-small-s0` and `179-l8b-pv-small-s1`, at 2.5 B tokens, micro-batch 4, against the L5 pair `132`/`133`.
+   - **Verdict:** ADR-058 §3's pair rule read under ADR-059 (covered first sentence, rest of lead, held-out ≤ 2σ / > 4σ, σ 0.0030).
+   - **Also reported:** the deltas against the L8b pair (same function, wider experts). That isolates what the 128 columns of width buy.
+   - Via `queue_small_12.sh` with the usual gate. Each run gets its wiki-lead eval with probes and covered splits, then the per-seed and pair compares.
+   - ≈ 2 × 22 h (`176`'s 20.8 h plus wider experts; `048` gives the number).
+7. **Readings, set now:**
+   - **Supports:** a `medium` question for H17 is the user's call, by ADR. This is the ladder's next size, and nothing follows automatically.
+   - **Held-out within 4σ but no *supports*:** the width was the general-text cost, and the memory's knowledge gain is confined to the stored sentence. This closes the vector-value design, whose limit stands as ADR-057 §8 recorded it.
+   - **Held-out past 4σ again:** the width is not the cause. What remains is the branch's interference with the residual, with H17 weakened a second time at `small`.
+   - A further H17 arm (token-level neighbours, Wikipedia in the training mix) needs a new ADR after this, in every case.
+8. **Cost:** ≈ 10 min of probes and ≈ 44 h of training and evals on the local rig. Everything is local: no downloads, no services, no purchases.
+
+Not chosen, and why:
+- **RETRO-style token neighbours (chunked cross-attention):** this attacks the vector-value limit, but it adds FLOPs, so the width falls below 704, in the direction the measured cost already points. It is also ADR-009's departure. It comes after the width question is settled.
+- **Wikipedia text in the training mix:** it would change the corpus (ADR-014). The L5 pair would then no longer be a matched baseline, so a new L5 pair would be needed (≈ 30 h more), and the general-text clause would be read on a different training distribution.
+- **A `screen` run of L8b-pv first:** at `screen`, L8b already tied L5 (`175`). The cost appeared only past 0.5 B tokens, so `screen` cannot answer this question. Each `small` run stays under one node-day, and `175` is a finished `screen` of the same function.
+- **Reading the memory at fewer iterations:** H17 is a *per-iteration* memory, so this would test something else.
+
+Consequences: `01 §4.6/§10`, `03 §2` (L8 row: the L8b-pv arm), `costmodel/flops.py`, `model/config.py` (the `L8b-pv` preset, `memory.hoist`), `model/memory.py` and `model/middle.py` (the hoisted maps through `IterState`), and the tests. Bears on H17.
+
 ## Proposed / pending
 - **ADR-028** — Unit model revisions from the author's hardware document (`docs/07 §4`): (a) two compute classes per chip — an FF core with a large array ($s_{min,ff}$ = 256–1024) and attention cores with small arrays ($s_{min,attn}$ ≈ 64), hence $\phi_{ff}$, $\phi_{attn}$ as separate scenario inputs; (b) the tile floor is a *row* floor, $N$ = $M$ × (LHS bw / RHS bw) rows per weight tile, with each token contributing 1 + $m$ rows under $m$-token speculation — the scheduler's queues count rows; (c) the reduce leg of the local fabric carries ≥ 16-bit partial sums: `02 §2` traffic becomes $b d\, b_{act} + b d\, b_{sum}$, $b_{sum}$ ≥ 2; (d) full pipelining inside the unit doubles tokens in flight and per-token latency — the Little's-law budget $Z$ of `02 §5.5` carries the factor; (e) router-based unit fabrics are ≤ 50 % link-efficient (avg. 2 hops), torus collectives 100 %: `02 §1`'s "switch" option is not equivalent to a torus; (f) the asymmetric 4×4×4 torus all-gather costs ≈ 3X/(8B) vs ≈ X/(2B) on a flat ring (our derivation from the author's algorithm) — the number S1/S3 must reproduce; (g) the failure domain is the 4-chip ring board, and a failed rail port is bypassed through torus neighbours at ¼ load (`02 §11`); (h) the replica-rounding utilisation floor $\ell / \lceil \ell \rceil$ reported beside the Little's-law model in S4. Also fills `note64.yaml` with the sourced ratios of `docs/07 §6`; absolute $\phi$, $\beta_C$, $\lambda_C$, $\nu_C$ stay placeholders (I4). Bears on H1, H5, H8, H9, H10, H11, H16; changes `02 §1, §2, §5, §11`.
 - **ADR-024** — Parallel prefill mode for long prompts (the author's "less effective mode"): (a) all segments at once with local attention only, global cache filled afterwards from context-poor final vectors; (b) pipelined segments, segment $k+1$ at iteration $j$ attending globally to segment $k$'s iteration-$j$ caches (transient per-iteration global cache during prefill, in-flight depth up to $r$ segments). Both are inference-time modes of a sequentially trained model; E-Q12 evaluates both against sequential prefill on continuation loss and TTFT (S5). If both degrade, a mixed-mode training variant becomes a later ladder step.
@@ -2347,6 +2396,13 @@ and an ADR first, L6c likewise; the `small` programme (L0, L1, L2, L3, L5, L5d a
 the ladder's own next step and needs no new code. The choice between "more `screen` variants" and
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
+
+### 2026-11-07 (15:22) — **ADR-060 proposed**: L8b-pv, L8b's value and key maps applied once per boundary (same function), width 704 → 832; a `small` pair `178`/`179` vs the L5 pair, for approval
+
+- Drafted on the user's "Go with: A further H17 attempt needs a new ADR".
+- The L8b pair's general-text cost is the candidate target. The branch's read-out was computed per token and iteration though its input is per boundary.
+- Costmodel estimate: 12.0 → 2.5 MFLOP per token, width 832 (L5 896, L8b 704).
+- Nothing is built or running until the user accepts.
 
 ### 2026-11-07 (09:20) — **L8b `small` pair `176`/`177` = 3.0870, +0.0122 vs the L5 pair (4.1σ) → H17 *weakened* at two seeds (ADR-059's rule, held-out clause); covered first sentence −0.0303 (beats), rest +0.0030 (misses); the L8b arm closes at `small` (ADR-058 §3)**; `queue_small_11` done; `047`: `173` stays *weakens*
 
