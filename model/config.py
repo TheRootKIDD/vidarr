@@ -168,6 +168,9 @@ class MemoryCfg:
     # 8-way softmax; "product_key" = the learned in-loop lookup (L8, L8q, L8k; closed at screen)
     mode: Literal["product_key", "retrieved"] = "product_key"
     retrieval: RetrievalCfg | None = None
+    # L8b-pv (ADR-060): kappa_n and V_n = W_v e_n once per boundary, not per token-iteration
+    # (the same function; the branch's FLOPs fall, so the width re-solves to 832)
+    hoist: bool = False
 
     @property
     def n_entries(self) -> int:
@@ -284,6 +287,7 @@ class ModelCfg:
             fixed_keys=mc.keys == "pca_fixed",
             retrieved_k=0 if mc.retrieval is None or mc.mode != "retrieved" else mc.retrieval.k,
             retrieved_stride=1 if mc.retrieval is None else mc.retrieval.stride,
+            hoisted=mc.hoist,
         )
 
     def validate(self) -> None:
@@ -301,6 +305,8 @@ class ModelCfg:
                 raise ValueError("memory needs 1 < topk <= half_topk**2 and half_topk <= grid")
             if mc.mode not in ("product_key", "retrieved"):
                 raise ValueError("memory.mode must be product_key or retrieved (ADR-057)")
+            if mc.hoist and mc.mode != "retrieved":
+                raise ValueError("memory.hoist (L8b-pv, ADR-060) applies to mode retrieved")
             if mc.mode == "retrieved":
                 rc = mc.retrieval
                 if rc is None:
@@ -498,6 +504,17 @@ def ladder(step: str, **overrides: Any) -> ModelCfg:
                 table="/mnt/nvme/memory/wiki-20231101-lead",
                 mode="retrieved",
                 retrieval=RetrievalCfg(),
+            ),
+        ),
+        # ADR-060: L8b with the value and key maps once per boundary (width re-solves to 832)
+        "L8b-pv": replace(
+            rec,
+            memory=MemoryCfg(
+                enabled=True,
+                table="/mnt/nvme/memory/wiki-20231101-lead",
+                mode="retrieved",
+                retrieval=RetrievalCfg(),
+                hoist=True,
             ),
         ),
         "L10a": replace(rec, numerics=NumericsCfg(sparsity_2_4=True)),

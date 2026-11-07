@@ -56,6 +56,7 @@ STEPS = [
     "L8q",
     "L8k",
     "L8b",
+    "L8b-pv",
     "L4",
 ]
 
@@ -86,6 +87,7 @@ def tiny(step: str, **kw) -> ModelCfg:
             keys=c.memory.keys,
             mode=c.memory.mode,
             retrieval=TOY_RC if c.memory.retrieval else None,
+            hoist=c.memory.hoist,
         )
         if c.memory.enabled
         else c.memory,
@@ -1313,6 +1315,104 @@ def test_l8b_checkpointed_iterations_match() -> None:
         mem = m.middle.mem
         grads.append((mem.q.weight.grad.clone(), mem.kappa.weight.grad.clone()))
     assert all(torch.allclose(a, b, atol=1e-5) for a, b in zip(*grads, strict=True))
+
+
+# ---- L8b-pv: the maps once per boundary (ADR-060) ------------------------------------------
+
+
+def _pv_pair(seed: int = 0) -> tuple[ModelCfg, BigMoE, BigMoE]:
+    """L8b and L8b-pv at equal weights (the same parameter set; only the compute order differs)."""
+    cfg, b = _l8b_model(seed)
+    pv = BigMoE(dc.replace(cfg, memory=dc.replace(cfg.memory, hoist=True)))
+    pv.load_state_dict(b.state_dict())
+    return cfg, b, pv
+
+
+def test_l8b_pv_equals_l8b_forward_and_backward() -> None:
+    cfg, b, pv = _pv_pair(seed=5)
+    gen = torch.Generator().manual_seed(11)
+    toks = torch.randint(3, cfg.vocab, (2, cfg.context + 1), generator=gen)
+    for m in (b, pv):
+        m.train()
+        m.loss(toks, r=cfg.middle.r_max).loss.backward()
+    with torch.no_grad():
+        b.eval(), pv.eval()
+        assert torch.allclose(b.loss(toks).loss, pv.loss(toks).loss, atol=1e-5)
+    for (n1, p1), (n2, p2) in zip(b.named_parameters(), pv.named_parameters(), strict=True):
+        assert n1 == n2
+        if p1.grad is None:
+            assert p2.grad is None, n1
+            continue
+        assert torch.allclose(p1.grad, p2.grad, atol=1e-5, rtol=1e-4), n1
+
+
+def test_l8b_pv_branch_matches_and_is_zero_without_neighbours() -> None:
+    cfg, b, pv = _pv_pair()
+    mem = pv.middle.mem
+    nb = cfg.context // cfg.memory.retrieval.stride
+    u, e = torch.randn(2, cfg.context, cfg.d), torch.randn(cfg.middle.depth_embed)
+    g = torch.Generator().manual_seed(1)
+    nbr = torch.randint(0, cfg.memory.n_entries, (2, nb, cfg.memory.retrieval.k), generator=g)
+    nbr[:, 0] = -1
+    nbr[0, 3, :2] = -1  # a partly valid boundary
+    with torch.no_grad():
+        ref = b.middle.mem(u, e, nbr)
+        got = mem(u, e, nbr, mem.prepare(nbr))
+        assert torch.allclose(got, ref, atol=1e-5)
+        none = torch.full_like(nbr, -1)
+        assert torch.equal(mem(u, e, none, mem.prepare(none)), torch.zeros_like(ref))
+
+
+def test_l8b_pv_checkpointed_iterations_match() -> None:
+    cfg, _, base = _pv_pair(seed=2)
+    gen = torch.Generator().manual_seed(9)
+    toks = torch.randint(3, cfg.vocab, (2, cfg.context + 1), generator=gen)
+    grads = []
+    for ckpt in (True, False):
+        m = BigMoE(dc.replace(cfg, memory=base.cfg.memory, checkpoint_iterations=ckpt))
+        m.load_state_dict(base.state_dict())
+        m.train()
+        m.loss(toks, r=cfg.middle.r_max).loss.backward()
+        mem = m.middle.mem
+        grads.append(
+            (mem.q.weight.grad.clone(), mem.kappa.weight.grad.clone(), mem.out.weight.grad.clone())
+        )
+    assert all(torch.allclose(a, b, atol=1e-5) for a, b in zip(*grads, strict=True))
+
+
+def test_l8b_pv_width_and_flops_follow_costmodel() -> None:
+    from costmodel.config import Model as CmM
+    from costmodel.flops import memory_flops
+    from costmodel.params import memory_params
+
+    c = ladder("L8b-pv")
+    assert c.expert_width() == 832
+    cm = CmM(d=c.d, depth_embed=c.middle.depth_embed, mem=c.cm_memory())
+    per_iter = 2 * 832 * 128 + 2 * 128 * 8 + 2 * 8 * 768
+    per_token = (2 * 768 * 128 + 2 * 768 * 768) * 8 / 16
+    assert memory_flops(cm) == per_iter + per_token / 8
+    assert abs(8 * memory_flops(cm) - 2.5e6) < 0.05e6
+    l8b = ladder("L8b")
+    assert memory_params(cm) == memory_params(
+        CmM(d=l8b.d, depth_embed=l8b.middle.depth_embed, mem=l8b.cm_memory())
+    )
+
+
+def test_l8b_pv_random_rows_probe_keeps_the_valid_set() -> None:
+    cfg, _, pv = _pv_pair()
+    mem = pv.middle.mem
+    nb = cfg.context // cfg.memory.retrieval.stride
+    nbr = torch.full((1, nb, cfg.memory.retrieval.k), -1, dtype=torch.long)
+    nbr[:, 2:, :] = 3
+    u, e = torch.randn(1, cfg.context, cfg.d), torch.randn(cfg.middle.depth_embed)
+    mem.random_cells = True
+    try:
+        with torch.no_grad():
+            out = mem(u, e, nbr, mem.prepare(nbr))
+    finally:
+        mem.random_cells = False
+    s = cfg.memory.retrieval.stride
+    assert torch.equal(out[:, : 2 * s], torch.zeros_like(out[:, : 2 * s]))
 
 
 TABLE_DIR = Path("/mnt/nvme/memory/wiki-20231101-lead")

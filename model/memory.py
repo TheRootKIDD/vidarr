@@ -285,18 +285,32 @@ class KnowledgeMemory(nn.Module):
         self.last_retrieval_s = time.time() - t0
         return out
 
-    def read_neighbours(self, u: Tensor, e: Tensor, nbr: Tensor) -> Tensor:
-        """L8b's branch: u [B, T, d], nbr [B, ceil(T / s), K] -> Mem [B, T, d]."""
+    def _cells(self, nbr: Tensor) -> Tensor:
+        if self.random_cells:  # reliance probe: valid neighbours replaced by random table rows
+            return torch.where(nbr >= 0, torch.randint_like(nbr, self.mc.n_entries), nbr)
+        return nbr
+
+    def prepare(self, nbr: Tensor) -> tuple[Tensor, Tensor]:
+        """L8b-pv (ADR-060): (kappa_n, V_n = W_v e_n) [B, nb, K, d_m], [B, nb, K, d], once per
+        boundary, before the middle iterations. The random-rows probe draws its rows here."""
+        vec = self.table[self._cells(nbr).clamp_min(0)].to(self.kappa.weight.dtype)
+        return self.kappa(vec), self.out(vec.to(self.out.weight.dtype))
+
+    def read_neighbours(
+        self, u: Tensor, e: Tensor, nbr: Tensor, prep: tuple[Tensor, Tensor] | None = None
+    ) -> Tensor:
+        """L8b's branch: u [B, T, d], nbr [B, ceil(T / s), K] -> Mem [B, T, d]. With `prep`
+        (L8b-pv) the maps come precomputed and Mem = sum_n alpha_n V_n, the same function."""
         rc = self.mc.retrieval
         assert rc is not None
         b, t, _ = u.shape
         s, nb = rc.stride, nbr.shape[1]
-        cells = nbr
-        if self.random_cells:
-            cells = torch.where(nbr >= 0, torch.randint_like(nbr, self.mc.n_entries), nbr)
-        valid = cells >= 0  # [B, nb, K]
-        vec = self.table[cells.clamp_min(0)].to(self.kappa.weight.dtype)  # [B, nb, K, d_enc]
-        kap = self.kappa(vec)  # once per boundary
+        valid = nbr >= 0  # [B, nb, K]; the random-rows probe keeps the valid set
+        if prep is None:
+            vec = self.table[self._cells(nbr).clamp_min(0)].to(self.kappa.weight.dtype)
+            kap = self.kappa(vec)  # once per boundary
+        else:
+            kap, vals = prep
         q = self.q(torch.cat([u, e.expand(b, t, -1)], dim=-1))
         q = F.pad(q, (0, 0, 0, nb * s - t)).view(b, nb, s, -1)
         sc = torch.einsum("bnsd,bnkd->bnsk", q.float(), kap.float()) / q.shape[-1] ** 0.5
@@ -306,14 +320,20 @@ class KnowledgeMemory(nn.Module):
         if self.record:  # the true neighbours per position, and alpha (0 where none)
             rec_cells = nbr[:, :, None, :].expand(b, nb, s, -1).reshape(b, nb * s, -1)[:, :t]
             self.records.append((rec_cells.detach(), alpha.reshape(b, nb * s, -1)[:, :t].detach()))
+        if prep is not None:
+            m = torch.einsum("bnsk,bnke->bnse", alpha.to(vals.dtype), vals)
+            return m.reshape(b, nb * s, -1)[:, :t]
         m = torch.einsum("bnsk,bnke->bnse", alpha.to(vec.dtype), vec).reshape(b, nb * s, -1)
         return self.out(m[:, :t].to(self.out.weight.dtype))
 
-    def forward(self, u: Tensor, e: Tensor, nbr: Tensor | None = None) -> Tensor:
+    def forward(
+        self, u: Tensor, e: Tensor, nbr: Tensor | None = None,
+        prep: tuple[Tensor, Tensor] | None = None,
+    ) -> Tensor:
         if self.retrieved:
             if nbr is None:
                 raise RuntimeError("L8b's branch needs its neighbours (IterState.nbr)")
-            return self.read_neighbours(u, e, nbr)
+            return self.read_neighbours(u, e, nbr, prep)
         cells, score = self.lookup(u, e)
         if self.random_cells:
             cells = torch.randint_like(cells, self.mc.n_entries)

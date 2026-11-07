@@ -83,6 +83,8 @@ class Memory:
     """ADR-057 (L8b): neighbours per position from retrieval outside the model; 0 = product key."""
     retrieved_stride: int = 1
     """ADR-057: positions per retrieval boundary (the neighbour key map is amortised over it)."""
+    hoisted: bool = False
+    """ADR-060 (L8b-pv): $W_\\kappa$ and $W_v$ applied once per boundary, not per iteration."""
 
 
 @dataclass(frozen=True)

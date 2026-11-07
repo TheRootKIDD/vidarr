@@ -72,13 +72,20 @@ def memory_flops(model: Model, n_streams: int | None = None) -> float:
     $2 d_m \\sqrt{N_m}$, weighted sum $2 k_m d_{enc}$, read-out $2 d_{enc} d$.
     The top-$k$ selections and the per-batch key maps are not counted. L8b (ADR-057): query,
     scores $2 d_m K$, weighted sum $2 K d_{enc}$, read-out, and the neighbour key map
-    $2 d_{enc} d_m K / s$ amortised over a boundary; the retrieval itself is not model FLOPs."""
+    $2 d_{enc} d_m K / s$ amortised over a boundary; the retrieval itself is not model FLOPs.
+    L8b-pv (ADR-060): query, scores, the weighted sum of $V_n$ (width $d$) per iteration, plus
+    $(2 d_{enc} d_m + 2 d_{enc} d) K / s$ once per token, spread over $r_{max}$ iterations."""
     s = model.n_streams if n_streams is None else n_streams
     m = model.mem
     if not m.enabled:
         return 0.0
     q_proj = 2 * (model.d + model.depth_embed) * m.d_m
     read_out = 2 * m.d_enc * model.d
+    if m.retrieved_k and m.hoisted:  # L8b-pv (ADR-060): maps once per boundary
+        k = m.retrieved_k
+        per_iter = q_proj + 2 * m.d_m * k + 2 * k * model.d  # query, scores, sum of V_n
+        per_token = (2 * m.d_enc * m.d_m + 2 * m.d_enc * model.d) * k / m.retrieved_stride
+        return float((per_iter + per_token / model.r_max) * s)  # spread over r_max iterations
     if m.retrieved_k:  # L8b (ADR-057): scores over K neighbours, their key map per boundary
         k = m.retrieved_k
         nbr = 2 * m.d_m * k + 2 * k * m.d_enc + 2 * m.d_enc * m.d_m * k / m.retrieved_stride

@@ -166,6 +166,8 @@ class BigMoE(nn.Module):
                 if neighbours is None
                 else neighbours[:, s0 // nb_s : -(-(s0 + seg) // nb_s)],
             )
+            if st.nbr is not None and cfg.memory.hoist:  # L8b-pv (ADR-060): maps per boundary
+                st = replace(st, nbr_kv=self.middle.mem.prepare(st.nbr))
             for j in range(1, n_iter + 1):
                 prev_active = st.active
                 st, a = self._iterate(st, j, pos, mem, fixed)
@@ -225,16 +227,17 @@ class BigMoE(nn.Module):
             return self.middle.iteration(st, j, pos, mem, force_active=fixed)
         fk, fv = (None, None) if st.frozen_kv is None else st.frozen_kv
         mk, mv = (None, None) if mem is None else mem
+        nk, nv = (None, None) if st.nbr_kv is None else st.nbr_kv
         outs = checkpoint(
             self.middle.iteration_flat,
             j, pos, fixed, st.c, st.p, st.active, st.r, st.cum_halt, st.remainder,
-            fk, fv, st.frozen, mk, mv, st.q_tgt, st.q_loss, st.nbr,
+            fk, fv, st.frozen, mk, mv, st.q_tgt, st.q_loss, st.nbr, nk, nv,
             use_reentrant=False,
         )
         c, p, active, r, cum, rem, fk2, fv2, frozen, aux, load, q_loss = outs
         new = IterState(
             c, p, active, r, cum, rem, None if fk2 is None else (fk2, fv2), frozen,
-            [*st.loads, load], st.q_tgt, q_loss, st.nbr,
+            [*st.loads, load], st.q_tgt, q_loss, st.nbr, st.nbr_kv,
         )
         return new, aux
 
