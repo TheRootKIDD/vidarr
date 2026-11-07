@@ -1,0 +1,8 @@
+# 048-l8b-pv-sizing — ADR-060 §5: the L8b-pv sizing probe and the equivalence check on real shapes (rig series; no science run)
+date: 2026-11-07
+tree: 3a4e219   # ruff + full suite (179 passed)
+hardware: 4 x RTX 3060 12 GB, rig otherwise idle, driver 615.71.09
+commands:
+  - python -m scripts.train.train --rung L8b-pv --id 048-l8b-pv-sizing --tokens 2.5e9 --micro-batch 4 --seed 0 --smoke-steps 6 --out-dir /mnt/nvme/ckpt/048-l8b-pv-sizing   # DDP, 4.4 min; outputs copied to sizing/
+  - PYTHONPATH=. python experiments/048-l8b-pv-sizing/pv_equiv.py experiments/048-l8b-pv-sizing/equivalence.json   # cuda:0, 13 s
+equivalence: 176-l8b-small-s0's checkpoint loaded into L8b and into L8b-pv with the width pinned at 704; 16 held-out windows, 4 batches of 4, true neighbours, bf16 autocast and fp32

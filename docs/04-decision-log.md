@@ -2397,6 +2397,21 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-11-07 (15:35) — **L8b-pv built (`3a4e219`); `048`: L8b-pv = L8b to 2.4 × 10⁻⁷ nats in fp32 on `176`'s weights, width 832, 5.78 GiB, 34 k tok/s (as L8b); `queue_small_12` running `178`**
+
+- **Code `3a4e219`:**
+  - `memory.hoist` and the `L8b-pv` preset;
+  - `KnowledgeMemory.prepare` (κ_n, V_n once per segment), `IterState.nbr_kv` through the checkpointed iteration;
+  - costmodel `hoisted` term (≈ 2.5 MFLOP per token);
+  - tests: forward/backward equality at equal weights, checkpointing, width 832 and FLOPs/params, random rows.
+  - Ruff passes, 179 passed. An accidental `ruff format` of whole files was reverted before the commit, and only the edits were re-applied.
+- **`048`:**
+  - Equivalence on real shapes: fp32 2.4 × 10⁻⁷, bf16 ≤ 4.0 × 10⁻⁴ per batch (rounding).
+  - Sizing: 5.78 GiB, 33.6–34.4 k tok/s (L8b's rate at the wider width), ≈ 20.8 h per run.
+  - Recorded: the random-rows probe draws once per segment under hoist.
+- **`queue_small_12`:** gate passed on `3a4e219`; `178-l8b-pv-small-s0` started 15:34, ETA ≈ 12:20 2026-11-08. `179` ETA ≈ 09:15 2026-11-09. Then the pair compares vs `132`/`133` (verdict, `compare_pair.log`) and vs `176`/`177` (width effect). No commits to `model/`, `scripts/`, `costmodel/` while it runs.
+- Next ladder id 180, next rig id 049. **No CPU probes beside the DDP run.**
+
 ### 2026-11-07 (15:24) — **ADR-060 accepted** (the user: "yes, accept it, push, then continue")
 
 - `01 §4.6` gains the L8b-pv paragraph and `§10` its memory line; `03 §2`'s L8 row names the L8b-pv arm.
