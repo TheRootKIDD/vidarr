@@ -2397,6 +2397,17 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-11-08 (12:13) — **`178` L8b-pv `small` s0 = 3.0706: −0.0072 vs `132`, −0.0198 vs `176` (6.6σ) → per seed H17 *supports* (ADR-059's rule: covered first sentence −0.0563, rest −0.0249, both beat; held-out below L5)**, provisional until `179`
+
+- **Width was the cost.** The extra width buys an equal shift on every split: against `176` (same seed), covered −0.029, rest −0.019, control −0.034, FineWeb −0.019. On the held-out set, `178` never crosses `132`, and its lead holds at −0.007 from 1.6 B tokens on.
+- **The memory's own use is unchanged:** reliance +0.052 on own-retrieved tokens (`176` +0.051); α 91 % of uniform. In neither arm is the covered gain larger than the out-of-table control's.
+- **Limits:**
+  - The rest-of-lead clause sits on I42's limit, and `132` is L5's worse seed there.
+  - The uncovered first-sentence tokens are 0.27 below `132`, inside L5's seed spread (pre-boundary noise, not the memory).
+  - Random rows are drawn once per segment under hoist.
+- **Run:** 20.53 h, 34.6 k tok/s, 5.78 GiB, `n_thermal` 0.
+- **`queue_small_12`:** `179-l8b-pv-small-s1` started 12:11, ETA ≈ 08:50 2026-11-09. Then the pair compares vs `132`/`133` (the verdict) and vs `176`/`177`. For the pair to stay within 2σ, `179` must finish ≤ 3.0908; it passes 4σ only above 3.1028.
+
 ### 2026-11-07 (15:35) — **L8b-pv built (`3a4e219`); `048`: L8b-pv = L8b to 2.4 × 10⁻⁷ nats in fp32 on `176`'s weights, width 832, 5.78 GiB, 34 k tok/s (as L8b); `queue_small_12` running `178`**
 
 - **Code `3a4e219`:**
