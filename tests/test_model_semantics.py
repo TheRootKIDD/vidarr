@@ -1398,6 +1398,24 @@ def test_l8b_pv_width_and_flops_follow_costmodel() -> None:
     )
 
 
+def test_medium_presets_follow_06_s3_and_costmodel() -> None:
+    """ADR-061: `medium` = d 1024, 16/4 heads, r 16, 2.0 GFLOP; L5 1920 (06 §3), L8b-pv 1856."""
+    from costmodel.config import Model as CmM
+    from costmodel.flops import memory_flops
+
+    l5, pv = ladder("L5-medium"), ladder("L8b-pv-medium")
+    for c in (l5, pv):
+        assert (c.d, c.attention.heads, c.attention.kv_heads, c.middle.r_max) == (1024, 16, 4, 16)
+        assert c.budget_flops_per_token == 2.0e9 and c.skeleton_width == 4096
+        assert abs(c.derive_width().relative_error) < 0.01
+    assert l5.expert_width() == 1920 and pv.expert_width() == 1856
+    assert pv.memory == ladder("L8b-pv").memory  # the memory itself is 178/179's
+    cm = CmM(d=1024, r_max=16, depth_embed=pv.middle.depth_embed, mem=pv.cm_memory())
+    per_iter = 2 * (1024 + 64) * 128 + 2 * 128 * 8 + 2 * 8 * 1024
+    per_token = (2 * 768 * 128 + 2 * 768 * 1024) * 8 / 16
+    assert memory_flops(cm) == per_iter + per_token / 16
+
+
 def test_l8b_pv_random_rows_probe_keeps_the_valid_set() -> None:
     cfg, _, pv = _pv_pair()
     mem = pv.middle.mem

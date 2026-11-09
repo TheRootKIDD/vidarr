@@ -61,6 +61,11 @@ class TrainArgs:
     smoke_steps: int = 0  # > 0: run this many steps into out_dir and stop (no experiment record)
 
 
+def _size(tokens: float) -> str:
+    """The `docs/06 §3` size a token budget belongs to (1 B / 2.5 B / 7 B)."""
+    return "screen" if tokens <= 1.1e9 else "small" if tokens <= 3e9 else "medium"
+
+
 # ---- schedule and optimiser ---------------------------------------------------------
 def lr_at(step: int, total: int, a: TrainArgs) -> float:
     warm = max(1, int(a.warmup_frac * total))
@@ -449,7 +454,7 @@ class _nullctx:
 def _write_results_md(out: Path, a: TrainArgs, cfg: ModelCfg, s: dict[str, Any]) -> None:
     f = s["final"]
     lines = [
-        f"# {a.id} — {a.rung} at `{'screen' if a.tokens <= 1.1e9 else 'small'}`",
+        f"# {a.id} — {a.rung} at `{_size(a.tokens)}`",
         "",
         f"`python -m scripts.train.train --rung {a.rung} --id {a.id} --tokens {a.tokens:g} "
         f"--micro-batch {a.micro_batch} --seed {a.seed}` · {s['world']} × RTX 3060, DDP, "

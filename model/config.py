@@ -426,6 +426,18 @@ def _round64(n: int) -> int:
 
 
 # ---- ladder presets (docs/03 §2) ------------------------------------------------
+def medium(cfg: ModelCfg) -> ModelCfg:
+    """`docs/06 §3`'s `medium` shape applied to a recurrent rung (ADR-061): d 1024, 16/4 heads,
+    fixed r = 16, 2.0 GFLOP per token; the expert width re-solves from the costmodel."""
+    return replace(
+        cfg,
+        d=1024,
+        budget_flops_per_token=2.0e9,
+        attention=replace(cfg.attention, heads=16, kv_heads=4, head_dim=64),
+        middle=replace(cfg.middle, r_max=16),
+    )
+
+
 def ladder(step: str, **overrides: Any) -> ModelCfg:
     """The ablation ladder as configs. Each rung = previous rung + one feature."""
     base = ModelCfg(arch="layered", layers=12, block_form="sequential", ff="dense")
@@ -522,6 +534,9 @@ def ladder(step: str, **overrides: Any) -> ModelCfg:
             rec, streams=StreamsCfg(two_stream=True), budget_flops_per_token=1.2e9
         ),  # ADR-026: 2x budget
     }
+    # ADR-061: H17 at `medium` (widths 1920 / 1856)
+    presets["L5-medium"] = medium(presets["L5"])
+    presets["L8b-pv-medium"] = medium(presets["L8b-pv"])
     if step not in presets:
         raise KeyError(f"unknown ladder step {step}; have {sorted(presets)}")
     cfg = replace(presets[step], **overrides) if overrides else presets[step]
