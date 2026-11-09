@@ -1,0 +1,9 @@
+# 049-medium-sizing — ADR-061 §4: DDP sizing of L5-medium and L8b-pv-medium (rig series; no science run)
+date: 2026-11-09
+tree: 5149a15   # ruff + full suite (180 passed)
+hardware: 4 x RTX 3060 12 GB, rig otherwise idle, DDP, host-bounced NCCL
+commands:  # one per arm and micro-batch, 6 smoke steps each, outputs copied to <rung>-mb<mb>/
+  - python -m scripts.train.train --rung L5-medium --id 049-medium-sizing --tokens 7e9 --micro-batch 4 --seed 0 --smoke-steps 6 --out-dir /mnt/nvme/ckpt/049-medium-sizing/L5-medium-mb4
+  - python -m scripts.train.train --rung L8b-pv-medium --id 049-medium-sizing --tokens 7e9 --micro-batch 4 --seed 0 --smoke-steps 6 --out-dir /mnt/nvme/ckpt/049-medium-sizing/L8b-pv-medium-mb4
+  - (the same at --micro-batch 2)
+batch: 524,288 tokens per step (micro-batch x 2048 x 4 GPUs x accumulation 16 at mb 4, 32 at mb 2)

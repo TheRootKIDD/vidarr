@@ -2471,6 +2471,13 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-11-09 (12:09) — **ADR-061 accepted and built (`84d66ae`, `5149a15`); `049`: DDP fits both `medium` arms at micro-batch 4 (5.93 / 7.85 GiB), 18.5 k / 15.6 k tok/s → ≈ 4.5 d + ≈ 5.3 d ≈ 9.9 days; `queue_medium_1` launched**
+
+- **Cost correction:** my estimate of ≈ 4 days for `medium`, given earlier today, scaled `small` throughput without the 3.3× FLOPs per token. Before the user chose the scope, I corrected it to ≈ 12–16 d. `049` measures ≈ 9.9 d.
+- **Code:** `medium(cfg)`; the `L5-medium` (1920) and `L8b-pv-medium` (1856) presets; the trainer's size label; test. Ruff passes, 180 passed.
+- **`queue_medium_1`:** gate, then `180-l5-medium` (ETA ≈ 4.5 d) and its wiki-lead eval, then `181-l8b-pv-medium` (≈ 5.3 d) and its eval with probes, then `--compare 181 180`. No commits to `model/`, `scripts/` or `costmodel/` while it runs.
+- Next ladder id 182, next rig id 050. **No CPU probes beside the DDP run.**
+
 ### 2026-11-09 (08:50) — **L8b-pv `small` pair `178`/`179` = 3.0730, −0.0017 vs the L5 pair → H17 *supported* at two seeds** (ADR-059's rule: covered first sentence −0.0543, rest of lead −0.0148 against a 0.0120 floor, held-out within 2σ); width gain vs the L8b pair −0.0140 (4.7σ); `queue_small_12` done, nothing running
 
 - **`179` s1 = 3.0754, +0.0037 vs `133` → silent per seed.** Covered −0.0522 beats; rest −0.0046 misses.
