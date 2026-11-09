@@ -1312,6 +1312,80 @@ Not chosen, and why:
 
 Consequences: `01 §4.6/§10`, `03 §2` (L8 row: the L8b-pv arm), `costmodel/flops.py`, `model/config.py` (the `L8b-pv` preset, `memory.hoist`), `model/memory.py` and `model/middle.py` (the hoisted maps through `IterState`), and the tests. Bears on H17.
 
+### ADR-061 — H17 at `medium`: one L8b-pv run against a matched L5 run at 7 B tokens, trained under DDP if it fits; rig `049`, runs `180`/`181`
+2026-11-09 · accepted (the user's decision: "Draft the ADR for H17 at medium and then start the queue". Scope chosen after the cost was corrected from ≈ 4 to ≈ 12–16 days: "Full plan, stage-gated"; ADR-031: "Amend for H17 only")
+
+Context: the L8b-pv `small` pair (`178`/`179`, ADR-060) *supports* H17 at two seeds. The readings:
+- covered first sentence −0.0543 against a 0.0120 floor;
+- rest of the lead −0.0148 against 0.0120;
+- held-out −0.0017, within 2σ.
+
+ADR-060 §7 makes `medium` the next question, by ADR. Three readings at `small` need a larger run:
+- the pair's held-out lead over L5 is closing with tokens (−0.021 at 0.37 B, −0.002 at 2.5 B);
+- the rest-of-lead pass is marginal, and smaller than the out-of-table control's gain (−0.038);
+- every `small` result so far has been at one model size.
+
+Nothing for `medium` exists yet:
+- there are no presets, no FSDP code, and no run;
+- `06 §4`'s `medium` row is a projection;
+- `03 §5` asks for an FSDP measurement before any `medium` run;
+- ADR-031 (Phase 3.9) puts the findings brainstorm ahead of `medium`.
+
+Decision:
+1. **Size:** `medium` as `06 §3` fixes it.
+   - Shape: $d$ = 1024, 16/4 heads (GQA, $d_h$ 64), $E$ = $F$ = 2 with skeleton $d_{ff}$ = 4$d$, fixed $r$ = 16 (`06 §3`; ADR-046 governs the `screen`/`small` default and does not apply), window 512.
+   - Budget and data: 2.0 GFLOP per token, context 2048, **7 B tokens**, seed 0.
+   - Training: batch 524,288 tokens and the trainer's schedule (lr 6 × 10⁻⁴, cosine to 10 %, 2 % warm-up). Both arms share the schedule, so the comparison stays matched.
+   - Widths from `costmodel/`:
+     - **L5-medium 1920**, which reproduces `06 §3`'s figure;
+     - **L8b-pv-medium 1856**. The memory is `178`/`179`'s unchanged (table, encoder, retrieval $s$ 16, window 32, $K$ 8, $d_m$ 128, hoisted maps); only $W_v$'s output and the query's input grow to $d$ = 1024.
+2. **Presets:** `L5-medium` and `L8b-pv-medium` in `model/config.py`, built by one helper that applies the `medium` shape to a rung, with unit tests for the widths and FLOPs. The trainer's record header names the size `medium` above 3 B tokens.
+3. **Parallelism: DDP if rig `049` measures it within 10 GB per GPU** (amends `06 §3` for these two runs).
+   - At these sizes the replicated states are small: L5-medium ≈ 144 M parameters, ≈ 2.3 GB of fp32 weights, gradients and Adam moments. Iteration checkpointing bounds the activations, so DDP is expected to fit at micro-batch 2–4.
+   - DDP keeps the `small` code path, so the `small` and `medium` numbers come from one trainer.
+   - FSDP stays specified for any `medium` configuration that does not fit (e.g. $N_e$ = 128, 474 M). `03 §5`'s Phase 3.5 measurement stays owed for those, and `049`'s DDP measurement replaces it for these two runs.
+   - If neither arm fits at micro-batch 1, the queue does not start, and FSDP becomes the user's call by ADR.
+4. **Rig `049`:** smoke steps of both arms under DDP on the idle rig, at micro-batch 4 and 2 (and 1 if needed). It records:
+   - peak GiB per GPU;
+   - tok/s;
+   - the retrieval share;
+   - the micro-batch chosen (the largest that fits ≤ 10 GiB);
+   - the projected wall-clock for each run.
+   **If the two runs project to more than 16 days in total, the queue does not start, and the user decides.**
+5. **Runs:** `180-l5-medium` (the matched arm, also the `medium` L5 every later `medium` arm reuses), then `181-l8b-pv-medium`, via `queue_medium_1.sh`.
+   - The usual gate: ruff, the suite, idle GPUs, and the table and encoder present.
+   - After each run, its wiki-lead eval with the covered splits; `181` also gets the usage probes. Then `--compare 181 180`.
+   - Each run exceeds one node-day. `06 §7`'s "a completed `screen` of the same config" is read as the same rung at the smaller sizes: `110` and `175` at `screen` (`048`: L8b-pv is L8b's function), and the `small` pairs `132`/`133` and `178`/`179`. This reading is recorded.
+6. **Verdict:** ADR-059's rule on `181` against `180`, at one seed, as `medium` runs (`03 §2`):
+   - the clauses: covered first sentence, rest of the lead, held-out ≤ 2σ / > 4σ;
+   - σ = 0.0030, the pooled `small` σ, because no `medium` seed spread exists;
+   - floor = 4 × max(0.0030, bootstrap SE).
+   Recorded limits:
+   - one seed;
+   - σ borrowed from `small`;
+   - I42: the rest-of-lead clause's seed spread at `small` is at its floor, so at one seed that clause cannot be separated from seed noise.
+   Also reported:
+   - the held-out trajectory against `180` (does the lead close?);
+   - covered and rest minus the out-of-table control;
+   - reliance;
+   - throughput against L5.
+7. **Readings, set now:**
+   - **Supports:** H17 holds at `medium` at one seed, within the limits recorded in §6. The `small` pair stays the two-seed evidence, and nothing follows automatically.
+   - **Held-out past 4σ:** the general-text parity of `small` does not survive scale. H17 is weakened at `medium`, and the L8b-pv design closes.
+   - **Otherwise silent:** the `small` reading stands as the H17 result.
+   - Any further H17 arm needs a new ADR.
+8. **ADR-031 exception:** this confirmation runs ahead of the Phase 3.9 brainstorm. The brainstorm stays ahead of every other `medium` run.
+9. **Cost:** ≈ 1 h for rig `049`. Projected from `small` throughput scaled by FLOPs per token: ≈ 5.5 d for `180` and ≈ 6 d for `181` (retrieval does not scale with the model), so ≈ 12 days. That rises to ≈ 16 d if the `06 §4` projection is right. `049` replaces both figures. Everything is local: no downloads, no services, no purchases.
+
+Not chosen, and why:
+- **Building FSDP first:** if DDP fits, FSDP is not needed for these runs. It would also add an unmeasured cost: per-layer gathers over the 3.59 GB/s host-bounced link, re-gathered at each of the 16 iterations of the shared middle block, or held unsharded, which gives up most of the saving. The work and its measurement stay with the configurations that need them.
+- **Two seeds:** this would double ≈ 12 days. `03 §2` runs `medium` at one seed, and the two-seed evidence is at `small`.
+- **A dense L0 baseline at `medium`:** H17's comparator is the L5 arm without the memory (ADR-058). L0-medium belongs to the `medium` confirmations of Phase 4.
+- **$r$ = 8 at `medium`:** `06 §3` fixes $r$ = 16 at this size. Keeping 8 would put this run off the anchor shape every later `medium` run uses.
+- **Waiting for the brainstorm:** the user's decision (§8).
+
+Consequences: `06 §3` (the DDP amendment for these runs), `03 §2` (L8 row) and `03 §5` (Phase 3.5 and 3.9 notes), `model/config.py` (the `medium` helper and two presets), `scripts/train/train.py` (the size label), and the tests. Bears on H17.
+
 ## Proposed / pending
 - **ADR-028** — Unit model revisions from the author's hardware document (`docs/07 §4`): (a) two compute classes per chip — an FF core with a large array ($s_{min,ff}$ = 256–1024) and attention cores with small arrays ($s_{min,attn}$ ≈ 64), hence $\phi_{ff}$, $\phi_{attn}$ as separate scenario inputs; (b) the tile floor is a *row* floor, $N$ = $M$ × (LHS bw / RHS bw) rows per weight tile, with each token contributing 1 + $m$ rows under $m$-token speculation — the scheduler's queues count rows; (c) the reduce leg of the local fabric carries ≥ 16-bit partial sums: `02 §2` traffic becomes $b d\, b_{act} + b d\, b_{sum}$, $b_{sum}$ ≥ 2; (d) full pipelining inside the unit doubles tokens in flight and per-token latency — the Little's-law budget $Z$ of `02 §5.5` carries the factor; (e) router-based unit fabrics are ≤ 50 % link-efficient (avg. 2 hops), torus collectives 100 %: `02 §1`'s "switch" option is not equivalent to a torus; (f) the asymmetric 4×4×4 torus all-gather costs ≈ 3X/(8B) vs ≈ X/(2B) on a flat ring (our derivation from the author's algorithm) — the number S1/S3 must reproduce; (g) the failure domain is the 4-chip ring board, and a failed rail port is bypassed through torus neighbours at ¼ load (`02 §11`); (h) the replica-rounding utilisation floor $\ell / \lceil \ell \rceil$ reported beside the Little's-law model in S4. Also fills `note64.yaml` with the sourced ratios of `docs/07 §6`; absolute $\phi$, $\beta_C$, $\lambda_C$, $\nu_C$ stay placeholders (I4). Bears on H1, H5, H8, H9, H10, H11, H16; changes `02 §1, §2, §5, §11`.
 - **ADR-024** — Parallel prefill mode for long prompts (the author's "less effective mode"): (a) all segments at once with local attention only, global cache filled afterwards from context-poor final vectors; (b) pipelined segments, segment $k+1$ at iteration $j$ attending globally to segment $k$'s iteration-$j$ caches (transient per-iteration global cache during prefill, in-flight depth up to $r$ segments). Both are inference-time modes of a sequentially trained model; E-Q12 evaluates both against sequential prefill on continuation loss and TTFT (S5). If both degrade, a mixed-mode training variant becomes a later ladder step.
