@@ -2397,6 +2397,18 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-11-09 (08:50) — **L8b-pv `small` pair `178`/`179` = 3.0730, −0.0017 vs the L5 pair → H17 *supported* at two seeds** (ADR-059's rule: covered first sentence −0.0543, rest of lead −0.0148 against a 0.0120 floor, held-out within 2σ); width gain vs the L8b pair −0.0140 (4.7σ); `queue_small_12` done, nothing running
+
+- **`179` s1 = 3.0754, +0.0037 vs `133` → silent per seed.** Covered −0.0522 beats; rest −0.0046 misses.
+- **Width was L8b's cost.** Against the L8b pair, held-out −0.0140, covered −0.024, rest −0.018, control −0.031. Reliance is unchanged (+0.053 against +0.051).
+- **Limits:**
+  - The rest-of-lead pass is marginal: 0.003 over the floor, about 1 SE. One seed misses, and it sits on I42's limit.
+  - It is not specific: the control improves more (−0.038). Covered minus control is −0.016.
+  - The pair's held-out lead is closing (−0.021 at 0.37 B tokens, −0.002 at 2.5 B).
+  - Retrieval costs 0.70× L5's throughput.
+- **ADR-060 §7:** *supports* → H17 at `medium` is the user's call, by ADR. Nothing drafted or queued.
+- Runs: 20.53 / 20.54 h, 5.78 GiB, `n_thermal` 0 / 1 (no slowdown). Next ladder id 180, rig id 049.
+
 ### 2026-11-08 (12:13) — **`178` L8b-pv `small` s0 = 3.0706: −0.0072 vs `132`, −0.0198 vs `176` (6.6σ) → per seed H17 *supports* (ADR-059's rule: covered first sentence −0.0563, rest −0.0249, both beat; held-out below L5)**, provisional until `179`
 
 - **Width was the cost.** The extra width buys an equal shift on every split: against `176` (same seed), covered −0.029, rest −0.019, control −0.034, FineWeb −0.019. On the held-out set, `178` never crosses `132`, and its lead holds at −0.007 from 1.6 B tokens on.
