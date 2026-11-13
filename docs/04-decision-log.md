@@ -2471,6 +2471,12 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-11-13 (20:21) — **`180` L5-medium done: 2.7250 (−0.350 vs the L5 `small` pair; −0.166 at equal tokens), 104.0 h under DDP, 5.93 GiB, 18.9 k tok/s, `n_thermal` 0; `181` L8b-pv-medium started 20:13**
+
+- **Wiki-lead against `132`:** covered first sentence −0.460, rest −0.405, control −0.430, FineWeb-Edu −0.352. The larger L5 knows more of the table's facts on its own, so the memory has less to add in `181`.
+- **DDP at `medium` holds over a full run** (ADR-061 §3). The in-training evals took 1 h, not the ≈ 3.7 h `049` assumed.
+- **`queue_medium_1`:** `181` ETA ≈ 23:30 2026-11-18, then its eval with probes and `--compare 181 180` (the verdict). No commits to `model/`, `scripts/` or `costmodel/` while it runs.
+
 ### 2026-11-09 (12:09) — **ADR-061 accepted and built (`84d66ae`, `5149a15`); `049`: DDP fits both `medium` arms at micro-batch 4 (5.93 / 7.85 GiB), 18.5 k / 15.6 k tok/s → ≈ 4.5 d + ≈ 5.3 d ≈ 9.9 days; `queue_medium_1` launched**
 
 - **Cost correction:** my estimate of ≈ 4 days for `medium`, given earlier today, scaled `small` throughput without the 3.3× FLOPs per token. Before the user chose the scope, I corrected it to ≈ 12–16 d. `049` measures ≈ 9.9 d.
