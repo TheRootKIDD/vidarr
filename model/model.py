@@ -79,6 +79,10 @@ class BigMoE(nn.Module):
                 for i in range(cfg.final_blocks)
             )
         self.out_norm = nn.RMSNorm(cfg.d)
+        if cfg.numerics.qat_format != "none":  # L10b′ (ADR-073): off until set_qat
+            from model.quant import swap_linears
+
+            swap_linears(self, cfg.numerics.qat_format, cfg.numerics.qat_group)
         self.mtp: MTPHeads | MTPModules | None = None
         if cfg.mtp.m > 1 and cfg.mtp.style == "sequential":
             self.mtp = MTPModules(cfg)  # L3c (ADR-039)

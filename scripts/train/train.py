@@ -260,6 +260,10 @@ def worker(rank: int, world: int, a: TrainArgs, cfg: ModelCfg, out: Path) -> Non
                     flush=True,
                 )
         raw.set_progress(step / total_steps)  # L3b's MTP curriculum (ADR-036); no-op otherwise
+        if cfg.numerics.qat_format != "none":  # L10b′ (ADR-073): fake-quant from its start step
+            from model.quant import set_qat
+
+            set_qat(raw, step >= math.ceil(cfg.numerics.qat_start_frac * total_steps))
         lr = lr_at(step, total_steps, a)
         for g in opt.param_groups:
             g["lr"] = lr

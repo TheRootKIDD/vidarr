@@ -57,6 +57,8 @@ STEPS = [
     "L5-eqb-step",
     "L5g-fsss",
     "L5f",
+    "L5-qat0",
+    "L0-qat0",
     "L5e",
     "L6",
     "L6c",
@@ -1807,4 +1809,37 @@ def test_l5f_mix_is_uniform_at_init_and_learns() -> None:
     assert mid.res_w.grad is not None and mid.res_w.grad.abs().sum() > 0
     with pytest.raises(NotImplementedError):
         tiny("L5f", attention=dc.replace(tiny("L5d").attention))
+
+
+# ---- ADR-073: L10b′ (4-bit weight fake-quant) ----------------------------------------------
+def test_fp4_e2m1_rounds_to_the_grid_per_group() -> None:
+    from model.quant import fake_quant
+
+    w = torch.tensor([[6.0, 0.2, 0.3, 2.4, 2.6, 5.1, -1.2, -0.76] + [0.0] * 56])
+    q = fake_quant(w, "fp4_e2m1", 64)
+    assert q[0, :8].tolist() == [6.0, 0.0, 0.5, 2.0, 3.0, 6.0, -1.0, -1.0]
+    two = torch.cat([w, w * 0.5], dim=1)  # second group: absmax 3 -> scale 0.5
+    q2 = fake_quant(two, "fp4_e2m1", 64)
+    assert torch.allclose(q2[0, 64:72], q[0, :8] * 0.5)
+    i4 = fake_quant(torch.linspace(-1, 1, 64)[None], "int4", 64)
+    assert i4.unique().numel() <= 16 and (i4 - torch.linspace(-1, 1, 64)).abs().max() < 0.07
+
+
+def test_qat_linear_is_straight_through_and_swaps_only_attention_and_ffn() -> None:
+    from model.quant import QATLinear, set_qat
+
+    torch.manual_seed(0)
+    m = BigMoE(tiny("L5-qat0"))
+    swapped = [mod for mod in m.modules() if isinstance(mod, QATLinear)]
+    assert swapped and not isinstance(m.middle.moe.router.wq, QATLinear)
+    assert set_qat(m, True) == len(swapped)
+    lin = swapped[0]
+    x = torch.randn(3, lin.in_features)
+    lin.weight.grad = None
+    lin(x).sum().backward()
+    g_q = lin.weight.grad.clone()
+    lin.qat_on = False
+    lin.weight.grad = None
+    lin(x).sum().backward()
+    assert torch.allclose(g_q, lin.weight.grad)
 

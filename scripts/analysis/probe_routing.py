@@ -52,6 +52,10 @@ def load_run(run_dir: Path, device: torch.device) -> tuple[BigMoE, ModelCfg, int
     from scripts.train.teacher import attach_encoder
 
     attach_encoder(model, device)  # L8b (ADR-057): neighbours on every eval path
+    if cfg.numerics.qat_format != "none":  # L10b′ (ADR-073): evaluate the quantised form
+        from model.quant import set_qat
+
+        set_qat(model, True)
     if cfg.engram.enabled and cfg.engram.placement == "host":  # L8e (ADR-071): trained table
         from scripts.train.engram_host import load_values
 

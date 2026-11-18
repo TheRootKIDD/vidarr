@@ -218,6 +218,10 @@ class MemoryCfg:
 class NumericsCfg:
     dtype: Literal["bf16", "fp32"] = "bf16"
     sparsity_2_4: bool = False  # L10a; mask fixed after 1 % of tokens (ADR-019)
+    # ADR-073 (L10b′): 4-bit weight fake-quant from this fraction of the steps (0 = step 0)
+    qat_format: Literal["none", "fp4_e2m1", "int4"] = "none"
+    qat_start_frac: float = 0.0
+    qat_group: int = 64
 
 
 @dataclass(frozen=True)
@@ -409,6 +413,9 @@ class ModelCfg:
                 raise ValueError("a sparse iteration needs k_sel >= 1 (ADR-070)")
             if a.global_combine != "one_softmax" or self.streams.two_stream:
                 raise NotImplementedError("L5g with two branches or two streams: one feature")
+        nm = self.numerics
+        if nm.qat_format != "none" and not 0.0 <= nm.qat_start_frac < 1.0:
+            raise ValueError("numerics.qat_start_frac must be in [0, 1) (ADR-073)")
         if self.middle.input_mix == "attention_residual" and (
             self.arch != "recurrent"
             or a.has_global
@@ -668,6 +675,14 @@ def ladder(step: str, **overrides: Any) -> ModelCfg:
             ),
         ),
         "L10a": replace(rec, numerics=NumericsCfg(sparsity_2_4=True)),
+        # ADR-073: FP4 E2M1 weight fake-quant in the last 2 % of steps, or from step 0
+        **{
+            f"{name}-qat{tag}": replace(
+                cfg_, numerics=NumericsCfg(qat_format="fp4_e2m1", qat_start_frac=frac)
+            )
+            for name, cfg_ in (("L0", base), ("L5", rec))
+            for tag, frac in (("-late", 0.98), ("0", 0.0))
+        },
         "L4": replace(
             rec, streams=StreamsCfg(two_stream=True), budget_flops_per_token=1.2e9
         ),  # ADR-026: 2x budget
