@@ -176,9 +176,21 @@ class BigMoE(nn.Module):
             if st.nbr is not None and cfg.memory.hoist:  # L8b-pv (ADR-060): maps per boundary
                 st = replace(st, nbr_kv=self.middle.mem.prepare(st.nbr))
             c_bridge: Tensor | None = None
+            mix = cfg.middle.input_mix == "attention_residual"  # L5f (ADR-072)
+            src_v = [st.c] if mix else []
+            src_k = [F.rms_norm(st.c, (cfg.d,))] if mix else []
+            mix_w: list[Tensor] = []
             for j in range(1, n_iter + 1):
                 prev_active = st.active
+                if mix:
+                    x_in = self.middle.input_mix(src_k, src_v, j)
+                    mix_w.append(self.middle.last_mix)
+                    st = replace(st, c=x_in)
                 st, a = self._iterate(st, j, pos, mem, fixed)
+                if mix:
+                    upd = st.c - x_in  # the iteration's update u^(j), a source from now on
+                    src_v.append(upd)
+                    src_k.append(F.rms_norm(upd, (cfg.d,)))
                 if j == j_b:
                     c_bridge = st.c  # L5h: G's entry is built from the state after iteration j_b
                 if expert and j > cfg.middle.r_min:
@@ -189,6 +201,10 @@ class BigMoE(nn.Module):
                     st = self._apply_h(st, pos)
                 if not fixed and not st.active.any():
                     break
+            if mix:
+                st = replace(st, c=self.middle.input_mix(src_k, src_v, None))
+                mix_w.append(self.middle.last_mix)
+                self.last_mix_weights = mix_w  # per mix: mean weight on each source (logging)
             loads.extend(st.loads)
             if st.q_loss is not None:
                 q_sum = st.q_loss if q_sum is None else q_sum + st.q_loss

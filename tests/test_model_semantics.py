@@ -56,6 +56,7 @@ STEPS = [
     "L5-eqb-iter",
     "L5-eqb-step",
     "L5g-fsss",
+    "L5f",
     "L5e",
     "L6",
     "L6c",
@@ -1790,4 +1791,20 @@ def test_engram_host_lazy_adam_first_step_equals_dense_adam() -> None:
         assert torch.equal(he.values, he.master.to(torch.bfloat16))
     finally:
         he.close()
+
+
+# ---- ADR-072: L5f (attention residuals over iterations) ------------------------------------
+def test_l5f_mix_is_uniform_at_init_and_learns() -> None:
+    torch.manual_seed(0)
+    m = BigMoE(tiny("L5f")).train()
+    out = m.loss(torch.randint(0, 97, (2, 65)), r=3)
+    w = m.last_mix_weights  # iterations 1..3, then the final blocks' mix
+    assert [x.numel() for x in w] == [1, 2, 3, 4]
+    assert all(torch.allclose(x, torch.full_like(x, 1 / x.numel()), atol=1e-6) for x in w)
+    out.loss.backward()
+    mid = m.middle
+    assert mid.res_final.grad is not None and mid.res_final.grad.abs().sum() > 0
+    assert mid.res_w.grad is not None and mid.res_w.grad.abs().sum() > 0
+    with pytest.raises(NotImplementedError):
+        tiny("L5f", attention=dc.replace(tiny("L5d").attention))
 

@@ -111,6 +111,9 @@ class MiddleCfg:
     shared_attention: bool = True  # False = L5c: one attention block per iteration (ADR-032)
     h_every: int = 0  # K; 8 = L5e: a dense H block after iteration j = K/2 (mod K) (ADR-034)
     h_d_ff: int = 2048  # the H block's SwiGLU width (L5e)
+    # ADR-072 (L5f): each iteration's input is a learned per-token softmax mix of the middle
+    # block's input and the earlier iterations' updates, instead of their running sum
+    input_mix: Literal["residual", "attention_residual"] = "residual"
 
     @property
     def per_iteration_attention(self) -> bool:
@@ -406,6 +409,14 @@ class ModelCfg:
                 raise ValueError("a sparse iteration needs k_sel >= 1 (ADR-070)")
             if a.global_combine != "one_softmax" or self.streams.two_stream:
                 raise NotImplementedError("L5g with two branches or two streams: one feature")
+        if self.middle.input_mix == "attention_residual" and (
+            self.arch != "recurrent"
+            or a.has_global
+            or self.halting.mode != "fixed"
+            or self.middle.h_every
+            or self.streams.two_stream
+        ):
+            raise NotImplementedError("L5f is specified on L5: fixed depth, one stream (ADR-072)")
         if self.engram.enabled:
             eg = self.engram
             if self.arch != "recurrent" or eg.rows & (eg.rows - 1) or not eg.ngrams:
@@ -543,6 +554,8 @@ def ladder(step: str, **overrides: Any) -> ModelCfg:
         # ADR-034: one dense H block with its own weights after iteration 4
         "L5e": replace(rec, middle=MiddleCfg(h_every=8), experts=ExpertsCfg(d_ff=896)),
         "L5d": replace(rec, attention=AttentionCfg(global_source="final_vector")),
+        # ADR-072: attention residuals over iterations (one mix per iteration)
+        "L5f": replace(rec, middle=MiddleCfg(input_mix="attention_residual")),
         # ADR-071: a hashed 2/3-gram engram table (2^21 x d) in host RAM, read once per token
         "L8e": replace(rec, engram=EngramCfg(enabled=True)),
         # ADR-070: per-iteration global schedules with selection reuse, k_sel 128 at 2 k

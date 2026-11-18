@@ -83,6 +83,14 @@ class MiddleBlock(nn.Module):
         kvd = a.kv_heads * a.head_dim
         self.bridge_k = nn.Linear(cfg.d, kvd, bias=False) if a.global_source == "bridged" else None
         self.bridge_v = nn.Linear(cfg.d, kvd, bias=False) if a.global_source == "bridged" else None
+        # L5f (ADR-072): mix queries q_j = w + W_q e_j (zero at init: a uniform mix) and the
+        # final blocks' own query
+        self.res_w = self.res_wq = self.res_final = None
+        if m.input_mix == "attention_residual":
+            self.res_w = nn.Parameter(torch.zeros(cfg.d))
+            self.res_wq = nn.Linear(m.depth_embed, cfg.d, bias=False)
+            nn.init.zeros_(self.res_wq.weight)
+            self.res_final = nn.Parameter(torch.zeros(cfg.d))
         self.halt = nn.Linear(cfg.d + m.depth_embed, 1)
         nn.init.zeros_(self.halt.weight)
         nn.init.constant_(self.halt.bias, -2.0)  # start with a low halting probability
@@ -93,6 +101,19 @@ class MiddleBlock(nn.Module):
             # differ from the first step; thresholds tau_j learned as an EMA (NaN = not yet set)
             self.halt.reset_parameters()
             self.register_buffer("depth_tau", torch.full((m.r_max + 1,), float("nan")))
+
+    def input_mix(self, keys: list[Tensor], values: list[Tensor], j: int | None) -> Tensor:
+        """L5f: x = sum_s alpha_s v_s, alpha = softmax_s(q . RMSNorm(v_s) / sqrt(d)); `keys` are
+        the sources' RMSNorms. j = None: the final blocks' query."""
+        assert self.res_w is not None and self.res_wq is not None and self.res_final is not None
+        if j is None:
+            q = self.res_final
+        else:
+            q = self.res_w + self.res_wq(self.depth(torch.tensor(j, device=self.res_w.device)))
+        k = torch.stack(keys, dim=-2)  # [B, T, S, d]
+        a = torch.softmax((k @ q.to(k.dtype)) / k.shape[-1] ** 0.5, dim=-1)  # [B, T, S]
+        self.last_mix = a.detach().float().mean((0, 1))
+        return (a.unsqueeze(-1) * torch.stack(values, dim=-2)).sum(-2)
 
     def attention_at(self, j: int) -> Attention:
         """The attention used at iteration j (1-based): shared, or L5c's own copy."""
