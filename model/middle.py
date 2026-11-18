@@ -47,6 +47,7 @@ class IterState:
     nbr: Tensor | None = None  # [B, T / s, K] L8b neighbours per boundary, -1 = none (ADR-057)
     nbr_kv: tuple[Tensor, Tensor] | None = None  # L8b-pv (ADR-060): (kappa_n, V_n) per boundary
     g_sel: Tensor | None = None  # L5g (ADR-070): [B, Hkv, T, |G|] keys picked at the last F
+    eng: Tensor | None = None  # L8e (ADR-071): [B, T, d] engram input u_t, added to c's input
 
 
 class MiddleBlock(nn.Module):
@@ -142,11 +143,12 @@ class MiddleBlock(nn.Module):
         nbr_k: Tensor | None = None,
         nbr_v: Tensor | None = None,
         g_sel: Tensor | None = None,
+        eng: Tensor | None = None,
     ) -> tuple[Tensor | None, ...]:
         """`iteration` over flat tensors so `torch.utils.checkpoint` can replay it."""
         st = IterState(
             c, p, active, r, cum, rem, None if fk is None else (fk, fv), frozen, [], q_tgt, q_loss,
-            nbr, None if nbr_k is None else (nbr_k, nbr_v), g_sel,
+            nbr, None if nbr_k is None else (nbr_k, nbr_v), g_sel, eng,
         )
         mem = None if mem_k is None else (mem_k, mem_v)
         out, aux = self.iteration(st, j, positions, mem, force_active)
@@ -207,7 +209,8 @@ class MiddleBlock(nn.Module):
         cfg = self.cfg
         b, t, d = st.c.shape
         e = self.depth(torch.tensor(j, device=st.c.device))
-        uc = self.norm(st.c, e)
+        # L8e (ADR-071 §2): the block reads c + u; the residual below carries c alone
+        uc = self.norm(st.c if st.eng is None else st.c + st.eng.to(st.c.dtype), e)
         attn = self.attention_at(j)
         mode = cfg.halting.mode
         # L6c: the depth router decides at the start of iteration j > r_min who continues
@@ -320,7 +323,7 @@ class MiddleBlock(nn.Module):
             p_new = new[1] if len(new) > 1 else None
             return IterState(
                 new[0], p_new, active, r, cum, rem, frozen_kv, frozen, st.loads, st.q_tgt, q_loss,
-                st.nbr, st.nbr_kv, g_sel,
+                st.nbr, st.nbr_kv, g_sel, st.eng,
             ), aux
         # halting head on the context stream (§4.7)
         h = torch.sigmoid(self.halt(torch.cat([uc, e.expand(b, t, -1)], dim=-1))).squeeze(-1)
@@ -339,6 +342,6 @@ class MiddleBlock(nn.Module):
         p_new = new[1] if len(new) > 1 else None
         out = IterState(
             new[0], p_new, active, r, cum, rem, frozen_kv, frozen, st.loads, st.q_tgt, q_loss,
-            st.nbr, st.nbr_kv, g_sel,
+            st.nbr, st.nbr_kv, g_sel, st.eng,
         )
         return out, aux

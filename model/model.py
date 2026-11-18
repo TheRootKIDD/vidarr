@@ -25,6 +25,7 @@ from torch.utils.checkpoint import checkpoint
 
 from model.block import Block
 from model.config import ModelCfg
+from model.engram import Engram
 from model.middle import IterState, MiddleBlock
 from model.mtp import MTPHeads, MTPModules
 
@@ -57,6 +58,7 @@ class BigMoE(nn.Module):
         nn.init.normal_(self.emb.weight, std=0.02)
         self.stream_tag = nn.Parameter(torch.zeros(cfg.d)) if cfg.streams.two_stream else None
         self.h_block: Block | None = None
+        self.engram: Engram | None = None
         if cfg.arch == "layered":
             self.blocks = nn.ModuleList(
                 Block(cfg, cfg.ff, cfg.dense_d_ff, cfg.block_form) for _ in range(cfg.layers)
@@ -67,6 +69,8 @@ class BigMoE(nn.Module):
                 Block(cfg, "dense", w, "parallel") for _ in range(cfg.early_blocks)
             )
             self.middle = MiddleBlock(cfg)
+            # L8e (ADR-071): one n-gram read per token, fed to every iteration's input
+            self.engram = Engram(cfg.engram, cfg.d, cfg.vocab) if cfg.engram.enabled else None
             if cfg.middle.h_every:  # L5e: the slow dense H block, own weights (ADR-034)
                 self.h_block = Block(cfg, "dense", cfg.middle.h_d_ff, "parallel")
             n_pred = cfg.pred_only_final
@@ -145,6 +149,7 @@ class BigMoE(nn.Module):
         nb_s = rc.stride if rc is not None else 1  # L8b: positions per neighbour row
         hs, r_maps, ponders, loads = [], [], [], []
         aux = torch.zeros((), device=dev)
+        eng = None if self.engram is None else self.engram(tokens)  # [B, T, d], ADR-071
         q_sum: Tensor | None = None  # L8q: summed (L_q, count) over segments and iterations
         for s0 in range(0, t, seg):
             pos = torch.arange(s0, s0 + seg, device=dev)
@@ -166,6 +171,7 @@ class BigMoE(nn.Module):
                 nbr=None
                 if neighbours is None
                 else neighbours[:, s0 // nb_s : -(-(s0 + seg) // nb_s)],
+                eng=None if eng is None else eng[:, s0 : s0 + seg],
             )
             if st.nbr is not None and cfg.memory.hoist:  # L8b-pv (ADR-060): maps per boundary
                 st = replace(st, nbr_kv=self.middle.mem.prepare(st.nbr))
@@ -237,13 +243,13 @@ class BigMoE(nn.Module):
         outs = checkpoint(
             self.middle.iteration_flat,
             j, pos, fixed, st.c, st.p, st.active, st.r, st.cum_halt, st.remainder,
-            fk, fv, st.frozen, mk, mv, st.q_tgt, st.q_loss, st.nbr, nk, nv, st.g_sel,
+            fk, fv, st.frozen, mk, mv, st.q_tgt, st.q_loss, st.nbr, nk, nv, st.g_sel, st.eng,
             use_reentrant=False,
         )
         c, p, active, r, cum, rem, fk2, fv2, frozen, aux, load, q_loss, g_sel = outs
         new = IterState(
             c, p, active, r, cum, rem, None if fk2 is None else (fk2, fv2), frozen,
-            [*st.loads, load], st.q_tgt, q_loss, st.nbr, st.nbr_kv, g_sel,
+            [*st.loads, load], st.q_tgt, q_loss, st.nbr, st.nbr_kv, g_sel, st.eng,
         )
         return new, aux
 

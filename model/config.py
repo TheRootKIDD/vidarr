@@ -62,6 +62,21 @@ class AttentionCfg:
 
 
 @dataclass(frozen=True)
+class EngramCfg:
+    """ADR-071 (L8e): a hashed 2/3-gram table read once per token, added to every iteration's
+    block input through a zero-initialised projection. `host`: the table and its Adam states
+    live in shared host memory, updated by lazy sparse Adam after each step (the trainer);
+    `gpu`: an ordinary embedding (tests, and the recorded fallback)."""
+
+    enabled: bool = False
+    rows: int = 2**21
+    ngrams: tuple[int, ...] = (2, 3)
+    placement: Literal["host", "gpu"] = "host"
+    seed: int = 0x5EED
+    init_std: float = 0.02
+
+
+@dataclass(frozen=True)
 class RouterCfg:
     k: int = 2
     n_experts: int = 8
@@ -230,6 +245,7 @@ class ModelCfg:
     mtp: MTPCfg = field(default_factory=MTPCfg)
     numerics: NumericsCfg = field(default_factory=NumericsCfg)
     memory: MemoryCfg = field(default_factory=MemoryCfg)  # L8 (ADR-053)
+    engram: EngramCfg = field(default_factory=EngramCfg)  # L8e (ADR-071)
     tenant_lora_rank: int = 0  # L11; not implemented in Phase 1
     # training-time memory knobs (no effect on semantics): docs/02 §13.4, docs/06 §3
     checkpoint_iterations: bool = True  # recompute each middle-block iteration in backward
@@ -286,9 +302,11 @@ class ModelCfg:
             U=self.experts.unit_width,
             s_min=self.experts.tile_min,
         )
+        # ADR-071: L8e's projection W_e (2 d^2 per token, once) comes out of the expert budget
+        engram = 2.0 * self.d * self.d if self.engram.enabled else 0.0
         return solve_d_ff(
             cm,
-            self.budget_flops_per_token,
+            self.budget_flops_per_token - engram,
             n_keys=budget_n_keys(self.context),
             multiple_of=64,
             hw=hw,
@@ -388,6 +406,12 @@ class ModelCfg:
                 raise ValueError("a sparse iteration needs k_sel >= 1 (ADR-070)")
             if a.global_combine != "one_softmax" or self.streams.two_stream:
                 raise NotImplementedError("L5g with two branches or two streams: one feature")
+        if self.engram.enabled:
+            eg = self.engram
+            if self.arch != "recurrent" or eg.rows & (eg.rows - 1) or not eg.ngrams:
+                raise ValueError("L8e: recurrent arch, rows a power of two, >= 1 n-gram order")
+            if any(n < 2 for n in eg.ngrams) or eg.placement not in ("host", "gpu"):
+                raise ValueError("L8e: n-gram orders >= 2; placement host or gpu (ADR-071)")
         if a.global_combine == "two_branch" and not a.has_global:
             raise ValueError("global_combine two_branch needs the global cache (ADR-068)")
         if a.global_scoring == "relu2" and a.global_combine != "two_branch":
@@ -445,6 +469,7 @@ class ModelCfg:
             "mtp": MTPCfg,
             "numerics": NumericsCfg,
             "memory": MemoryCfg,
+            "engram": EngramCfg,
         }
         if d.pop("memory_enabled", False):  # configs before ADR-053 carry this flag, always off
             raise ValueError("memory_enabled: true predates ADR-053; use memory.enabled")
@@ -455,6 +480,10 @@ class ModelCfg:
                     v["lambdas"] = tuple(v["lambdas"])
                 if key == "memory" and isinstance(v.get("query_aux"), dict):
                     v["query_aux"] = QueryAuxCfg(**v["query_aux"])
+                if key == "attention" and isinstance(v.get("schedule"), list):
+                    v["schedule"] = tuple(v["schedule"])
+                if key == "engram" and isinstance(v.get("ngrams"), list):
+                    v["ngrams"] = tuple(v["ngrams"])
                 if key == "memory" and isinstance(v.get("retrieval"), dict):
                     v["retrieval"] = RetrievalCfg(**v["retrieval"])
                 d[key] = typ(**v)
@@ -514,6 +543,8 @@ def ladder(step: str, **overrides: Any) -> ModelCfg:
         # ADR-034: one dense H block with its own weights after iteration 4
         "L5e": replace(rec, middle=MiddleCfg(h_every=8), experts=ExpertsCfg(d_ff=896)),
         "L5d": replace(rec, attention=AttentionCfg(global_source="final_vector")),
+        # ADR-071: a hashed 2/3-gram engram table (2^21 x d) in host RAM, read once per token
+        "L8e": replace(rec, engram=EngramCfg(enabled=True)),
         # ADR-070: per-iteration global schedules with selection reuse, k_sel 128 at 2 k
         **{
             f"L5g-{name}": replace(

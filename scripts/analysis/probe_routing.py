@@ -52,6 +52,10 @@ def load_run(run_dir: Path, device: torch.device) -> tuple[BigMoE, ModelCfg, int
     from scripts.train.teacher import attach_encoder
 
     attach_encoder(model, device)  # L8b (ADR-057): neighbours on every eval path
+    if cfg.engram.enabled and cfg.engram.placement == "host":  # L8e (ADR-071): trained table
+        from scripts.train.engram_host import load_values
+
+        model.engram.attach_host_table(load_values(run_dir / "ckpt", cfg.engram, cfg.d))
     return model.to(device).eval(), cfg, int(ckpt["step"])
 
 

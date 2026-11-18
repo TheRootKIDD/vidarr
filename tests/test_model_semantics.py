@@ -1720,3 +1720,74 @@ def test_l5g_selection_keeps_k_sel_keys_per_token_and_kv_head() -> None:
         m.forward_hidden(torch.randint(0, 97, (2, 64)), r=3)
     assert seen and all((g.sum(-1) == 4).all() and g.shape[:2] == (2, 2) for g in seen)
 
+
+# ---- ADR-071: L8e (hashed n-gram engram) ---------------------------------------------------
+def _l8e(placement: str = "gpu") -> ModelCfg:
+    base = tiny("L5")
+    return dc.replace(
+        base, engram=dc.replace(ladder("L8e").engram, rows=256, placement=placement)
+    )
+
+
+def test_engram_ids_are_deterministic_in_range_and_order_specific() -> None:
+    from model.engram import ngram_ids
+
+    cfg = _l8e().engram
+    toks = torch.randint(0, 97, (2, 40))
+    a, b = ngram_ids(toks, cfg, 97), ngram_ids(toks.clone(), cfg, 97)
+    assert torch.equal(a, b) and a.shape == (2, 40, 2)
+    assert (a >= 0).all() and (a < cfg.rows).all()
+    assert (a[..., 0] != a[..., 1]).float().mean() > 0.9  # 2-gram and 3-gram rows differ
+    alt = toks.clone()
+    alt[0, 10] = (alt[0, 10] + 1) % 97
+    c = ngram_ids(alt, cfg, 97)
+    changed = (c != a).any(-1)[0]
+    assert changed[10:13].all() and not changed[:10].any() and not changed[13:].any()
+
+
+def test_engram_zero_init_is_l5_and_its_input_is_not_accumulated() -> None:
+    torch.manual_seed(0)
+    base = BigMoE(tiny("L5")).eval()
+    m = BigMoE(_l8e()).eval()
+    missing, _ = m.load_state_dict(base.state_dict(), strict=False)
+    assert all(k.startswith("engram.") for k in missing)
+    toks = torch.randint(0, 97, (1, 64))
+    with torch.no_grad():
+        assert torch.allclose(m.forward_hidden(toks, r=3)[0], base.forward_hidden(toks, r=3)[0])
+        m.engram.proj.weight.normal_()
+        assert not torch.allclose(
+            m.forward_hidden(toks, r=3)[0], base.forward_hidden(toks, r=3)[0]
+        )
+    assert ladder("L8e").expert_width() <= ladder("L5").expert_width()
+
+
+def test_engram_host_lazy_adam_first_step_equals_dense_adam() -> None:
+    from scripts.train.engram_host import HostEngram
+
+    torch.manual_seed(0)
+    cfg = _l8e("host")
+    m = BigMoE(cfg).train()
+    he = HostEngram(cfg.engram, cfg.d, "pytest-engram", rank=0, world=1, seed=0)
+    try:
+        ref = nn.Embedding(cfg.engram.rows, cfg.d)
+        with torch.no_grad():
+            ref.weight.copy_(he.master)
+        m.engram.attach_host_table(he.values)
+        out = m.loss(torch.randint(0, 97, (2, 65)), r=3)
+        with torch.no_grad():
+            m.engram.proj.weight.normal_()  # so the rows get a non-zero gradient
+        out = m.loss(torch.randint(0, 97, (2, 65)), r=3)
+        m.engram.pending = m.engram.pending[-1:]
+        out.loss.backward()
+        ids, rows = m.engram.pending[0]
+        g = torch.zeros_like(ref.weight)
+        g.index_add_(0, ids.reshape(-1), rows.grad.reshape(-1, cfg.d).repeat_interleave(2, 0))
+        ref.weight.grad = g
+        opt = torch.optim.Adam(ref.parameters(), lr=1e-2, betas=(0.9, 0.95), eps=1e-8)
+        opt.step()
+        he.step(m.engram, 1e-2, (0.9, 0.95), 1e-8)
+        assert torch.allclose(he.master, ref.weight, atol=1e-6)
+        assert torch.equal(he.values, he.master.to(torch.bfloat16))
+    finally:
+        he.close()
+

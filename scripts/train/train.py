@@ -214,6 +214,12 @@ def worker(rank: int, world: int, a: TrainArgs, cfg: ModelCfg, out: Path) -> Non
         from scripts.train.teacher import attach_encoder
 
         attach_encoder(raw, dev)
+    host_eng = None
+    if cfg.engram.enabled and cfg.engram.placement == "host":  # L8e (ADR-071 §3)
+        from scripts.train.engram_host import HostEngram
+
+        host_eng = HostEngram(cfg.engram, cfg.d, a.id, rank, world, a.seed)
+        raw.engram.attach_host_table(host_eng.values)
 
     accum = a.batch_tokens // (world * a.micro_batch * cfg.context)
     if accum < 1:
@@ -323,6 +329,8 @@ def worker(rank: int, world: int, a: TrainArgs, cfg: ModelCfg, out: Path) -> Non
                     dist.all_reduce(ld)
                     ld /= world
                 moe.router.update_bias(ld)
+        if host_eng is not None:  # L8e: lazy sparse Adam on the touched host rows, all ranks
+            host_eng.step(raw.engram, lr, a.betas, 1e-8)
         eqb_errs = []  # ADR-069: EQB biases from this step's logits, on every rank
         for m in raw.modules():
             if getattr(m, "eqb", False):
@@ -356,6 +364,8 @@ def worker(rank: int, world: int, a: TrainArgs, cfg: ModelCfg, out: Path) -> Non
                 rec[k] = v / accum
             if eqb_errs:
                 rec["eqb_err"] = max(eqb_errs)  # largest relative share error on its own step
+            if host_eng is not None:
+                rec.update(host_eng.last)
             if load_sums:
                 ld = torch.stack([ls / accum for ls in load_sums])  # [n_moe, n_exp]
                 rec["load_max"] = float(ld.max())
@@ -423,12 +433,16 @@ def worker(rank: int, world: int, a: TrainArgs, cfg: ModelCfg, out: Path) -> Non
                     },
                     ckpt_path,
                 )
+                if host_eng is not None:
+                    host_eng.save(ckpt_path.parent)  # L8e: the trained table, for evaluation
                 t_ckpt = time.time()
                 rec["ckpt_s"] = time.time() - t_save
             log.write(json.dumps(rec) + "\n")
             log.flush()
         if world > 1:
             dist.barrier()
+    if host_eng is not None:
+        host_eng.close()
 
     if is_main:
         wall = time.time() - t_start
