@@ -108,9 +108,11 @@ class Attention(nn.Module):
         theta: float,
         lora_rank: int = 0,
         lora_slots: int = 0,
+        rope: bool = True,
     ) -> None:
         super().__init__()
         self.heads, self.kv_heads, self.head_dim, self.theta = heads, kv_heads, head_dim, theta
+        self.rope = rope  # False = NoPE (ADR-066, rope_scope = none)
         self.wq = nn.Linear(d, heads * head_dim, bias=False)
         self.wk = nn.Linear(d, kv_heads * head_dim, bias=False)
         self.wv = nn.Linear(d, kv_heads * head_dim, bias=False)
@@ -131,11 +133,16 @@ class Attention(nn.Module):
             y = y + self.lora[name](x, j)
         return y
 
-    def kv(self, x: Tensor, positions: Tensor, j: int | None = None) -> tuple[Tensor, Tensor]:
-        """K/V for rows `x` [B, T, d] at absolute `positions` [T] -> each [B, Hkv, T, dh]."""
+    def kv(
+        self, x: Tensor, positions: Tensor, j: int | None = None, rotate: bool = True
+    ) -> tuple[Tensor, Tensor]:
+        """K/V for rows `x` [B, T, d] at absolute `positions` [T] -> each [B, Hkv, T, dh].
+        `rotate=False` stores the keys unrotated (ADR-066: NoPE global entries)."""
         b, t, _ = x.shape
         k = self._proj("k", self.wk, x, j).view(b, t, self.kv_heads, self.head_dim).transpose(1, 2)
         v = self._proj("v", self.wv, x, j).view(b, t, self.kv_heads, self.head_dim).transpose(1, 2)
+        if not (rotate and self.rope):
+            return k, v
         cos, sin = rotary_cos_sin(positions, self.head_dim, self.theta)
         return apply_rotary(k, cos, sin), v
 
@@ -147,15 +154,37 @@ class Attention(nn.Module):
         mask: Tensor | None,
         is_causal: bool = False,
         j: int | None = None,
+        n_plain: int = 0,
     ) -> Tensor:
-        """q_in [B, Tq, d]; kv = (K, V) [B, Hkv, Tk, dh]; mask [Tq, Tk] bool or None."""
+        """q_in [B, Tq, d]; kv = (K, V) [B, Hkv, Tk, dh]; mask [Tq, Tk] bool or None.
+
+        `n_plain` > 0 (ADR-066, rope_scope = local): the first `n_plain` keys are unrotated
+        (NoPE global entries) and are scored against the unrotated query, the rest against the
+        rotated one, all in one softmax. Done exactly by widening the head: q' = [rot(q) | q],
+        k' = [rot(k) | 0] for local keys and [0 | k] for plain ones, with the 1/sqrt(dh) scale."""
         b, tq, _ = q_in.shape
         q = self._proj("q", self.wq, q_in, j).view(b, tq, self.heads, self.head_dim).transpose(1, 2)
-        cos, sin = rotary_cos_sin(positions, self.head_dim, self.theta)
-        q = apply_rotary(q, cos, sin)
+        q_plain = q
+        if self.rope:
+            cos, sin = rotary_cos_sin(positions, self.head_dim, self.theta)
+            q = apply_rotary(q, cos, sin)
         k, v = kv
         rep = self.heads // self.kv_heads
         k, v = k.repeat_interleave(rep, dim=1), v.repeat_interleave(rep, dim=1)
+        if n_plain and self.rope:
+            z = torch.zeros_like(k)
+            k = torch.cat(
+                [
+                    torch.cat([z[:, :, :n_plain], k[:, :, :n_plain]], dim=-1),
+                    torch.cat([k[:, :, n_plain:], z[:, :, n_plain:]], dim=-1),
+                ],
+                dim=2,
+            )
+            q = torch.cat([q, q_plain], dim=-1)
+            out = F.scaled_dot_product_attention(
+                q, k, v, attn_mask=mask, scale=self.head_dim**-0.5
+            )
+            return self._proj("o", self.wo, out.transpose(1, 2).reshape(b, tq, -1), j)
         if is_causal:
             out = F.scaled_dot_product_attention(q, k, v, is_causal=True)
         else:

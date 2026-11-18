@@ -55,16 +55,17 @@ class MiddleBlock(nn.Module):
         self.cfg = cfg
         self.depth = nn.Embedding(m.r_max + 1, m.depth_embed)  # e_j, j = 1..r_max (0 unused)
         self.norm = DepthNorm(cfg.d, m.depth_embed)
+        rope = a.rope_scope != "none"  # ADR-066
         self.attn = Attention(
             cfg.d, a.heads, a.kv_heads, a.head_dim, a.rope_theta,
-            lora_rank=m.per_iter_lora_rank, lora_slots=m.r_max,
+            lora_rank=m.per_iter_lora_rank, lora_slots=m.r_max, rope=rope,
         )
         # L5c: iterations 2..r_max get their own attention; iteration 1 uses self.attn
         self.attn_rest = (
             None
             if m.shared_attention
             else nn.ModuleList(
-                Attention(cfg.d, a.heads, a.kv_heads, a.head_dim, a.rope_theta)
+                Attention(cfg.d, a.heads, a.kv_heads, a.head_dim, a.rope_theta, rope=rope)
                 for _ in range(m.r_max - 1)
             )
         )
@@ -97,7 +98,9 @@ class MiddleBlock(nn.Module):
             raise RuntimeError("global cache requested with global_source = per_iteration")
         if self.cfg.attention.segment_memory_grad == "stop":
             c_final = c_final.detach()  # ADR-023: no gradient into earlier segments' vectors
-        return self.attn.kv(self.g_norm(c_final), positions)
+        # ADR-066: under rope_scope local / none the entries are stored unrotated (NoPE)
+        rotate = self.cfg.attention.rope_scope == "all"
+        return self.attn.kv(self.g_norm(c_final), positions, rotate=rotate)
 
     # ---- checkpoint-friendly wrapper -----------------------------------------------
     def iteration_flat(
@@ -242,7 +245,14 @@ class MiddleBlock(nn.Module):
                 if mem_kv is None:
                     loc[0, 0] = True
             fast = plain_causal and (i == 0 or cfg.streams.p_sees_own_context)
-            a = attn(u, positions, (k, v), None if fast else m_i, is_causal=fast, j=j)
+            n_plain = (  # ADR-066: NoPE G entries scored by the unrotated query
+                mem_kv[0].shape[2]
+                if mem_kv is not None and cfg.attention.rope_scope == "local"
+                else 0
+            )
+            a = attn(
+                u, positions, (k, v), None if fast else m_i, is_causal=fast, j=j, n_plain=n_plain
+            )
             y, lm = self.moe(u, e)
             aux = aux + lm
             upd = a + y

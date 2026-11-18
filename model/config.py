@@ -42,6 +42,9 @@ class AttentionCfg:
     kv_share_every: int = 1  # L6b; only 1 is implemented
     index_enabled: bool = False  # L9; not implemented in Phase 1
     rope_theta: float = 10_000.0
+    # ADR-066 (L5d-nope): where RoPE applies. "local" = the middle block's local range only
+    # (G keys stored unrotated, scored by the unrotated query); "none" = nowhere
+    rope_scope: Literal["all", "local", "none"] = "all"
 
 
 @dataclass(frozen=True)
@@ -351,6 +354,10 @@ class ModelCfg:
                 raise ValueError("L5e needs the recurrent arch and an even h_every (ADR-034)")
             if a.global_source == "final_vector" or self.middle.per_iteration_attention:
                 raise NotImplementedError("L5e with L5d's G or with L5b/L5c: one feature (ADR-034)")
+        if a.rope_scope not in ("all", "local", "none"):
+            raise ValueError("attention.rope_scope must be all, local or none (ADR-066)")
+        if a.rope_scope == "local" and a.global_source != "final_vector":
+            raise ValueError("rope_scope = local needs L5d's global range (ADR-066)")
         if a.prev_segment_local or a.kv_share_every != 1:
             raise NotImplementedError("ADR-022 crossing / L6b KV sharing are not implemented yet")
         if r.k > r.n_experts:  # k*g active of N_e*g sub-experts (ADR-047)
@@ -469,6 +476,13 @@ def ladder(step: str, **overrides: Any) -> ModelCfg:
         # ADR-034: one dense H block with its own weights after iteration 4
         "L5e": replace(rec, middle=MiddleCfg(h_every=8), experts=ExpertsCfg(d_ff=896)),
         "L5d": replace(rec, attention=AttentionCfg(global_source="final_vector")),
+        # ADR-066: RoPE on the local range only (NoPE on G), and NoPE everywhere
+        "L5d-nope": replace(
+            rec, attention=AttentionCfg(global_source="final_vector", rope_scope="local")
+        ),
+        "L5d-nope-all": replace(
+            rec, attention=AttentionCfg(global_source="final_vector", rope_scope="none")
+        ),
         # ADR-041: gated ACT residual, ponder price below the measured marginal iteration value
         "L6": replace(
             rec,

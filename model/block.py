@@ -25,7 +25,9 @@ class Block(nn.Module):
         a = cfg.attention
         self.cfg, self.form, self.pred_only = cfg, form, pred_only
         self.n1 = DepthNorm(cfg.d)
-        self.attn = Attention(cfg.d, a.heads, a.kv_heads, a.head_dim, a.rope_theta)
+        self.attn = Attention(
+            cfg.d, a.heads, a.kv_heads, a.head_dim, a.rope_theta, rope=a.rope_scope != "none"
+        )  # ADR-066
         self.n2 = DepthNorm(cfg.d) if self.form == "sequential" else None
         self.ff: nn.Module = MoE(cfg) if ff == "moe" else SwiGLU(cfg.d, d_ff)
         self.is_moe = ff == "moe"

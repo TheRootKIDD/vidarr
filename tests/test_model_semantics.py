@@ -47,6 +47,8 @@ STEPS = [
     "L5b",
     "L5c",
     "L5d",
+    "L5d-nope",
+    "L5d-nope-all",
     "L5e",
     "L6",
     "L6c",
@@ -1456,3 +1458,62 @@ def test_l8q_teacher_matches_the_table_encoding() -> None:
     ref = torch.from_numpy(np.array(table[[r["cell"] for r in rows]], dtype=np.float32))
     cos = (emb * torch.nn.functional.normalize(ref, dim=-1)).sum(-1)
     assert cos.min() > 0.999
+
+
+# ---- ADR-066: L5d-nope (RoPE on the local range only) ----------------------------------
+def test_nope_split_head_equals_explicit_two_query_attention() -> None:
+    """The widened-head trick: plain keys scored by the unrotated query, the rest by the
+    rotated one, in one softmax with the 1/sqrt(dh) scale."""
+    from model.layers import Attention, apply_rotary, rotary_cos_sin
+
+    torch.manual_seed(0)
+    att = Attention(32, heads=4, kv_heads=2, head_dim=8, theta=10_000.0)
+    b, tq, ng = 2, 5, 7
+    x = torch.randn(b, tq, 32)
+    pos = torch.arange(20, 20 + tq)
+    kg, vg = att.kv(torch.randn(b, ng, 32), torch.arange(ng), rotate=False)
+    kl, vl = att.kv(x, pos)
+    k, v = torch.cat([kg, kl], 2), torch.cat([vg, vl], 2)
+    mask = torch.cat([torch.ones(tq, ng, dtype=torch.bool), causal_mask(tq, tq, x.device)], 1)
+    out = att(x, pos, (k, v), mask, n_plain=ng)
+    # explicit reference
+    q = att.wq(x).view(b, tq, 4, 8).transpose(1, 2)
+    cos, sin = rotary_cos_sin(pos, 8, 10_000.0)
+    qr = apply_rotary(q, cos, sin)
+    kk, vv = k.repeat_interleave(2, 1), v.repeat_interleave(2, 1)
+    sc = torch.cat(
+        [q @ kk[:, :, :ng].transpose(-1, -2), qr @ kk[:, :, ng:].transpose(-1, -2)], -1
+    ) / math.sqrt(8)
+    sc = sc.masked_fill(~mask, float("-inf"))
+    ref = att.wo((sc.softmax(-1) @ vv).transpose(1, 2).reshape(b, tq, -1))
+    assert torch.allclose(out, ref, atol=1e-5)
+
+
+def test_nope_global_entries_are_position_free_and_all_is_unchanged() -> None:
+    torch.manual_seed(0)
+    x = torch.randn(1, 16, 64)
+    for scope, free in (("all", False), ("local", True), ("none", True)):
+        cfg = tiny("L5d", attention=dc.replace(tiny("L5d").attention, rope_scope=scope))
+        m = BigMoE(cfg)
+        k1, _ = m.middle.global_entry(x, torch.arange(16))
+        k2, _ = m.middle.global_entry(x, torch.arange(100, 116))
+        assert torch.allclose(k1, k2) == free, scope
+
+
+def test_nope_local_matches_l5d_before_any_global_entry() -> None:
+    """With the same weights, L5d-nope equals L5d on the first segment (no G yet) and differs
+    once G exists; NoPE-everywhere differs from the start (the skeleton loses RoPE too)."""
+    torch.manual_seed(0)
+    base = BigMoE(tiny("L5d")).eval()
+    toks = torch.randint(0, 97, (1, 64))
+    with torch.no_grad():
+        h0, _ = base.forward_hidden(toks, r=3)
+        for step, same_first in (("L5d-nope", True), ("L5d-nope-all", False)):
+            m = BigMoE(tiny(step)).eval()
+            m.load_state_dict(base.state_dict())
+            h, _ = m.forward_hidden(toks, r=3)
+            assert torch.allclose(h[0, :16], h0[0, :16], atol=1e-5) == same_first, step
+            assert not torch.allclose(h[0, 16:], h0[0, 16:], atol=1e-5), step
+    m = BigMoE(tiny("L5d-nope-all"))
+    assert not any(mod.rope for mod in m.modules() if hasattr(mod, "rope"))
+

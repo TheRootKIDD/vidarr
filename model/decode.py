@@ -110,6 +110,8 @@ def check_supported(model: BigMoE) -> None:
         reasons.append("per-iteration attention (L5b/L5c)")
     if cfg.middle.h_every:
         reasons.append("H block (L5e)")
+    if cfg.attention.rope_scope != "all":
+        reasons.append(f"rope_scope {cfg.attention.rope_scope} (ADR-066)")
     if reasons:
         raise NotImplementedError("decode supports L5 only (ADR-049 §1): " + ", ".join(reasons))
 
