@@ -318,13 +318,18 @@ class BigMoE(nn.Module):
         `neighbours` (L8b, ADR-057): per-boundary table rows of the inputs, else computed."""
         inp = tokens[:, :-1]
         routers = [m for m in self.modules() if getattr(m, "eqb", False)]
+        moes = [m for m in self.modules() if hasattr(m, "call_loads")]
         for rt in routers:  # ADR-069: record this forward's logits, not backward's replays
             rt.eqb_record = True
+        for mo in moes:  # ADR-074: and this forward's loads per call
+            mo.record_loads = self.training
         try:
             h, ex = self.forward_hidden(inp, r, q_target, neighbours)
         finally:
             for rt in routers:
                 rt.eqb_record = False
+            for mo in moes:
+                mo.record_loads = False
         main = self._chunked_ce(h, tokens[:, 1:])
         metrics: dict[str, float] = {}
         if self.mtp is not None:

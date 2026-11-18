@@ -311,10 +311,16 @@ def worker(rank: int, world: int, a: TrainArgs, cfg: ModelCfg, out: Path) -> Non
             for k, v in o.metrics.items():
                 metric_sums[k] = metric_sums.get(k, 0.0) + v
             loads = [
-                m.last_route.load
+                # ADR-074 (I43): all_calls = mean over the forward's calls; else the last call
+                torch.stack(m.call_loads).mean(0)
+                if cfg.router.bias_load == "all_calls" and m.call_loads
+                else m.last_route.load
                 for m in raw.modules()
                 if hasattr(m, "last_route") and m.last_route is not None
             ]
+            for m in raw.modules():
+                if hasattr(m, "call_loads"):
+                    m.call_loads.clear()
             if loads:
                 load_sums = (
                     [ls + ld for ls, ld in zip(load_sums, loads, strict=True)]

@@ -87,6 +87,10 @@ class RouterCfg:
     # cutoff giving every expert k/N_e of the pairs, per iteration or over the step; no aux loss)
     balance: Literal["aux_free", "none", "eqb_iteration", "eqb_step"] = "aux_free"
     bias_update_rate: float = 1e-3  # aux-loss-free load controller step (DeepSeek-V3 style)
+    # ADR-074 (I43): which load the controller sees. "last_call" = as built: the router's last
+    # call per micro-step, which under activation checkpointing is iteration 1's backward
+    # replay; "all_calls" = the mean load over every call of the training forward
+    bias_load: Literal["last_call", "all_calls"] = "last_call"
     aux_loss_coef: float = 1e-3  # small sequence-level auxiliary loss
     use_depth_embed: bool = True  # False = E-Q2 ablation (router without e_j)
     # ADR-038 (I33): aux averaged over L5d's segments; "sum" reproduces runs before it
@@ -577,6 +581,8 @@ def ladder(step: str, **overrides: Any) -> ModelCfg:
                 ("fsss", "FSSSFSSS"), ("fsssllll", "FSSSLLLL"), ("fs7", "FSSSSSSS")
             )
         },
+        # ADR-074 (I43): L5 with the bias controller fed the load of every iteration
+        "L5-balfix": replace(rec, router=RouterCfg(bias_load="all_calls")),
         # ADR-069: Exact Quantile Balancing per iteration / per step, at N_e = 8 and 128
         "L5-eqb-iter": replace(rec, router=RouterCfg(balance="eqb_iteration")),
         "L5-eqb-step": replace(rec, router=RouterCfg(balance="eqb_step")),

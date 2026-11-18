@@ -1843,3 +1843,25 @@ def test_qat_linear_is_straight_through_and_swaps_only_attention_and_ffn() -> No
     lin(x).sum().backward()
     assert torch.allclose(g_q, lin.weight.grad)
 
+
+# ---- ADR-074 (I43): what the bias controller sees -----------------------------------------
+def test_controller_as_built_sees_iteration_1_and_all_calls_sees_every_iteration() -> None:
+    torch.manual_seed(0)
+    m = BigMoE(tiny("L5-balfix")).train()
+    moe = m.middle.moe
+    seen = []
+    orig = moe.router.forward
+
+    def rec(*a, **k):  # noqa: ANN002, ANN003, ANN202
+        out = orig(*a, **k)
+        seen.append((k.get("j"), out.load))
+        return out
+
+    moe.router.forward = rec
+    out = m.loss(torch.randint(0, 97, (2, 65)), r=3)
+    assert len(moe.call_loads) == 3  # the forward's three iterations, recorded
+    out.loss.backward()  # checkpoint replays: 3, 2, 1 -- not recorded
+    assert len(moe.call_loads) == 3 and seen[-1][0] == 1  # last_route = iteration 1's replay
+    assert torch.allclose(torch.stack(moe.call_loads).mean(0),
+                          torch.stack([ld for _, ld in seen[:3]]).mean(0))
+

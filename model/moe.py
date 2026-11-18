@@ -30,6 +30,9 @@ class MoE(nn.Module):
             Expert(cfg.d, self.d_ff, cfg.experts.layers) for _ in range(self.n_experts)
         )
         self.last_route: RouteResult | None = None
+        # ADR-074 (I43): loads of the training forward's calls (not backward's replays)
+        self.record_loads = False
+        self.call_loads: list[Tensor] = []
 
     def forward(
         self, u: Tensor, e: Tensor | None = None, j: int | None = None
@@ -40,6 +43,8 @@ class MoE(nn.Module):
         flat = u.reshape(-1, shape[-1])
         route = self.router(flat, e, j=j)
         self.last_route = route
+        if self.record_loads:
+            self.call_loads.append(route.load)
         out = torch.zeros_like(flat)
         n, k = route.idx.shape
         token_of = torch.arange(n, device=u.device).repeat_interleave(k)  # [N*k]
