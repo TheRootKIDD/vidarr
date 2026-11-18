@@ -132,7 +132,8 @@ class BigMoE(nn.Module):
         cfg = self.cfg
         b, t = tokens.shape
         dev = tokens.device
-        final_vec = cfg.attention.global_source == "final_vector"
+        final_vec = cfg.attention.has_global
+        j_b = cfg.attention.bridge_iteration  # L5h (ADR-067); 0 = the final vector
         seg = cfg.attention.window if final_vec else t
         n_iter = cfg.middle.r_max if r is None else r
         fixed = cfg.halting.mode == "fixed"
@@ -168,9 +169,12 @@ class BigMoE(nn.Module):
             )
             if st.nbr is not None and cfg.memory.hoist:  # L8b-pv (ADR-060): maps per boundary
                 st = replace(st, nbr_kv=self.middle.mem.prepare(st.nbr))
+            c_bridge: Tensor | None = None
             for j in range(1, n_iter + 1):
                 prev_active = st.active
                 st, a = self._iterate(st, j, pos, mem, fixed)
+                if j == j_b:
+                    c_bridge = st.c  # L5h: G's entry is built from the state after iteration j_b
                 if expert and j > cfg.middle.r_min:
                     self.middle.record_tau(j, st.cum_halt, prev_active)
                 aux = aux + a
@@ -190,7 +194,9 @@ class BigMoE(nn.Module):
             r_maps.append(st.r)
             ponders.append(st.r.float() + st.remainder)
             if final_vec:
-                g = self.middle.global_entry(st.c, pos)
+                if j_b and c_bridge is None:
+                    raise RuntimeError("L5h: the loop ended before the bridge iteration")
+                g = self.middle.global_entry(st.c if c_bridge is None else c_bridge, pos)
                 if mem is None:
                     mem = g
                 else:

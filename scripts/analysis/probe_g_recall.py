@@ -43,7 +43,7 @@ def main() -> None:
     run_dir = RESULTS_DIR / a.id
     model, cfg, step = load_run(run_dir, dev)
     if cfg.attention.global_source != "final_vector":
-        raise SystemExit("needs a model with the global cache G (L5d family)")
+        raise SystemExit("needs a model with the final-vector global cache G (L5d / L5d-nope)")
     scope = cfg.attention.rope_scope
     seg = cfg.attention.window
     last0 = (a.context // seg - 1) * seg  # start of the last segment

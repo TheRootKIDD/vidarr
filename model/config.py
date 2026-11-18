@@ -27,7 +27,7 @@ from costmodel.solve import budget_n_keys, solve_d_ff
 Arch = Literal["layered", "recurrent"]
 BlockForm = Literal["sequential", "parallel"]
 FFKind = Literal["dense", "moe"]
-GlobalSource = Literal["per_iteration", "final_vector"]
+GlobalSource = Literal["per_iteration", "final_vector", "bridged"]
 
 
 @dataclass(frozen=True)
@@ -36,7 +36,8 @@ class AttentionCfg:
     kv_heads: int = 4
     head_dim: int = 64
     window: int = 512  # W: local range, also the training segment length (v2 P7)
-    global_source: GlobalSource = "per_iteration"  # L5 baseline; final_vector = L5d
+    global_source: GlobalSource = "per_iteration"  # L5 baseline; final_vector = L5d; bridged = L5h
+    bridge_iteration: int = 0  # ADR-067 (L5h): G entries from iteration j_b, own projections
     segment_memory_grad: Literal["stop", "through"] = "stop"  # ADR-023
     prev_segment_local: bool = False  # ADR-022 knob; only False is implemented
     kv_share_every: int = 1  # L6b; only 1 is implemented
@@ -45,6 +46,11 @@ class AttentionCfg:
     # ADR-066 (L5d-nope): where RoPE applies. "local" = the middle block's local range only
     # (G keys stored unrotated, scored by the unrotated query); "none" = nowhere
     rope_scope: Literal["all", "local", "none"] = "all"
+
+    @property
+    def has_global(self) -> bool:
+        """The recurrent model keeps the global cache G (L5d family; L5h bridges it)."""
+        return self.global_source != "per_iteration"
 
 
 @dataclass(frozen=True)
@@ -320,7 +326,7 @@ class ModelCfg:
                     raise ValueError("retrieval.stride must divide the context; k >= 1")
                 if not 1 <= rc.min_tokens <= rc.window:
                     raise ValueError("retrieval needs 1 <= min_tokens <= window")
-                if self.attention.global_source == "final_vector" and (
+                if self.attention.has_global and (
                     self.attention.window % rc.stride
                 ):
                     raise ValueError("retrieval.stride must divide the segment length")
@@ -344,7 +350,7 @@ class ModelCfg:
             raise ValueError("halting.survival_last must be in (0, 1]")
         if self.middle.per_iter_lora_rank and not self.middle.shared_attention:
             raise ValueError("L5b adapters on L5c's unshared attention: two features (ADR-032)")
-        if self.middle.per_iteration_attention and a.global_source == "final_vector":
+        if self.middle.per_iteration_attention and a.has_global:
             raise NotImplementedError(
                 "L5b/L5c over the final-vector cache: no rule yet for which iteration's "
                 "weights make a G entry (ADR-032)"
@@ -352,11 +358,18 @@ class ModelCfg:
         if self.middle.h_every:
             if self.arch != "recurrent" or self.middle.h_every % 2:
                 raise ValueError("L5e needs the recurrent arch and an even h_every (ADR-034)")
-            if a.global_source == "final_vector" or self.middle.per_iteration_attention:
+            if a.has_global or self.middle.per_iteration_attention:
                 raise NotImplementedError("L5e with L5d's G or with L5b/L5c: one feature (ADR-034)")
+        if a.global_source == "bridged":
+            if not 1 <= a.bridge_iteration <= self.middle.r_max:
+                raise ValueError("attention.bridge_iteration must be in 1..r_max (ADR-067)")
+            if self.halting.mode != "fixed":
+                raise NotImplementedError("L5h with variable depth is not specified (ADR-067)")
+        elif a.bridge_iteration:
+            raise ValueError("attention.bridge_iteration needs global_source = bridged")
         if a.rope_scope not in ("all", "local", "none"):
             raise ValueError("attention.rope_scope must be all, local or none (ADR-066)")
-        if a.rope_scope == "local" and a.global_source != "final_vector":
+        if a.rope_scope == "local" and not a.has_global:
             raise ValueError("rope_scope = local needs L5d's global range (ADR-066)")
         if a.prev_segment_local or a.kv_share_every != 1:
             raise NotImplementedError("ADR-022 crossing / L6b KV sharing are not implemented yet")
@@ -373,7 +386,7 @@ class ModelCfg:
                 raise NotImplementedError("L3c on the recurrent design is not specified (ADR-039)")
             if self.mtp.curriculum != "none":
                 raise ValueError("L3c with L3b's curriculum: two features (ADR-039)")
-        final_vec = self.arch == "recurrent" and a.global_source == "final_vector"
+        final_vec = self.arch == "recurrent" and a.has_global
         if final_vec and self.context % a.window:
             raise ValueError("context must be a multiple of the window (segment length)")
         if self.numerics.sparsity_2_4 and self.expert_width() % 4:
@@ -477,6 +490,13 @@ def ladder(step: str, **overrides: Any) -> ModelCfg:
         "L5e": replace(rec, middle=MiddleCfg(h_every=8), experts=ExpertsCfg(d_ff=896)),
         "L5d": replace(rec, attention=AttentionCfg(global_source="final_vector")),
         # ADR-066: RoPE on the local range only (NoPE on G), and NoPE everywhere
+        # ADR-067: G bridged from iteration j_b through its own projections; jb8 = untied control
+        **{
+            f"L5h-jb{jb}": replace(
+                rec, attention=AttentionCfg(global_source="bridged", bridge_iteration=jb)
+            )
+            for jb in (1, 2, 4, 8)
+        },
         "L5d-nope": replace(
             rec, attention=AttentionCfg(global_source="final_vector", rope_scope="local")
         ),

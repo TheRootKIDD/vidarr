@@ -24,7 +24,7 @@ import torch.distributed as dist
 from torch import Tensor, nn
 
 from model.config import ModelCfg
-from model.layers import Attention, DepthNorm, local_window_mask
+from model.layers import Attention, DepthNorm, apply_rotary, local_window_mask, rotary_cos_sin
 from model.memory import KnowledgeMemory
 from model.moe import MoE
 
@@ -75,7 +75,11 @@ class MiddleBlock(nn.Module):
             KnowledgeMemory(cfg.memory, cfg.d, m.depth_embed) if cfg.memory.enabled else None
         )
         # norm applied to final vectors before the G K/V; only exists when G is used (L5d+)
-        self.g_norm = nn.RMSNorm(cfg.d) if a.global_source == "final_vector" else None
+        self.g_norm = nn.RMSNorm(cfg.d) if a.has_global else None
+        # L5h (ADR-067): G's own K/V projections, applied to the state after iteration j_b
+        kvd = a.kv_heads * a.head_dim
+        self.bridge_k = nn.Linear(cfg.d, kvd, bias=False) if a.global_source == "bridged" else None
+        self.bridge_v = nn.Linear(cfg.d, kvd, bias=False) if a.global_source == "bridged" else None
         self.halt = nn.Linear(cfg.d + m.depth_embed, 1)
         nn.init.zeros_(self.halt.weight)
         nn.init.constant_(self.halt.bias, -2.0)  # start with a low halting probability
@@ -100,7 +104,18 @@ class MiddleBlock(nn.Module):
             c_final = c_final.detach()  # ADR-023: no gradient into earlier segments' vectors
         # ADR-066: under rope_scope local / none the entries are stored unrotated (NoPE)
         rotate = self.cfg.attention.rope_scope == "all"
-        return self.attn.kv(self.g_norm(c_final), positions, rotate=rotate)
+        x = self.g_norm(c_final)
+        if self.bridge_k is None or self.bridge_v is None:
+            return self.attn.kv(x, positions, rotate=rotate)
+        # L5h: c_final is the state after iteration j_b; the bridge pair, not the local W_K/W_V
+        a = self.attn
+        b, t, _ = x.shape
+        k = self.bridge_k(x).view(b, t, a.kv_heads, a.head_dim).transpose(1, 2)
+        v = self.bridge_v(x).view(b, t, a.kv_heads, a.head_dim).transpose(1, 2)
+        if rotate and a.rope:
+            cos, sin = rotary_cos_sin(positions, a.head_dim, a.theta)
+            k = apply_rotary(k, cos, sin)
+        return k, v
 
     # ---- checkpoint-friendly wrapper -----------------------------------------------
     def iteration_flat(
@@ -223,7 +238,7 @@ class MiddleBlock(nn.Module):
         # key set = [global memory | local per-iteration], mask = [all | local window].
         # L5 baseline (`per_iteration`): the "local" range is the whole context, i.e. plain
         # causal attention over same-iteration caches; L5d: a window W within the segment.
-        window = cfg.attention.window if cfg.attention.global_source == "final_vector" else t
+        window = cfg.attention.window if cfg.attention.has_global else t
         mask = local_window_mask(t, window, st.c.device)
         plain_causal = mem_kv is None and window >= t
         if mem_kv is not None:

@@ -49,6 +49,8 @@ STEPS = [
     "L5d",
     "L5d-nope",
     "L5d-nope-all",
+    "L5h-jb1",
+    "L5h-jb2",
     "L5e",
     "L6",
     "L6c",
@@ -1516,4 +1518,48 @@ def test_nope_local_matches_l5d_before_any_global_entry() -> None:
             assert not torch.allclose(h[0, 16:], h0[0, 16:], atol=1e-5), step
     m = BigMoE(tiny("L5d-nope-all"))
     assert not any(mod.rope for mod in m.modules() if hasattr(mod, "rope"))
+
+
+# ---- ADR-067: L5h (G bridged from iteration j_b) ----------------------------------------
+def test_l5h_widths_match_l5d() -> None:
+    assert {ladder(f"L5h-jb{j}").expert_width() for j in (1, 2, 4, 8)} == {
+        ladder("L5d").expert_width()
+    }
+
+
+def test_l5h_at_the_last_iteration_with_copied_projections_is_l5d() -> None:
+    torch.manual_seed(0)
+    base = BigMoE(tiny("L5d")).eval()
+    cfg = tiny("L5h-jb1", attention=dc.replace(tiny("L5h-jb1").attention, bridge_iteration=3))
+    m = BigMoE(cfg).eval()
+    missing, unexpected = m.load_state_dict(base.state_dict(), strict=False)
+    assert set(missing) == {"middle.bridge_k.weight", "middle.bridge_v.weight"} and not unexpected
+    with torch.no_grad():
+        m.middle.bridge_k.weight.copy_(base.middle.attn.wk.weight)
+        m.middle.bridge_v.weight.copy_(base.middle.attn.wv.weight)
+        toks = torch.randint(0, 97, (1, 64))
+        assert torch.allclose(m.forward_hidden(toks, r=3)[0], base.forward_hidden(toks, r=3)[0])
+
+
+def test_l5h_entries_come_from_the_bridge_iteration() -> None:
+    torch.manual_seed(0)
+    m = BigMoE(tiny("L5h-jb2")).eval()
+    states: list[torch.Tensor] = []
+    inputs: list[torch.Tensor] = []
+    it, ge = m._iterate, m.middle.global_entry
+
+    def rec_it(st, j, *a, **k):  # noqa: ANN001, ANN202
+        out = it(st, j, *a, **k)
+        if j == 2:
+            states.append(out[0].c)
+        return out
+
+    def rec_ge(c, pos):  # noqa: ANN001, ANN202
+        inputs.append(c)
+        return ge(c, pos)
+
+    m._iterate, m.middle.global_entry = rec_it, rec_ge
+    with torch.no_grad():
+        m.forward_hidden(torch.randint(0, 97, (1, 64)), r=3)
+    assert len(inputs) == 4 and all(torch.equal(a, b) for a, b in zip(inputs, states, strict=True))
 
