@@ -337,3 +337,25 @@ def test_deepseek_v3_shape_and_scenario() -> None:
     assert out["batches"]["fired_by_round"] > 0 and out["throughput_tok_s"] > 0
     with pytest.raises(ValueError, match="context_tokens"):
         load_params("h100_sglang", "deepseek_v3")
+
+
+def test_attention_reads_follow_the_schedule() -> None:
+    """02 §14 attention-side counters (ADR-068/070): local W keys per iteration, global |G| at F,
+    min(k_sel, |G|) at S, 0 at L; V reads of G scaled by 1 - V-skip."""
+    from sim.params import attention_reads
+
+    l5 = attention_reads(load_params(rung="L5", context_tokens=2048))
+    assert l5["global_keys"] == 0 and l5["local_keys"] == 8 * 2048
+    l5d = load_params(rung="L5d", context_tokens=2048)
+    full = attention_reads(l5d)
+    assert full["global_keys"] == 8 * 1536 and full["local_keys"] == 8 * 512
+    sched = tuple("FSSSFSSS")
+    sel = attention_reads(dc.replace(l5d, global_schedule=sched, k_sel=128))
+    assert sel["global_keys"] == 2 * 1536 + 6 * 128
+    loc = attention_reads(dc.replace(l5d, global_schedule=tuple("FSSSLLLL"), k_sel=128))
+    assert loc["global_keys"] == 1536 + 3 * 128
+    skip = attention_reads(dc.replace(l5d, global_v_skip_frac=0.5))
+    per_key = l5d.kv_width * l5d.b_kv
+    assert skip["global_kv_bytes"] == pytest.approx(8 * 1536 * per_key * 1.5)
+    with pytest.raises(ValueError):
+        attention_reads(dc.replace(l5d, global_schedule=("F",)))

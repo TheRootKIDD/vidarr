@@ -23,7 +23,7 @@ from costmodel.config import Experts as CmExperts
 from costmodel.config import Model
 from costmodel.hardware import expert_step
 from sim.engine import Engine
-from sim.params import SimParams, attention_score_flops_per_token, log2_interp
+from sim.params import SimParams, attention_reads, attention_score_flops_per_token, log2_interp
 
 OwnerKind = Literal["skel_in", "attn", "post", "skel_out"]
 
@@ -460,6 +460,7 @@ class Simulation:
                 "formula_2kd_bact": 2.0 * p.k * p.d * p.b_act,
             },
             "utilisation": self.utilisation(t0, t1),
+            "attention_reads_per_token": attention_reads(p),
         }
 
     def _mean_in_flight(self, t0: float, t1: float) -> float:

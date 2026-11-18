@@ -73,6 +73,15 @@ class SimParams:
     kv_width: int  # H_kv d_h
     context_tokens: int  # keys visible to a decode token (decision 6)
     skel_in_layers: int = 2  # attention layers whose KV the skel_in job reads (E blocks)
+    # attention-side reads (02 §14; ADR-068/070, trap 9): W > 0 splits a decode token's keys into
+    # the local window (per-iteration caches) and the global cache G; 0 = L5's same-iteration
+    # caches over the whole context. The schedule is one letter per iteration (F full, S the
+    # last full iteration's top-k_sel, L local only; empty = all F). The V-skip fraction is a
+    # measured input (ReLU^2: keys zero for the whole KV group, ADR-068), not a constant
+    window: int = 0
+    global_schedule: tuple[str, ...] = ()
+    k_sel: int = 0
+    global_v_skip_frac: float = 0.0
     skel_out_layers: int = 2  # ... and the skel_out job (F blocks)
     # per cached key per attention layer: score FLOPs and KV bytes. None: the recurrent
     # model's 2 · 2 d and 2 H_kv d_h b_kv. DeepSeek-V3 (MLA, ADR-052 §3) sets both
@@ -372,6 +381,9 @@ def _model_fields(rung: str, context_tokens: int | None) -> dict[str, Any]:
         "head_weight_bytes": cm.vocab * cm.d * b,
         "kv_width": cm.attn.kv_width,
         "context_tokens": keys,
+        "window": a.window if a.has_global else 0,
+        "global_schedule": tuple(getattr(a, "schedule", ())),
+        "k_sel": int(getattr(a, "k_sel", 0)),
     }
 
 
@@ -420,6 +432,35 @@ def _deepseek_v3_fields(context_tokens: int | None) -> dict[str, Any]:
         "kv_bytes_per_key_layer": ds.kv_bytes_per_key(m, bf16),
         "b_dispatch": fp8 + 4.0 / 128,  # FP8 with one fp32 scale per 128 values (DeepEP LL)
         "b_combine": bf16,
+    }
+
+
+def attention_reads(p: SimParams) -> dict[str, Any]:
+    """Keys and K/V bytes one decode token reads in the middle block, per iteration and in total
+    (02 §14). Local: min(W, n) same-iteration keys; global: |G| = n - W at a full iteration,
+    min(k_sel, |G|) at a sparse one, 0 at a local one; V reads of G scaled by 1 - V-skip."""
+    n = p.context_tokens
+    sched = p.global_schedule or ("F",) * p.r
+    if len(sched) != p.r or set(sched) - {"F", "S", "L"}:
+        raise ValueError("global_schedule needs one of F/S/L per iteration")
+    per_key = p.kv_width * p.b_kv  # bytes of K (or V) per key
+    rows = []
+    for c in sched:
+        if p.window == 0:
+            loc, glob = n, 0
+        else:
+            loc, g = min(p.window, n), max(n - p.window, 0)
+            glob = g if c == "F" else min(p.k_sel, g) if c == "S" else 0
+        rows.append({"local_keys": loc, "global_keys": glob})
+    loc_t = sum(x["local_keys"] for x in rows)
+    glob_t = sum(x["global_keys"] for x in rows)
+    g_bytes = glob_t * per_key * (2.0 - p.global_v_skip_frac)
+    return {
+        "per_iteration": rows,
+        "local_keys": loc_t,
+        "global_keys": glob_t,
+        "global_kv_bytes": g_bytes,
+        "kv_bytes": loc_t * 2 * per_key + g_bytes,
     }
 
 
