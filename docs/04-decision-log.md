@@ -1867,6 +1867,12 @@ Cost units from `docs/06 §4`: one `screen` run ≈ 8 h (1 B tokens, 1 seed); on
     - (a) record it and change nothing;
     - (b) fix the controller to sum loads over all calls, by ADR, for new runs only, with an L5 control run;
     - (c) (a) now, and (b) only if E-router-EQB shows balancing matters for loss.
+- **I44** *(2026-11-19, `181`; open, the user's call)* **The L8b-pv memory's specific value shrinks as the base model grows.** At `medium`, the covered first-sentence gain over L5 is −0.017 (`small` pair −0.054), below the out-of-table control's −0.023 (covered − control +0.005, `small` −0.016). Reliance on retrieved cells halves (+0.024 vs +0.053; FineWeb +0.005 vs +0.020). Retrieval itself is unchanged (coverage 78.2 %, accuracy 98.3 %). `180` already knows much of the table: its covered first sentence is 0.46 nats below `132`'s, against −0.35 on general text.
+  - **Options (each by ADR):**
+    - (a) stop H17 here, with the `small` pair as its result and `181` as its recorded limit;
+    - (b) a table of facts the base does not learn from the corpus (e.g. post-cutoff or synthetic facts), at `small`;
+    - (c) a second `medium` seed (≈ 5 d), which cannot move the rest-of-lead clause (−0.004 against 0.012).
+  - **Recommendation:** (a) now, with (b) as the candidate if H17 is reopened. (c) costs the most and cannot change the verdict.
 
 
 ## Session log
@@ -2748,6 +2754,21 @@ and an ADR first, L6c likewise; the `small` programme (L0, L1, L2, L3, L5, L5d a
 the ladder's own next step and needs no new code. The choice between "more `screen` variants" and
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
+
+### 2026-11-19 (00:10) — **`181` L8b-pv-medium done: 2.7276, +0.0026 vs `180` (0.9σ) → H17 *silent* at `medium` (ADR-059's rule; ADR-061 §7: the `small` pair's *supported* stands)**; I44 opened; `queue_screen_18` merged `embla` and started `182`
+- `queue_medium_1`: `181` ended at 23:45 on 2026-11-18, exit 0, after 123.5 h. Its eval ended at 23:53, and the compare's verdict was `silent` / covered `silent`. QUEUE DONE was logged at 23:53:05.
+- The clauses:
+  - covered first sentence −0.0173 against a 0.0145 floor (beats, just);
+  - rest of the lead −0.0040 against 0.0120 (misses);
+  - held-out +0.0026 (FineWeb subset +0.0032), within 2σ.
+- Trajectory: the lead closes at ≈ 2 B tokens and then holds at about +0.003 from 5 B. It never nears 4σ.
+- Against the control (−0.023): covered +0.005, rest +0.019. The sentence-specific margin the `small` pair had (−0.016) is gone.
+- Reliance halves against `small` (+0.024 on own retrieved tokens, +0.005 on FineWeb). Retrieval itself is unchanged (78.2 % / 98.3 %).
+- Throughput: 0.847× `180` (15,979 vs 18,874 tok/s; `049` 0.84×), 7.85 GiB. `n_thermal` was 2 in 1,335 records (steps 3370 and 13060), SM min 1890 MHz.
+- Write-up: `experiments/181-l8b-pv-medium/results.md`.
+- I44 opened: the memory's specific value shrinks with base size. Options (a) stop H17 with the `small` pair as its result, (b) a table of facts the base cannot learn, (c) a second `medium` seed. The recommendation is (a), with (b) as the reopening route. It is the user's call; nothing is queued for H17.
+- `queue_screen_18`: merged `embla` → `c072e86` at 23:59:08; the gate passed (ruff + pytest) at 23:59:35; `182-l5d-nope-screen` started at 23:59:35 (ETA ≈ 08:20). The Embla chain (`18`–`25`, ≈ 7.5 days) is running.
+- Next free ladder id 204, rig id 054.
 
 ### 2026-11-18 (09:05) — **ADR-074 accepted (I43's control run `203`, appended to `queue_screen_21`); I43 corrected (the controller sees iteration 1, not $r$); RAM figures fixed; e-means assessed (no run now)**
 - **I43.** The user: "if you recommend to fix it we should". The recommendation is to measure first: one L5 run with the controller fed every iteration's load (ADR-074), because changing the default now would confound every queued comparison. Checking the replay order showed the controller has seen iteration 1's load, not iteration $r$'s (activation checkpointing recomputes in reverse). I43 is corrected. Code on `embla` (`31e0981`). `queue_screen_21`–`25` were stopped and re-armed to add `203` after `193`. The chain is unchanged otherwise.
