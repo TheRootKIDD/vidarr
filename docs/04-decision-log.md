@@ -1398,6 +1398,249 @@ Consequences: `06 §3` (the DDP amendment for these runs), `03 §2` (L8 row) and
 
   The parameter-matched engram-vs-product-key question is recorded as unscheduled. Touches ADR-009, ADR-057, `01 §4.6`.
 
+### ADR-066 — L5d-nope as built: RoPE on the local range only, NoPE on $\mathcal{G}$; and what every Embla `screen` step shares (reading, evals, gates); runs `182`/`183`, rig `050`
+2026-11-18 · proposed (drafted on the user's "Do the ADRs"; accept to build)
+Context: H22 (`03 §1`, `§2.1`). L5d rotates $q$ and $k$ with RoPE (θ 10 k) on both ranges (`01 §4.3`); Embla 1 uses RoPE only in its 128-token window layers and NoPE in its full layers. Content-only keys are the motivation for Q9's index. This is the first of the eight Embla steps (ADR-066–073), so §1–§3 set what they all share, and the later ADRs refer back to them.
+Decision:
+1. **Common reading (all Embla `screen` steps).**
+   - **Quantities.** $\Delta$ = arm − comparator on the final full held-out loss (5606 windows). σ = 0.0030 (twelve `small` pairs; 2σ 0.0059, 4σ 0.0119). $L_{ref}$(`screen`) = 3.3358 (`100`), so 1 % = 0.0334 and 2 % = 0.0667.
+   - **The rule** (ADR-013, one seed): $|\Delta| \le 4σ$ is *silent*.
+   - **Non-inferiority threshold $T$:** $\Delta > T + 2σ$ *weakens* at `screen`. $4σ < \Delta \le T + 2σ$ is silent (a cost is measured inside the allowance). $\Delta < -4σ$ means the arm beats its comparator.
+   - **Improvement claim:** $\Delta < -4σ$ is needed for any reading; $\Delta > +4σ$ weakens.
+   - **What follows.** An L5-family arm that beats its comparator by > 4σ gets a `small` pair by ADR-031's rule. Every other `small` pair needs its own ADR.
+2. **Common evals.** Run on GPU after the run, never beside a training run.
+   - `eval_context` at 2048, per position bucket. 0–512 has no global range and is the in-distribution control; 512–2 k is where $\mathcal{G}$ acts.
+   - A new **copy probe**, `scripts/analysis/probe_copy.py`. In 512 held-out windows, positions 1792–1855 are overwritten with a copy of positions 256–319, and the probe reports the loss on copied tokens 2–64. The source lies beyond the local window, so only the global range can serve it. This stands in for the handoff's "needle/copy" until H15b's evals exist.
+   - `162` (L5d) is scored the same way, once, as the base for every L5d-family arm.
+3. **Common gates.**
+   - Code lands on a branch with unit tests, after `queue_medium_1` ends. No commits to `model/`, `scripts/` or `costmodel/` while it runs.
+   - Each queue gates on ruff + pytest on the merged commit, refuses code changed since the gate, and logs `n_thermal`.
+   - A new code path that changes memory or step time gets a GPU probe before its first run.
+   - Ids are reserved in this ADR series's order (ladder `182`–`202`, rig `050`–`053`). If the user changes the order, the next free ids are used and the change is noted in the session log.
+4. **L5d-nope.**
+   - **Knob:** `attention.rope_scope: all | local | none`, default `all` (the current behaviour).
+   - **`local`:** RoPE rotates $q, k$ for local-range scores only. $\mathcal{G}$'s keys are stored unrotated and scored against the unrotated $q$. The one softmax over [$\mathcal{G}$ | local] stays (ADR-008), because each score is a dot product, rotated or not.
+   - **`none`:** no RoPE anywhere. The causal mask and the window are the only position signals.
+   - **Cost and shape:** RoPE is outside the FLOP budget, so the width stays 896 and nothing else changes from L5d (`162`: window 512, context 2048, segment-mean aux, $r$ = 8, $N_e$ = 8, $k$ = 2).
+5. **Runs.**
+   - `182-l5d-nope-screen` (`local`) and `183-l5d-nope-all-screen` (`none`): `screen`, seed 0, 1 B tokens.
+   - Comparator `162` (3.3443). Baselines `100`/`106` as for every `screen` arm.
+6. **Recall probe, rig `050`** (GPU, on the `162` and `182` checkpoints).
+   - Sample: 256 held-out windows at 2048 tokens, and again at 8192. The 8 k loss is extrapolation; the key geometry is still informative.
+   - Measurement: per iteration and KV head, the exact top-32 global keys by $q \cdot k$ against a faiss HNSW index (M 32, efSearch 64, inner product) over that window's $\mathcal{G}$ keys, scored as recall@32 with a bootstrap SE.
+7. **Reading.**
+   - **H22's first clause** ("within noise") on $\Delta$(`182` − `162`), by §1: $|\Delta| \le 4σ$ is silent, in the supports direction if $\le 2σ$. $\Delta > 4σ$ weakens at `screen`. $\Delta < -4σ$ beats L5d and gets a `small` pair.
+   - **Its second clause:** recall(NoPE) − recall(RoPE) > 2 SE at both lengths.
+   - **`183`** is a reference point ("expected worse"), not a verdict arm.
+   - **If `182` weakens,** L9-relu2 (ADR-068) builds on L5d instead of L5d-nope.
+8. **Code.** A global-score path with an unrotated query. Tests:
+   - `all` reproduces the current outputs exactly.
+   - `local` leaves local scores unchanged.
+   - Under `local`, global scores are invariant to a shift of absolute positions.
+
+Consequences: 2 runs × ≈ 8.3 h (`162`: 8.28 h) plus ≈ 1 h of probes; `probe_copy.py`. ADR-063 (the default change) waits on H22 at `small`. Bears on H22, Q9; touches `01 §4.3`, `§11`.
+
+### ADR-067 — L5h as built: $\mathcal{G}$ bridged from iteration $j_b$ through its own projections, $j_b$ ∈ {1, 2, 4} plus an untied control at $j_b$ = 8; runs `184`–`187`
+2026-11-18 · proposed (drafted on the user's "Do the ADRs"; accept to build)
+Context: H20. L5d writes token $t$'s global entry from its final vector $c_t^{(r)}$. Embla's KV bridges let later layers read K/V built from an early point, so prefill can stop early. Separate projections are needed (`03 §2.1` trap 2). With them, $j_b = r$ is not L5d: it is L5d plus untied global projections, a second change. A $j_b$ = 8 arm separates the two.
+Decision:
+1. **Bridge.** Knobs `attention.global_source: bridged`, `attention.bridge_iteration` = $j_b$.
+   - **Entry:** $K_t = W_K^b\,\mathrm{RMSNorm}_b(c_t^{(j_b)})$ and $V_t = W_V^b\,\mathrm{RMSNorm}_b(c_t^{(j_b)})$. Each projection is $d \to$ kv_heads × head_dim, $2 \times 768 \times 256$ ≈ 0.39 M parameters with the same initialisation as $W_K, W_V$. Global RoPE stays as L5d (`rope_scope: all`): one change per rung.
+   - **Cost:** the FLOPs equal L5d's, because the global K/V is computed once per token either way.
+2. **Training semantics.**
+   - Segment $k$'s $\mathcal{G}$ entries are taken at iteration $j_b$ of segment $k$'s forward, detached (ADR-023).
+   - Visibility is unchanged: later segments only. An "early-visible" form, where current-segment tokens become visible after $j_b$, is a different feature and is not here.
+3. **Prefill accounting** (reported, not measured: TTFT is S5's).
+   - With `prev_segment_local: false`, earlier segments need only their $\mathcal{G}$ entries. So a prompt of $L$ tokens in segments of $S$ = 512 costs $(L - S)\,j_b + S\,r$ iterations instead of $L r$.
+   - At $L$ = 2048 that is 0.34× / 0.44× / 0.63× for $j_b$ = 1 / 2 / 4.
+4. **Runs.**
+   - `184-l5h-jb1-screen`, `185-l5h-jb2-screen`, `186-l5h-jb4-screen`, `187-l5h-jb8-screen` (the untied control): `screen`, seed 0, otherwise `162`.
+   - Comparators: `162` for the total, and `187` for the early-source effect alone.
+   - Evals per ADR-066 §2.
+5. **Reading.**
+   - **H20's loss clause:** $T$ = 2 % $L_{ref}$ = 0.0667 on $\Delta$(arm − `162`), by ADR-066 §1, with $\Delta$(arm − `187`) and $\Delta$(`187` − `162`) reported beside it.
+   - **The prefill clause** is §3's arithmetic.
+   - **What follows:** the smallest $j_b$ with $\Delta \le T$ is the candidate for a `small` pair, by its own ADR (L5h is first on the handoff's `small` list). H20's 8 k end needs trained-8 k runs like ADR-037's (≈ 24 h each) and waits for that pair.
+   - **The copy probe** is reported with no threshold. H15b's needle/copy threshold is for the indexed model.
+6. **Code.** Bridge projections and norm. Tests:
+   - $j_b = r$ with $W^b$ set to copies of $W_K, W_V$ (and the norm set to the attention's) reproduces L5d exactly.
+   - $\mathcal{G}$ entries carry no gradient.
+   - Entries come from iteration $j_b$.
+
+Consequences: 4 runs × ≈ 8.3 h ≈ 1.4 days. ADR-062 (the default change) waits on H20 at `small`. Bears on H20; touches `01 §4.3`, `02 §6`, ADR-024, E-Q12, S5.
+
+### ADR-068 — L9-relu2 as built: ReLU²-scored global range in a two-branch combination, with a two-branch softmax control; amends ADR-008 for these two arms only; runs `188`/`189`
+2026-11-18 · proposed (drafted on the user's "Do the ADRs"; accept to build)
+Context: H23. ReLU² weights normalised by their sum have no fallback when every key scores ≤ 0 (`03 §2.1` trap 3).
+- **Why it needs two branches:** inside ADR-008's single softmax a zero-sum branch cannot be expressed, so this arm needs a two-branch combination.
+- **Why a control:** switching both the combination and the scoring would be two changes in one rung, so a two-branch softmax arm is the control. ADR-008 itself named the gated two-branch form as an L9-time ablation.
+- **Base:** L5d-nope (`182`), or L5d if ADR-066 §7 sends it there.
+- **Context length:** at 2 k, $|\mathcal{G}| \le$ 1536, so the handoff's caps {256, 1024, 4096} (sized for ≥ 8 k) are scaled down.
+Decision:
+1. **Two-branch combination** (amends ADR-008 for `188` and `189` only; one softmax stays the default everywhere else).
+   - $o = o_{loc} + g_h \, o_{glob}$, with $o_{loc}$ the softmax over the local window as now. $o_{glob} = \sum_s a_s v_s$ over $\mathcal{G}$, and $o_{glob} = 0$ when $\mathcal{G}$ is empty (the first segment).
+   - $g_h = \mathrm{sigmoid}(\gamma_h)$ is one learned scalar per query head, shared across iterations, with $\gamma_h$ = 0 at init (12 parameters).
+2. **Arms.**
+   - `188-l9-2b-screen`: $a_s$ = softmax over $\mathcal{G}$ (the control).
+   - `189-l9-relu2-screen`: $s = \hat q \cdot \hat k_s / \sqrt{d_h}$ with RMS-normalised $\hat q, \hat k$, then $w_s = \mathrm{relu}(s)^2$ and $a_s = w_s / (\sum_{s'} w_{s'} + 10^{-6})$.
+   - ReLU² is homogeneous, so a temperature would cancel in the normalisation; none is added. A learned threshold ($\mathrm{relu}(s - \beta)^2$) would be a second feature and is not in this arm.
+3. **Measures.**
+   - Exact-zero fraction of (query, key) weights at every eval, per iteration and head.
+   - The V-skip rate: keys zero for every query head of their KV group.
+   - An eval-time cap: keep the top-$K$ keys by pre-ReLU score, $K$ ∈ {64, 128, 256}. The cap to the model's own nonzero set is checked as exact.
+   - ADR-066 §2's evals.
+4. **Reading.**
+   - **H23's loss clause:** $\Delta$(`189` − `188`) against $T$ = 1 % $L_{ref}$ = 0.0334, by ADR-066 §1.
+   - **Sparsity clause:** a final-step zero fraction ≥ 90 % (mean over heads and iterations).
+   - **Cap clause:** $\Delta_{cap}(K = 128) \le$ 1 % at 2 k. That stands in for $K$ = 1024 at 8 k (about the same fraction of $|\mathcal{G}|$); the 8 k clause stays owed.
+   - **ADR-008 side reading:** $\Delta$(`188` − `182`) is reported. If the two-branch form beats one softmax by > 4σ, ADR-008 gets a new ADR.
+   - **What follows:** a `small` pair, by its own ADR, if `189` lands within $T$ (L9-relu2 is on the handoff's `small` list).
+   - **Deferred:** training the `01 §6.2` indexer on the exact-zero support belongs to L9 proper, which is not built.
+5. **Code.** Tests:
+   - An empty or all-zero global range gives no NaN and $o_{glob}$ = 0.
+   - Nonzero rows of $a$ sum to 1.
+   - With $g_h$ = 1 and a softmax global branch, the two-branch form equals separate local and global attention, summed.
+
+Consequences: 2 runs × ≈ 8.5 h. `sim/`'s attention counters are owed first (`02 §14`, trap 9). Bears on H23, H15b; amends ADR-008 (these arms only); touches `01 §4.3`, `§6.2`.
+
+### ADR-069 — E-router-EQB as built: Exact Quantile Balancing per iteration and per step, at $N_e$ = 8 and 128, against ADR-004's balancer; runs `190`–`193`, rig `051`
+2026-11-18 · proposed (drafted on the user's "Do the ADRs"; accept to build)
+Context: H26. ADR-004 balances with a bias controller plus a small auxiliary loss (`01 §4.4`). Embla 1 and Kolibri-1 use EQB: each expert's bias is set every step to the exact cutoff that gives it its share, with no auxiliary loss and no step size. The shared block raises a question layered models do not have: whether the quantile is taken per iteration, which forces every iteration to be balanced on its own, or over the whole step. L5 at $N_e$ = 8 shows no depth partition (cross-iteration correlation 0.75), while $N_e$ = 128 does (`112`/`138`/`142`: 0.32–0.35), so both pool sizes are run.
+Decision:
+1. **The balancer.**
+   - **Knob:** `router.balance: aux_free | eqb_iteration | eqb_step`, default `aux_free` (ADR-004).
+   - **Replaces both halves of ADR-004:** under EQB the biases $b_i$ are set once per optimiser step from that step's router logits (all micro-batches, all ranks), and the router auxiliary loss is off. That is EQB as published, one feature.
+   - **Use:** biases are used for selection only. Gates stay the softmax of the unbiased logits over the selected set. Biases computed at step $s$ apply at $s + 1$, and start at 0.
+2. **The cutoff.** $b$ is set so that each expert is in the biased top-$k$ of exactly a $k/N_e$ share of the pairs.
+   - **Pool:** in `eqb_step`, all (token, iteration) pairs of the step. In `eqb_iteration`, those of each iteration $j$ separately, with $r \times N_e$ biases.
+   - **Procedure:** Neitemeier et al. 2026's exact-quantile method, implemented with all-reduced counts (bisection over bf16 logits), not by gathering logits. The build commit records any difference from the paper.
+   - **Fidelity test:** on the step it was computed for, each expert's realised share is within 1 % (relative) of $k/N_e$.
+3. **Rig `051`** sizes `eqb_iteration` at $N_e$ = 128 before the runs: the logits held per step, step time and memory against `112`.
+4. **Runs** (`screen`, seed 0, fixed $r$ = 8):
+   - $N_e$ = 8: `190-eqb-iter-screen` and `191-eqb-step-screen` (L5), against `110`.
+   - $N_e$ = 128: `192-eqb-iter-ne128-screen` and `193-eqb-step-ne128-screen` (the L5-ne128 preset: $k$ = 4, width 448), against `112`.
+5. **Measures** (`probe_routing`):
+   - per-iteration expert-histogram entropy;
+   - mean cross-iteration correlation (the depth-partition diagnostic);
+   - realised load per step and dead experts;
+   - co-activation statistics for the placement controller.
+6. **Reading**, at each $N_e$, by ADR-066 §1:
+   - **Clause 1:** `eqb_iteration`'s per-iteration entropy is within 5 % of $\ln N_e$ at every $j$.
+   - **Clause 2:** $\Delta$(iter − step) ≥ 1 % $L_{ref}$ = 0.0334. At one seed a result inside 4σ is silent, and a $\Delta$ near zero is recorded as pointing against the clause.
+   - **Clause 3:** $\Delta$(step − comparator) ≤ 2σ ("matches or beats"); weakens above 4σ.
+   - **What follows:** an EQB arm beating its comparator by > 4σ gets a `small` pair (ADR-031). ADR-064 (the default change) waits on H26 at `small`.
+
+Consequences: 2 runs × ≈ 5.8 h (`110`: 5.79 h) + 2 runs × ≈ 17 h (`112`: 16.95 h) ≈ 1.9 days, plus the probe. Bears on H26; touches ADR-004, ADR-038 (moot under EQB: no aux), `01 §4.4`.
+
+### ADR-070 — L5g as built: a per-iteration global schedule (full / sparse / local) with selection reuse, $K_{sel}$ scaled to the 2 k context; runs `194`–`196`
+2026-11-18 · proposed (drafted on the user's "Do the ADRs"; accept to build)
+Context: H21. In Embla 1, each sparse layer reuses its block's full-layer cache, restricted to the top 1,024 keys plus the 128 most recent. Here the "layer" is an iteration, and the selection is per token. At `screen`'s 2048 context, $|\mathcal{G}| \le$ 1536, so the handoff's $K_{sel}$ = 1024 would keep two thirds of it and test almost nothing.
+Decision:
+1. **The schedule.** Knobs `attention.schedule` (length $r$, letters F/S/L, iteration 1 always F) and `attention.k_sel`.
+   - **F** = L5d.
+   - **S:** per (token, KV head), the global range is restricted to the $K_{sel}$ entries with the highest pre-softmax scores at the token's last F iteration, summed over the group's query heads, plus the local window. The one softmax stays (ADR-008).
+   - **L:** local window only.
+2. **Reference implementation.**
+   - Selection is applied as a mask over the full score matrix: the same function with no read saving, chosen for readability (`CLAUDE.md`).
+   - Reads are counted analytically: global keys per token per iteration = $|\mathcal{G}|$ at F, $K_{sel}$ at S, 0 at L.
+   - **$K_{sel}$ = 128** (≈ 1/12 of the 2 k maximum), with an eval-time sweep {64, 256} on the trained models. The change from 1024 is recorded.
+3. **Runs** on L5d (`screen`, seed 0, comparator `162`): `194-l5g-fsss-screen` `[F,S,S,S] × 2`; `195-l5g-fsssllll-screen` `[F,S,S,S,L,L,L,L]`; `196-l5g-fs7-screen` `[F,S,S,S,S,S,S,S]`. Evals per ADR-066 §2.
+4. **Gate:** the `02 §14` attention-side counters in `sim/` first (trap 9), so that S6 can read the measured reads.
+5. **Reading.**
+   - **H21:** $T$ = 1 % $L_{ref}$ = 0.0334 on $\Delta$(`194` − `162`), by ADR-066 §1. The reads ratio is computed, e.g. `194` reads $(2|\mathcal{G}| + 6 K_{sel}) / 8|\mathcal{G}|$ of L5d's global keys.
+   - **Other arms:** `195`/`196` are points on the loss-vs-reads curve, not verdicts.
+   - **What follows:** a `small` pair, by its own ADR, if `194` lands within $T$.
+
+Consequences: 3 runs × ≈ 8.3 h, plus the `sim/` counters. Bears on H21; touches `01 §4.3`, `02 §14`, Q9, S6.
+
+### ADR-071 — L8e as built: a hashed 2/3-gram engram table of 2²¹ × $d$ in host RAM, read once per token, added to every iteration's block input; rig `052`, run `197`
+2026-11-18 · proposed (drafted on the user's "Do the ADRs"; accept to build)
+Context: H24 as restated (ADR-065). At $d$ = 768, the table has 1.61 B parameters: ≈ 3.2 GB in bf16, ≈ 22.5 GB with fp32 master weights and Adam states. That is over the 10 GB-per-GPU limit, so the table lives in host RAM (128 GB). The four DDP ranks share one copy. Precedents: DeepSeek's Engram, Qwen3.8-Next (host-prefetched), Embla 1 (SSD).
+Decision:
+1. **Lookup.**
+   - Per token, the 2-gram $(x_{t-1}, x_t)$ and the 3-gram $(x_{t-2}, x_{t-1}, x_t)$ are hashed with two seeds (64-bit multiply-xorshift, mod 2²¹) into one shared table $T$.
+   - Then $e_t = \mathrm{RMSNorm}(T[h_2] + T[h_3])$.
+   - At a training window's start, missing history is a padding id, the same in eval. Collisions are intended.
+2. **Injection.**
+   - $u_t = W_e e_t$, with $W_e$ ($d \times d$) zero-initialised, so step 0 is L5's function.
+   - It is computed once per token and added to the block's input at every iteration, without writing into the residual stream: the block reads $c^{(j-1)} + u_t$, and the residual carries $c^{(j-1)}$. That way $u$ is not accumulated $r$ times.
+   - $2d^2$ ≈ 1.2 MFLOP per token (0.2 % of the budget). The width is re-derived by `costmodel/` at build and reported.
+   - Embla's variant, the engram as a source of the attention-residual mix, belongs with L5f and is not here.
+3. **Placement (host).**
+   - Values, master weights and Adam moments sit in pinned shared host memory.
+   - Each rank gathers its micro-batch's rows, ≈ 3 KB per token.
+   - Row gradients are index-added into a shared fp32 buffer. After the step's barrier, one CPU process applies lazy sparse Adam to the touched rows (embedding learning rate, no weight decay) before any rank's next gather. There is no staleness.
+   - That CPU work is part of the run, not a probe beside it. Its share of the step is reported.
+4. **Rig `052`** (GPUs idle):
+   - **Measures:** step time and per-GPU memory against L5; gather, scatter and update times per step; peak host RAM.
+   - **Gate:** ≤ 25 % overhead on L5's step and ≤ 10 GB per GPU. Above that, a follow-up ADR decides: a GPU-placed 2¹⁸-row table, ≈ 3.2 GB of states per GPU, is the fallback on record. It is not switched silently.
+5. **Run.** `197-l8e-screen` on L5 (fixed $r$ = 8, $N_e$ = 8), `screen`, seed 0.
+   - Comparator `110`: held-out, plus wiki-lead with covered splits (the ADR-053 eval).
+   - The table's 1.61 B parameters (≈ 20× the model) are reported beside the loss.
+6. **Reading** (ADR-066 §1, an improvement claim).
+   - **Supports direction:** $\Delta$(`197` − `110`) < −4σ supports H24's first clause at `screen`. It brings a `small` pair (ADR-031), and ADR-065's second test (L8e + L8b-pv against `178`/`179`) by its own ADR.
+   - **Otherwise:** within 4σ is silent, and worse by more than 4σ weakens.
+   - **Systems side:** the host-RAM measurement stands as the P16 placement data either way.
+7. **Code** (`model/engram.py`; a host-table hook in `scripts/train`). Tests:
+   - deterministic hashing;
+   - zero-init gives L5's outputs;
+   - lazy sparse Adam equals dense Adam on touched rows.
+
+Consequences: the probe ≈ 1 h, plus one run of ≈ 6–8 h (the probe sets it); ≈ 23 GB of host RAM. Bears on H24, H17, P16; touches ADR-009, ADR-065, `01 §4.6`, `§11`.
+
+### ADR-072 — L5f as built: attention residuals over iterations (one mix per iteration, since the parallel block has one input); run `198`
+2026-11-18 · proposed (drafted on the user's "Do the ADRs"; accept to build)
+Context: H25. Kimi's Attention Residuals and Embla's block form replace the fixed residual sum with a learned, per-token softmax over earlier outputs. The handoff mixes twice per iteration, before attention and before the MoE. L5 inherits L2's parallel form, so attention and MoE read the same input, and that is one mix per iteration.
+Decision:
+1. **The mix.** Knob `middle.input_mix: attention_residual`.
+   - **Sources at iteration $j$:** $v_0$ = the middle block's input (the early blocks' output), and $v_i = u^{(i)}$, iteration $i$'s update (attention + MoE output before any residual add) for $i < j$.
+   - **Input:** $x_j = \sum_s \alpha_{j,s} v_s$ with $\alpha_{j,\cdot} = \mathrm{softmax}_s(q_j \cdot \mathrm{RMSNorm}(v_s)/\sqrt d)$ and $q_j = w + W_q e_j$ ($w \in \mathbb{R}^d$, $W_q$ $d \times 64$, both zero at init, so the mix starts uniform).
+   - **Then:** iteration $j$ computes $u^{(j)}$ from $x_j$, and the final blocks read $x_{r+1}$, the same mix over $v_0..v_r$.
+   - Ragged depth is inactive (ADR-046).
+2. **Cost:** ≈ 50 k parameters and ≈ 0.1 MFLOP per token, reported and not compensated.
+3. **Run.** `198-l5f-screen` (`screen`, seed 0). Comparator `110`; the L5–L1 gap is $3.3328 - 3.2048 = 0.1280$ (`110` − `106`).
+4. **Reading** (ADR-066 §1, an improvement claim).
+   - **H25 supported at `screen`:** $\Delta$(`198` − `110`) ≤ −0.0320 closes 25 % of the gap.
+   - **H25 silent:** $-0.0320 < \Delta < -4σ$ beats L5 but falls short of 25 %.
+   - **Either way,** beating L5 by > 4σ brings a `small` pair (ADR-031).
+   - **Otherwise:** within 4σ is silent, and worse by more than 4σ weakens.
+   - **Reported:** the mix weights per $j$, i.e. which iterations the deep ones read.
+5. **Code.** Tests:
+   - shapes;
+   - a uniform mix at init;
+   - with one source per mix ($r$ = 1), the output equals L5's block.
+
+Consequences: 1 run ≈ 6 h. Bears on H25, H6; touches `01 §4.2`, `§11`.
+
+### ADR-073 — L10b′ as built: FP4 weight fake-quant, late (last 2 % of steps) vs from step 0 vs post-training, on L0 and L5; runs `199`–`202`, rig `053`
+2026-11-18 · proposed (drafted on the user's "Do the ADRs"; accept to build)
+Context: H3's FP4 clause (≤ 2σ, ADR-013). Ampere has no FP4, so this is quality only.
+- **Two changes from the handoff:**
+  - **Format:** it specified INT4 (scale and offset per 64), but H3 is FP4, so FP4 is the arm and INT4 an eval-only side reading.
+  - **Bases:** it named L0 and L1. `00 §P3` names FP4 on a weight-tied recurrence as the numerics risk, and L1 adds little that L0 lacks, so L5 replaces L1.
+- **Why late QAT needs a run:** checkpoints are never resumed, so "the last 2 %" is a fresh run with fake-quant switched on at 98 % of steps.
+Decision:
+1. **Fake-quant.**
+   - **What is quantised:** the weights of every linear in attention, experts and skeleton FFNs. Embeddings, the LM head, norms and the router stay bf16.
+   - **Format:** FP4 E2M1 with one bf16 absmax scale per 64 consecutive weights along the input dimension, round-to-nearest, with a straight-through estimator in training.
+   - **Scoring:** quantised models are scored in their quantised form.
+2. **Arms.**
+   - **Post-training:** round-to-nearest of the `100` and `110` checkpoints, FP4 and INT4, scored under rig `053` (eval only).
+   - **Late QAT:** `199-l0-qat-late-screen` and `201-l5-qat-late-screen`, with fake-quant from step 1869 of 1907.
+   - **QAT from step 0:** `200-l0-qat0-screen` and `202-l5-qat0-screen`.
+   - All are `screen`, seed 0, otherwise identical to their base.
+3. **Reading.**
+   - **H3's FP4 clause:** $\Delta$ = quantised arm − its bf16 base (`100` or `110`), $T$ = 2σ, by ADR-066 §1. Within 4σ is silent; above 4σ weakens at `screen`.
+   - **The comparison that matters:** late vs post-training vs from-0.
+   - **Run-to-run control:** the late arms' bf16 loss at 98 % against their base at the same step.
+   - **What follows:** no `small` pair follows automatically. L10a and the 2:4 half of H3 are unaffected.
+4. **Code.** A fake-quant wrapper and a `numerics.qat: {format: fp4_e2m1, group: 64, start_frac}` knob. Tests:
+   - E2M1 rounding against a table;
+   - group scaling;
+   - STE gradient = identity inside the range.
+
+Consequences: 2 runs × ≈ 4.3 h (L0) + 2 × ≈ 5.8 h (L5), plus ≈ 1 h of evals ≈ 21 h. Bears on H3; touches `01 §8`, `§11`, L10b.
+
 ## Open questions
 
 ### For the note's author
@@ -2478,6 +2721,20 @@ and an ADR first, L6c likewise; the `small` programme (L0, L1, L2, L3, L5, L5d a
 the ladder's own next step and needs no new code. The choice between "more `screen` variants" and
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
+
+### 2026-11-18 (08:20) — **ADR-066–073 drafted (proposed, for acceptance): the as-built ADRs for the eight Embla `screen` steps**; ladder ids `182`–`202` and rig ids `050`–`053` reserved; nothing built or queued
+- **On the user's "Do the ADRs".** One as-built ADR per step: L5d-nope (066, which also sets the shared reading, evals and gates), L5h (067), L9-relu2 (068), E-router-EQB (069), L5g (070), L8e (071), L5f (072) and L10b′ (073). Each fixes its runs, comparator (`162` L5d 3.3443, `110` L5 3.3328, `112` L5-ne128 3.2232, `100` L0 3.3358, `106` L1 3.2048) and ADR-013 reading. σ = 0.0030; at `screen`, 1 % = 0.0334 and 2 % = 0.0667.
+- **Changes from the handoff, recorded in the ADRs.**
+  - **L5h** adds a $j_b$ = 8 untied-projection control, because $j_b = r$ with separate projections is not L5d.
+  - **L9-relu2** gets a two-branch softmax control, so the combination and the scoring are not changed in one rung. It amends ADR-008 for those two arms only. Its caps are scaled to 2 k: {64, 128, 256}, not {256, 1024, 4096}.
+  - **L5g's** $K_{sel}$ is 128, not 1024, because $|\mathcal{G}| \le 1536$ at 2 k.
+  - **L5f** mixes once per iteration: the parallel block has one input.
+  - **L8e** is placed in host RAM with lazy sparse Adam and no staleness. Rig `052` gates it at ≤ 25 % overhead, with a GPU 2¹⁸-row fallback by ADR.
+  - **L10b′** uses FP4 E2M1, not INT4 (INT4 is an eval-only reading), on L0 and L5 rather than L0 and L1.
+  - **E-router-EQB** turns the auxiliary loss off (EQB as published). Rig `051` sizes its $N_e$ = 128 arm first.
+- **Shared tooling owed with the code.** `scripts/analysis/probe_copy.py` (a synthetic copy from beyond the window, scored on `162` once); `sim/`'s attention-side counters (`02 §14`) before L5g and L9-relu2.
+- **Totals.** 21 `screen` runs ≈ 172 GPU-hours ≈ 7.2 days, plus ≈ 4 h of probes. `small` pairs only by ADR-031's > 4σ rule or by follow-up ADRs.
+- **Not done.** No code: `queue_medium_1` (`181`) runs until ≈ 23:30, and `model/`, `scripts/` and `costmodel/` stay untouched until it ends. Acceptance and order are the user's call.
 
 ### 2026-11-18 (08:05) — **Embla 1 follow-ups merged as proposals**: H20–H26, ladder steps L5d-nope / L5h / L9-relu2 / E-router-EQB / L5g / L8e / L5f / L10b′ (`03 §2.1`), S12, ADR-062–065 proposed; no accepted ADR or result changes; `181` still running
 - **Source.** The spec session's handoff, received from the user as `07-embla-followups.md` and kept as received at `docs/source/embla-followups-2026-11-18.md`. Its ids date from 2026-09-02, so they were renumbered by its own rule (§0.1): next free ids, names kept where free.
