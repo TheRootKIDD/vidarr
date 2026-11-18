@@ -51,6 +51,8 @@ STEPS = [
     "L5d-nope-all",
     "L5h-jb1",
     "L5h-jb2",
+    "L9-2b",
+    "L9-relu2",
     "L5e",
     "L6",
     "L6c",
@@ -1562,4 +1564,60 @@ def test_l5h_entries_come_from_the_bridge_iteration() -> None:
     with torch.no_grad():
         m.forward_hidden(torch.randint(0, 97, (1, 64)), r=3)
     assert len(inputs) == 4 and all(torch.equal(a, b) for a, b in zip(inputs, states, strict=True))
+
+
+# ---- ADR-068: two-branch combination and ReLU^2 global scoring ----------------------------
+def test_relu2_weights_rows_sum_to_one_or_are_zero() -> None:
+    from model.layers import _relu2_weights
+
+    torch.manual_seed(0)
+    q, k = torch.randn(2, 4, 6, 16), torch.randn(2, 4, 9, 16)
+    a = _relu2_weights(q, k, 0)
+    s = a.sum(-1)
+    assert ((s - 1).abs() < 1e-4).logical_or(s == 0).all()
+    assert (a >= 0).all()
+    z = _relu2_weights(q, -q.clone()[:, :, :1].expand(2, 4, 9, 16).contiguous(), 0)  # all <= 0
+    assert torch.isfinite(z).all() and (z[:, :, 0] == 0).all()
+    capped = _relu2_weights(q, k, 2)
+    assert ((capped > 0).sum(-1) <= 2).all()
+
+
+def test_two_branch_is_gated_local_plus_global() -> None:
+    from model.layers import Attention
+
+    torch.manual_seed(0)
+    att = Attention(32, 4, 2, 8, 10_000.0, two_branch=True)
+    with torch.no_grad():
+        att.g_gate.fill_(30.0)  # sigmoid ~ 1
+    b, tq, ng = 1, 5, 7
+    x = torch.randn(b, tq, 32)
+    pos = torch.arange(20, 20 + tq)
+    kg, vg = att.kv(torch.randn(b, ng, 32), torch.arange(ng))
+    kl, vl = att.kv(x, pos)
+    mask_l = causal_mask(tq, tq, x.device)
+    mask = torch.cat([torch.ones(tq, ng, dtype=torch.bool), mask_l], 1)
+    out = att(x, pos, (torch.cat([kg, kl], 2), torch.cat([vg, vl], 2)), mask, n_glob=ng)
+    one = Attention(32, 4, 2, 8, 10_000.0)
+    one.load_state_dict(att.state_dict(), strict=False)
+    with torch.no_grad():
+        one.wo.weight.copy_(att.wo.weight)
+    ref = one(x, pos, (kl, vl), mask_l) + one(x, pos, (kg, vg), None)
+    assert torch.allclose(out, ref, atol=1e-5)
+
+
+def test_l9_first_segment_matches_l5d_nope_and_logs_zero_fraction() -> None:
+    torch.manual_seed(0)
+    base = BigMoE(tiny("L5d-nope")).eval()
+    toks = torch.randint(0, 97, (1, 64))
+    for step in ("L9-2b", "L9-relu2"):
+        m = BigMoE(tiny(step)).eval()
+        missing, _ = m.load_state_dict(base.state_dict(), strict=False)
+        assert missing == ["middle.attn.g_gate"]
+        with torch.no_grad():
+            h, _ = m.forward_hidden(toks, r=3)
+            h0, _ = base.forward_hidden(toks, r=3)
+        assert torch.allclose(h[0, :16], h0[0, :16], atol=1e-5), step
+    m = BigMoE(tiny("L9-relu2"))
+    out = m.loss(torch.randint(0, 97, (2, 65)), r=3)
+    assert 0.0 <= out.metrics["g_zero_frac"] <= 1.0 and 0.0 <= out.metrics["g_vskip_frac"] <= 1.0
 

@@ -308,6 +308,12 @@ class BigMoE(nn.Module):
             metrics["q_loss"] = float(ex.q_loss.detach())
         if ex.r_map is not None:
             metrics["r_mean"] = float(ex.r_map.float().mean())
+        if self.cfg.arch == "recurrent" and self.middle.attn.zero_stats:  # ADR-068 (L9-relu2)
+            zs = torch.stack(self.middle.attn.zero_stats).mean(0)
+            self.middle.attn.zero_stats.clear()
+            h = self.cfg.attention.heads
+            metrics["g_zero_frac"] = float(zs[:h].mean())
+            metrics["g_vskip_frac"] = float(zs[h:].mean())
         return LossOut(total, main, mtp, ex.router_aux, ponder, metrics)
 
     def _chunked_ce(self, h: Tensor, targets: Tensor) -> Tensor:

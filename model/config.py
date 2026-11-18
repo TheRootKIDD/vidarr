@@ -46,6 +46,10 @@ class AttentionCfg:
     # ADR-066 (L5d-nope): where RoPE applies. "local" = the middle block's local range only
     # (G keys stored unrotated, scored by the unrotated query); "none" = nowhere
     rope_scope: Literal["all", "local", "none"] = "all"
+    # ADR-068 (L9-relu2): how the global range joins the local one, and how it is scored.
+    # two_branch: o = o_loc + sigmoid(gamma_h) o_glob (amends ADR-008 for these arms only)
+    global_combine: Literal["one_softmax", "two_branch"] = "one_softmax"
+    global_scoring: Literal["softmax", "relu2"] = "softmax"
 
     @property
     def has_global(self) -> bool:
@@ -367,6 +371,10 @@ class ModelCfg:
                 raise NotImplementedError("L5h with variable depth is not specified (ADR-067)")
         elif a.bridge_iteration:
             raise ValueError("attention.bridge_iteration needs global_source = bridged")
+        if a.global_combine == "two_branch" and not a.has_global:
+            raise ValueError("global_combine two_branch needs the global cache (ADR-068)")
+        if a.global_scoring == "relu2" and a.global_combine != "two_branch":
+            raise ValueError("relu2 scoring needs the two-branch combination (ADR-068)")
         if a.rope_scope not in ("all", "local", "none"):
             raise ValueError("attention.rope_scope must be all, local or none (ADR-066)")
         if a.rope_scope == "local" and not a.has_global:
@@ -499,6 +507,22 @@ def ladder(step: str, **overrides: Any) -> ModelCfg:
         },
         "L5d-nope": replace(
             rec, attention=AttentionCfg(global_source="final_vector", rope_scope="local")
+        ),
+        # ADR-068: two-branch softmax control and ReLU^2-scored global range, on L5d-nope
+        "L9-2b": replace(
+            rec,
+            attention=AttentionCfg(
+                global_source="final_vector", rope_scope="local", global_combine="two_branch"
+            ),
+        ),
+        "L9-relu2": replace(
+            rec,
+            attention=AttentionCfg(
+                global_source="final_vector",
+                rope_scope="local",
+                global_combine="two_branch",
+                global_scoring="relu2",
+            ),
         ),
         "L5d-nope-all": replace(
             rec, attention=AttentionCfg(global_source="final_vector", rope_scope="none")

@@ -109,10 +109,17 @@ class Attention(nn.Module):
         lora_rank: int = 0,
         lora_slots: int = 0,
         rope: bool = True,
+        two_branch: bool = False,
+        scoring: str = "softmax",
     ) -> None:
         super().__init__()
         self.heads, self.kv_heads, self.head_dim, self.theta = heads, kv_heads, head_dim, theta
         self.rope = rope  # False = NoPE (ADR-066, rope_scope = none)
+        # ADR-068: the global range as its own branch, gated per head; scored by softmax or ReLU^2
+        self.two_branch, self.scoring = two_branch, scoring
+        self.g_gate = nn.Parameter(torch.zeros(heads)) if two_branch else None
+        self.eval_cap = 0  # ADR-068 §3: keep only the top-K global keys by pre-ReLU score (eval)
+        self.zero_stats: list[Tensor] = []  # (zero fraction, V-skip rate) per ReLU^2 call
         self.wq = nn.Linear(d, heads * head_dim, bias=False)
         self.wk = nn.Linear(d, kv_heads * head_dim, bias=False)
         self.wv = nn.Linear(d, kv_heads * head_dim, bias=False)
@@ -132,6 +139,29 @@ class Attention(nn.Module):
         if self.lora is not None and j is not None:
             y = y + self.lora[name](x, j)
         return y
+
+    def _two_branch(
+        self, q: Tensor, q_g: Tensor, k: Tensor, v: Tensor, n_glob: int, mask: Tensor | None
+    ) -> Tensor:
+        """o = o_loc + sigmoid(gamma_h) o_glob; k, v already repeated to the query heads."""
+        kg, vg, kl, vl = k[:, :, :n_glob], v[:, :, :n_glob], k[:, :, n_glob:], v[:, :, n_glob:]
+        m_loc = None if mask is None else mask[:, n_glob:]
+        o_loc = F.scaled_dot_product_attention(q, kl, vl, attn_mask=m_loc)
+        if self.scoring == "relu2":
+            a = _relu2_weights(q_g, kg, self.eval_cap)
+            o_glob = a.to(vg.dtype) @ vg
+            with torch.no_grad():
+                zero = a == 0  # [B, H, Tq, Tg]
+                grp = zero.view(a.shape[0], self.kv_heads, -1, *a.shape[2:]).all(dim=2)
+                # per query head: zero fraction; per KV head: keys zero for the whole group
+                self.zero_stats.append(
+                    torch.cat([zero.float().mean((0, 2, 3)), grp.float().mean((0, 2, 3))])
+                )
+                del self.zero_stats[:-4096]  # forward-only callers never drain it
+        else:
+            o_glob = F.scaled_dot_product_attention(q_g, kg, vg)
+        assert self.g_gate is not None
+        return o_loc + torch.sigmoid(self.g_gate)[None, :, None, None].to(o_loc.dtype) * o_glob
 
     def kv(
         self, x: Tensor, positions: Tensor, j: int | None = None, rotate: bool = True
@@ -155,6 +185,7 @@ class Attention(nn.Module):
         is_causal: bool = False,
         j: int | None = None,
         n_plain: int = 0,
+        n_glob: int = 0,
     ) -> Tensor:
         """q_in [B, Tq, d]; kv = (K, V) [B, Hkv, Tk, dh]; mask [Tq, Tk] bool or None.
 
@@ -171,6 +202,10 @@ class Attention(nn.Module):
         k, v = kv
         rep = self.heads // self.kv_heads
         k, v = k.repeat_interleave(rep, dim=1), v.repeat_interleave(rep, dim=1)
+        if self.two_branch and n_glob:
+            q_g = q_plain if n_plain else q  # NoPE G is scored by the unrotated query
+            out = self._two_branch(q, q_g, k, v, n_glob, mask)
+            return self._proj("o", self.wo, out.transpose(1, 2).reshape(b, tq, -1), j)
         if n_plain and self.rope:
             z = torch.zeros_like(k)
             k = torch.cat(
@@ -190,6 +225,18 @@ class Attention(nn.Module):
         else:
             out = F.scaled_dot_product_attention(q, k, v, attn_mask=mask)
         return self._proj("o", self.wo, out.transpose(1, 2).reshape(b, tq, -1), j)
+
+
+def _relu2_weights(q: Tensor, k: Tensor, cap: int) -> Tensor:
+    """ADR-068: w = relu(q^ . k^ / sqrt(dh))^2 over RMS-normalised q, k, normalised by its sum;
+    rows with no positive score are all zero. `cap` > 0 keeps the top-`cap` keys by score."""
+    dh = q.shape[-1]
+    s = F.rms_norm(q, (dh,)) @ F.rms_norm(k, (dh,)).transpose(-1, -2) / dh**0.5
+    if cap and cap < s.shape[-1]:
+        thr = s.topk(cap, dim=-1).values[..., -1:]
+        s = s.masked_fill(s < thr, 0.0)
+    w = F.relu(s).square()
+    return w / (w.sum(-1, keepdim=True) + 1e-6)
 
 
 class SwiGLU(nn.Module):

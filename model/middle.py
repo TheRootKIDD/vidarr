@@ -59,6 +59,7 @@ class MiddleBlock(nn.Module):
         self.attn = Attention(
             cfg.d, a.heads, a.kv_heads, a.head_dim, a.rope_theta,
             lora_rank=m.per_iter_lora_rank, lora_slots=m.r_max, rope=rope,
+            two_branch=a.global_combine == "two_branch", scoring=a.global_scoring,  # ADR-068
         )
         # L5c: iterations 2..r_max get their own attention; iteration 1 uses self.attn
         self.attn_rest = (
@@ -265,8 +266,10 @@ class MiddleBlock(nn.Module):
                 if mem_kv is not None and cfg.attention.rope_scope == "local"
                 else 0
             )
+            n_glob = mem_kv[0].shape[2] if mem_kv is not None else 0  # ADR-068 two-branch
             a = attn(
-                u, positions, (k, v), None if fast else m_i, is_causal=fast, j=j, n_plain=n_plain
+                u, positions, (k, v), None if fast else m_i, is_causal=fast, j=j,
+                n_plain=n_plain, n_glob=n_glob,
             )
             y, lm = self.moe(u, e)
             aux = aux + lm
