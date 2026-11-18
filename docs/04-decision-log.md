@@ -1840,6 +1840,16 @@ Cost units from `docs/06 §4`: one `screen` run ≈ 8 h (1 B tokens, 1 seed); on
     - (b) read the first-sentence clause on the covered splits, whose seed spread is small, and keep the full splits as reported;
     - (c) add a seed term to every floor, estimated from the `132`/`133` spread (one pair, so itself noisy; it would put the rest-of-lead floor near 0.04);
     - (d) (b) plus (c) for the rest-of-lead split.
+- **I43** *(2026-11-18, found while building ADR-069; open)* **The aux-loss-free bias controller of the shared middle router sees only the last iteration's load.**
+  - **What the code does:** the trainer collects `m.last_route.load` from every MoE after each micro-step (`scripts/train/train.py`, the load controller). The middle block's single `MoE` is called once per iteration per segment, and `last_route` keeps only the last call. So the middle router's biases are moved by the load of iteration $r$ of the last segment, not by its load over all iterations.
+  - **Not ADR-004's intent:** `01 §4.4` says to balance in space and time, and per-iteration histograms are a stated diagnostic.
+  - **Evidence it mattered little:** every recurrent run ends with healthy routing over all iterations (e.g. `110`: 7.99 of 8 effective experts; `112`, `138`, `142`: none dead). The auxiliary loss, summed over every call, carries the balancing of the other iterations.
+  - **Affects:** every recurrent run since `110`, as built and as recorded. No result is wrong, but "ADR-004's balancer" means this controller.
+  - **What it changes for ADR-069:** its comparator arm (a) is L5 as run, with this controller. EQB reads every iteration's logits (ADR-069 §2), so the EQB-vs-bias-update comparison is against the controller as built, not an idealised one.
+  - **Options (the user's call):**
+    - (a) record it and change nothing;
+    - (b) fix the controller to sum loads over all calls, by ADR, for new runs only, with an L5 control run;
+    - (c) (a) now, and (b) only if E-router-EQB shows balancing matters for loss.
 
 
 ## Session log
@@ -2721,6 +2731,40 @@ and an ADR first, L6c likewise; the `small` programme (L0, L1, L2, L3, L5, L5d a
 the ladder's own next step and needs no new code. The choice between "more `screen` variants" and
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
+
+### 2026-11-18 (08:55) — **ADR-066–073 built on branch `embla` (worktree `../vidarr-embla`) and queued as `queue_screen_18`–`25`, chained behind `queue_medium_1`**; full unit suite passes on the branch (213 tests, ruff clean); I43 opened
+- **Code** (`embla`; merged by `queue_screen_18` after `181`'s queue ends, then each queue re-merges, a no-op unless new commits landed):
+  - `0ba733e` ADR-066 (`rope_scope`; `probe_copy`; `probe_g_recall`);
+  - `4d05552` ADR-067 (`global_source: bridged`, `bridge_iteration`);
+  - `026d680` ADR-068 (`global_combine: two_branch`, `global_scoring: relu2`; `probe_relu2`);
+  - `90bf846` `sim/` attention-side reads (`attention_reads`; `02 §14`, trap 9);
+  - `6c74743` ADR-069 (EQB; the trainer calls `eqb_update`, logs `eqb_err`);
+  - `7379305` ADR-070 (`schedule`, `k_sel`; `probe_ksel`);
+  - `a840c9a` ADR-071 (`model/engram.py`, `scripts/train/engram_host.py`: one shared-memory table, lazy sparse Adam on rank 0, values saved beside the checkpoint);
+  - `62ac404` ADR-072 (`input_mix: attention_residual`; `probe_mix`);
+  - `ea2b23f` ADR-073 (`model/quant.py`; `probe_quant`).
+
+  Unit tests were run niced on one core while `181` trained: `181`'s step time 32.9–33.0 s, unchanged.
+- **Queues** (each waits for its predecessor's `QUEUE DONE` line, merges, gates on ruff + pytest, refuses code changed since its gate):
+
+  | queue | ADR | runs and probes |
+  |---|---|---|
+  | 18 | 066 | `182`/`183`, then copy, `eval_context` and recall (rig `050`) |
+  | 19 | 067 | `184`–`187` |
+  | 20 | 068 | `188`/`189`; the base is chosen from `182` by ADR-066 §7; gates on the `sim/` counters |
+  | 21 | 069 | rig `051` smokes (abort > 10 GiB), then `190`–`193`, then `probe_routing` |
+  | 22 | 070 | `194`–`196` |
+  | 23 | 071 | rig `052` smokes (abort > 1.25× L5's step or > 10 GiB), then `197` and its wiki-lead compare vs `110` |
+  | 24 | 072 | `198` |
+  | 25 | 073 | rig `053` post-training rounding of `100`/`110`, then `199`–`202` |
+
+  ≈ 7.5 days from ≈ 23:40 tonight.
+- **Corrections, recorded:**
+  1. **Overwritten queue file.** Writing the new queue first as `queue_screen_17.sh` overwrote the old `queue_screen_17.sh` (the queue that ran `175`) and its `.nohup`. That queue's log survives, and its runs are recorded in `175`'s write-up and this log. The script itself is lost. The new queue is `queue_screen_18`.
+  2. **Wait loops.** Each queue's first wait loop matched its predecessor's "armed; waiting for … QUEUE DONE" line and fell through to the GPU check, which aborted before any merge (queues 19–23, 08:37–08:52). The wait now matches only a `<timestamp> QUEUE DONE` line, the armed line no longer contains the phrase, and all were re-armed.
+  3. **Launch.** Two queues launched after `&&` died with their shell; all were relaunched as plain `nohup` lines.
+  4. **ADR-072 §5's test** ("with $r$ = 1 the output equals L5's block") cannot hold. The mix is a convex combination, not a sum. It is replaced by a test that every mix is uniform at init and its queries train.
+- **Open:** I43 (the middle router's bias controller sees only the last iteration's load; affects ADR-069's comparator as built). The machine has 251 GB of RAM by `free` against `06 §1`'s 128 GB. L8e's ≈ 23 GB host table fits either way; the `06` figure is left for the user to confirm.
 
 ### 2026-11-18 (08:22) — **ADR-066–073 accepted** (the user: "Accept them all, in the handoff's order"); moved to §Accepted; ADR-062–065 stay proposed
 - **Order** (the handoff's, which is also the id order): L5d-nope (066) → L5h (067) → L9-relu2 (068) → E-router-EQB (069) → L5g (070) → L8e (071) → L5f (072) → L10b′ (073). Ladder ids `182`–`202` and rig ids `050`–`053` are now assigned, so the next free ids are 203 and 054.
