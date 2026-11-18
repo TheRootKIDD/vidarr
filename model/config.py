@@ -27,7 +27,7 @@ from costmodel.solve import budget_n_keys, solve_d_ff
 Arch = Literal["layered", "recurrent"]
 BlockForm = Literal["sequential", "parallel"]
 FFKind = Literal["dense", "moe"]
-GlobalSource = Literal["per_iteration", "final_vector"]
+GlobalSource = Literal["per_iteration", "final_vector", "bridged"]
 
 
 @dataclass(frozen=True)
@@ -36,12 +36,44 @@ class AttentionCfg:
     kv_heads: int = 4
     head_dim: int = 64
     window: int = 512  # W: local range, also the training segment length (v2 P7)
-    global_source: GlobalSource = "per_iteration"  # L5 baseline; final_vector = L5d
+    global_source: GlobalSource = "per_iteration"  # L5 baseline; final_vector = L5d; bridged = L5h
+    bridge_iteration: int = 0  # ADR-067 (L5h): G entries from iteration j_b, own projections
     segment_memory_grad: Literal["stop", "through"] = "stop"  # ADR-023
     prev_segment_local: bool = False  # ADR-022 knob; only False is implemented
     kv_share_every: int = 1  # L6b; only 1 is implemented
     index_enabled: bool = False  # L9; not implemented in Phase 1
     rope_theta: float = 10_000.0
+    # ADR-066 (L5d-nope): where RoPE applies. "local" = the middle block's local range only
+    # (G keys stored unrotated, scored by the unrotated query); "none" = nowhere
+    rope_scope: Literal["all", "local", "none"] = "all"
+    # ADR-068 (L9-relu2): how the global range joins the local one, and how it is scored.
+    # two_branch: o = o_loc + sigmoid(gamma_h) o_glob (amends ADR-008 for these arms only)
+    global_combine: Literal["one_softmax", "two_branch"] = "one_softmax"
+    global_scoring: Literal["softmax", "relu2"] = "softmax"
+    # ADR-070 (L5g): one letter per iteration; F = all of G, S = the top-k_sel G keys by score
+    # at the token's last F iteration (per KV head), L = local window only. Empty = all F
+    schedule: tuple[str, ...] = ()
+    k_sel: int = 0
+
+    @property
+    def has_global(self) -> bool:
+        """The recurrent model keeps the global cache G (L5d family; L5h bridges it)."""
+        return self.global_source != "per_iteration"
+
+
+@dataclass(frozen=True)
+class EngramCfg:
+    """ADR-071 (L8e): a hashed 2/3-gram table read once per token, added to every iteration's
+    block input through a zero-initialised projection. `host`: the table and its Adam states
+    live in shared host memory, updated by lazy sparse Adam after each step (the trainer);
+    `gpu`: an ordinary embedding (tests, and the recorded fallback)."""
+
+    enabled: bool = False
+    rows: int = 2**21
+    ngrams: tuple[int, ...] = (2, 3)
+    placement: Literal["host", "gpu"] = "host"
+    seed: int = 0x5EED
+    init_std: float = 0.02
 
 
 @dataclass(frozen=True)
@@ -51,8 +83,14 @@ class RouterCfg:
     d_r: int = 128  # router query / key dim
     product_keys: bool = False  # only needed at N_e >= 256; plain keys otherwise
     hierarchical: bool = False
-    balance: Literal["aux_free", "none"] = "aux_free"
+    # ADR-069: eqb_iteration / eqb_step = Exact Quantile Balancing (bias set each step to the exact
+    # cutoff giving every expert k/N_e of the pairs, per iteration or over the step; no aux loss)
+    balance: Literal["aux_free", "none", "eqb_iteration", "eqb_step"] = "aux_free"
     bias_update_rate: float = 1e-3  # aux-loss-free load controller step (DeepSeek-V3 style)
+    # ADR-074 (I43): which load the controller sees. "last_call" = as built: the router's last
+    # call per micro-step, which under activation checkpointing is iteration 1's backward
+    # replay; "all_calls" = the mean load over every call of the training forward
+    bias_load: Literal["last_call", "all_calls"] = "last_call"
     aux_loss_coef: float = 1e-3  # small sequence-level auxiliary loss
     use_depth_embed: bool = True  # False = E-Q2 ablation (router without e_j)
     # ADR-038 (I33): aux averaged over L5d's segments; "sum" reproduces runs before it
@@ -77,6 +115,9 @@ class MiddleCfg:
     shared_attention: bool = True  # False = L5c: one attention block per iteration (ADR-032)
     h_every: int = 0  # K; 8 = L5e: a dense H block after iteration j = K/2 (mod K) (ADR-034)
     h_d_ff: int = 2048  # the H block's SwiGLU width (L5e)
+    # ADR-072 (L5f): each iteration's input is a learned per-token softmax mix of the middle
+    # block's input and the earlier iterations' updates, instead of their running sum
+    input_mix: Literal["residual", "attention_residual"] = "residual"
 
     @property
     def per_iteration_attention(self) -> bool:
@@ -181,6 +222,10 @@ class MemoryCfg:
 class NumericsCfg:
     dtype: Literal["bf16", "fp32"] = "bf16"
     sparsity_2_4: bool = False  # L10a; mask fixed after 1 % of tokens (ADR-019)
+    # ADR-073 (L10b′): 4-bit weight fake-quant from this fraction of the steps (0 = step 0)
+    qat_format: Literal["none", "fp4_e2m1", "int4"] = "none"
+    qat_start_frac: float = 0.0
+    qat_group: int = 64
 
 
 @dataclass(frozen=True)
@@ -211,6 +256,7 @@ class ModelCfg:
     mtp: MTPCfg = field(default_factory=MTPCfg)
     numerics: NumericsCfg = field(default_factory=NumericsCfg)
     memory: MemoryCfg = field(default_factory=MemoryCfg)  # L8 (ADR-053)
+    engram: EngramCfg = field(default_factory=EngramCfg)  # L8e (ADR-071)
     tenant_lora_rank: int = 0  # L11; not implemented in Phase 1
     # training-time memory knobs (no effect on semantics): docs/02 §13.4, docs/06 §3
     checkpoint_iterations: bool = True  # recompute each middle-block iteration in backward
@@ -267,9 +313,11 @@ class ModelCfg:
             U=self.experts.unit_width,
             s_min=self.experts.tile_min,
         )
+        # ADR-071: L8e's projection W_e (2 d^2 per token, once) comes out of the expert budget
+        engram = 2.0 * self.d * self.d if self.engram.enabled else 0.0
         return solve_d_ff(
             cm,
-            self.budget_flops_per_token,
+            self.budget_flops_per_token - engram,
             n_keys=budget_n_keys(self.context),
             multiple_of=64,
             hw=hw,
@@ -317,7 +365,7 @@ class ModelCfg:
                     raise ValueError("retrieval.stride must divide the context; k >= 1")
                 if not 1 <= rc.min_tokens <= rc.window:
                     raise ValueError("retrieval needs 1 <= min_tokens <= window")
-                if self.attention.global_source == "final_vector" and (
+                if self.attention.has_global and (
                     self.attention.window % rc.stride
                 ):
                     raise ValueError("retrieval.stride must divide the segment length")
@@ -341,7 +389,7 @@ class ModelCfg:
             raise ValueError("halting.survival_last must be in (0, 1]")
         if self.middle.per_iter_lora_rank and not self.middle.shared_attention:
             raise ValueError("L5b adapters on L5c's unshared attention: two features (ADR-032)")
-        if self.middle.per_iteration_attention and a.global_source == "final_vector":
+        if self.middle.per_iteration_attention and a.has_global:
             raise NotImplementedError(
                 "L5b/L5c over the final-vector cache: no rule yet for which iteration's "
                 "weights make a G entry (ADR-032)"
@@ -349,8 +397,51 @@ class ModelCfg:
         if self.middle.h_every:
             if self.arch != "recurrent" or self.middle.h_every % 2:
                 raise ValueError("L5e needs the recurrent arch and an even h_every (ADR-034)")
-            if a.global_source == "final_vector" or self.middle.per_iteration_attention:
+            if a.has_global or self.middle.per_iteration_attention:
                 raise NotImplementedError("L5e with L5d's G or with L5b/L5c: one feature (ADR-034)")
+        if a.global_source == "bridged":
+            if not 1 <= a.bridge_iteration <= self.middle.r_max:
+                raise ValueError("attention.bridge_iteration must be in 1..r_max (ADR-067)")
+            if self.halting.mode != "fixed":
+                raise NotImplementedError("L5h with variable depth is not specified (ADR-067)")
+        elif a.bridge_iteration:
+            raise ValueError("attention.bridge_iteration needs global_source = bridged")
+        if self.router.balance == "eqb_iteration" and self.arch != "recurrent":
+            raise ValueError("eqb_iteration needs the recurrent arch (ADR-069)")
+        if a.schedule:
+            if len(a.schedule) != self.middle.r_max or set(a.schedule) - {"F", "S", "L"}:
+                raise ValueError("attention.schedule needs one of F/S/L per iteration (ADR-070)")
+            if a.schedule[0] != "F" or not a.has_global or self.halting.mode != "fixed":
+                raise ValueError("L5g: iteration 1 is F, G exists, fixed depth (ADR-070)")
+            if "S" in a.schedule and a.k_sel < 1:
+                raise ValueError("a sparse iteration needs k_sel >= 1 (ADR-070)")
+            if a.global_combine != "one_softmax" or self.streams.two_stream:
+                raise NotImplementedError("L5g with two branches or two streams: one feature")
+        nm = self.numerics
+        if nm.qat_format != "none" and not 0.0 <= nm.qat_start_frac < 1.0:
+            raise ValueError("numerics.qat_start_frac must be in [0, 1) (ADR-073)")
+        if self.middle.input_mix == "attention_residual" and (
+            self.arch != "recurrent"
+            or a.has_global
+            or self.halting.mode != "fixed"
+            or self.middle.h_every
+            or self.streams.two_stream
+        ):
+            raise NotImplementedError("L5f is specified on L5: fixed depth, one stream (ADR-072)")
+        if self.engram.enabled:
+            eg = self.engram
+            if self.arch != "recurrent" or eg.rows & (eg.rows - 1) or not eg.ngrams:
+                raise ValueError("L8e: recurrent arch, rows a power of two, >= 1 n-gram order")
+            if any(n < 2 for n in eg.ngrams) or eg.placement not in ("host", "gpu"):
+                raise ValueError("L8e: n-gram orders >= 2; placement host or gpu (ADR-071)")
+        if a.global_combine == "two_branch" and not a.has_global:
+            raise ValueError("global_combine two_branch needs the global cache (ADR-068)")
+        if a.global_scoring == "relu2" and a.global_combine != "two_branch":
+            raise ValueError("relu2 scoring needs the two-branch combination (ADR-068)")
+        if a.rope_scope not in ("all", "local", "none"):
+            raise ValueError("attention.rope_scope must be all, local or none (ADR-066)")
+        if a.rope_scope == "local" and not a.has_global:
+            raise ValueError("rope_scope = local needs L5d's global range (ADR-066)")
         if a.prev_segment_local or a.kv_share_every != 1:
             raise NotImplementedError("ADR-022 crossing / L6b KV sharing are not implemented yet")
         if r.k > r.n_experts:  # k*g active of N_e*g sub-experts (ADR-047)
@@ -366,7 +457,7 @@ class ModelCfg:
                 raise NotImplementedError("L3c on the recurrent design is not specified (ADR-039)")
             if self.mtp.curriculum != "none":
                 raise ValueError("L3c with L3b's curriculum: two features (ADR-039)")
-        final_vec = self.arch == "recurrent" and a.global_source == "final_vector"
+        final_vec = self.arch == "recurrent" and a.has_global
         if final_vec and self.context % a.window:
             raise ValueError("context must be a multiple of the window (segment length)")
         if self.numerics.sparsity_2_4 and self.expert_width() % 4:
@@ -400,6 +491,7 @@ class ModelCfg:
             "mtp": MTPCfg,
             "numerics": NumericsCfg,
             "memory": MemoryCfg,
+            "engram": EngramCfg,
         }
         if d.pop("memory_enabled", False):  # configs before ADR-053 carry this flag, always off
             raise ValueError("memory_enabled: true predates ADR-053; use memory.enabled")
@@ -410,6 +502,10 @@ class ModelCfg:
                     v["lambdas"] = tuple(v["lambdas"])
                 if key == "memory" and isinstance(v.get("query_aux"), dict):
                     v["query_aux"] = QueryAuxCfg(**v["query_aux"])
+                if key == "attention" and isinstance(v.get("schedule"), list):
+                    v["schedule"] = tuple(v["schedule"])
+                if key == "engram" and isinstance(v.get("ngrams"), list):
+                    v["ngrams"] = tuple(v["ngrams"])
                 if key == "memory" and isinstance(v.get("retrieval"), dict):
                     v["retrieval"] = RetrievalCfg(**v["retrieval"])
                 d[key] = typ(**v)
@@ -469,6 +565,61 @@ def ladder(step: str, **overrides: Any) -> ModelCfg:
         # ADR-034: one dense H block with its own weights after iteration 4
         "L5e": replace(rec, middle=MiddleCfg(h_every=8), experts=ExpertsCfg(d_ff=896)),
         "L5d": replace(rec, attention=AttentionCfg(global_source="final_vector")),
+        # ADR-072: attention residuals over iterations (one mix per iteration)
+        "L5f": replace(rec, middle=MiddleCfg(input_mix="attention_residual")),
+        # ADR-071: a hashed 2/3-gram engram table (2^21 x d) in host RAM, read once per token
+        "L8e": replace(rec, engram=EngramCfg(enabled=True)),
+        # ADR-070: per-iteration global schedules with selection reuse, k_sel 128 at 2 k
+        **{
+            f"L5g-{name}": replace(
+                rec,
+                attention=AttentionCfg(
+                    global_source="final_vector", schedule=tuple(sched), k_sel=128
+                ),
+            )
+            for name, sched in (
+                ("fsss", "FSSSFSSS"), ("fsssllll", "FSSSLLLL"), ("fs7", "FSSSSSSS")
+            )
+        },
+        # ADR-074 (I43): L5 with the bias controller fed the load of every iteration
+        "L5-balfix": replace(rec, router=RouterCfg(bias_load="all_calls")),
+        # ADR-069: Exact Quantile Balancing per iteration / per step, at N_e = 8 and 128
+        "L5-eqb-iter": replace(rec, router=RouterCfg(balance="eqb_iteration")),
+        "L5-eqb-step": replace(rec, router=RouterCfg(balance="eqb_step")),
+        "L5-ne128-eqb-iter": replace(
+            rec, router=RouterCfg(k=4, n_experts=128, balance="eqb_iteration")
+        ),
+        "L5-ne128-eqb-step": replace(rec, router=RouterCfg(k=4, n_experts=128, balance="eqb_step")),
+        # ADR-066: RoPE on the local range only (NoPE on G), and NoPE everywhere
+        # ADR-067: G bridged from iteration j_b through its own projections; jb8 = untied control
+        **{
+            f"L5h-jb{jb}": replace(
+                rec, attention=AttentionCfg(global_source="bridged", bridge_iteration=jb)
+            )
+            for jb in (1, 2, 4, 8)
+        },
+        "L5d-nope": replace(
+            rec, attention=AttentionCfg(global_source="final_vector", rope_scope="local")
+        ),
+        # ADR-068: two-branch softmax control and ReLU^2-scored global range, on L5d-nope
+        "L9-2b": replace(
+            rec,
+            attention=AttentionCfg(
+                global_source="final_vector", rope_scope="local", global_combine="two_branch"
+            ),
+        ),
+        "L9-relu2": replace(
+            rec,
+            attention=AttentionCfg(
+                global_source="final_vector",
+                rope_scope="local",
+                global_combine="two_branch",
+                global_scoring="relu2",
+            ),
+        ),
+        "L5d-nope-all": replace(
+            rec, attention=AttentionCfg(global_source="final_vector", rope_scope="none")
+        ),
         # ADR-041: gated ACT residual, ponder price below the measured marginal iteration value
         "L6": replace(
             rec,
@@ -530,6 +681,14 @@ def ladder(step: str, **overrides: Any) -> ModelCfg:
             ),
         ),
         "L10a": replace(rec, numerics=NumericsCfg(sparsity_2_4=True)),
+        # ADR-073: FP4 E2M1 weight fake-quant in the last 2 % of steps, or from step 0
+        **{
+            f"{name}-qat{tag}": replace(
+                cfg_, numerics=NumericsCfg(qat_format="fp4_e2m1", qat_start_frac=frac)
+            )
+            for name, cfg_ in (("L0", base), ("L5", rec))
+            for tag, frac in (("-late", 0.98), ("0", 0.0))
+        },
         "L4": replace(
             rec, streams=StreamsCfg(two_stream=True), budget_flops_per_token=1.2e9
         ),  # ADR-026: 2x budget

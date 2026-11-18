@@ -25,6 +25,7 @@ from torch.utils.checkpoint import checkpoint
 
 from model.block import Block
 from model.config import ModelCfg
+from model.engram import Engram
 from model.middle import IterState, MiddleBlock
 from model.mtp import MTPHeads, MTPModules
 
@@ -57,6 +58,7 @@ class BigMoE(nn.Module):
         nn.init.normal_(self.emb.weight, std=0.02)
         self.stream_tag = nn.Parameter(torch.zeros(cfg.d)) if cfg.streams.two_stream else None
         self.h_block: Block | None = None
+        self.engram: Engram | None = None
         if cfg.arch == "layered":
             self.blocks = nn.ModuleList(
                 Block(cfg, cfg.ff, cfg.dense_d_ff, cfg.block_form) for _ in range(cfg.layers)
@@ -67,6 +69,8 @@ class BigMoE(nn.Module):
                 Block(cfg, "dense", w, "parallel") for _ in range(cfg.early_blocks)
             )
             self.middle = MiddleBlock(cfg)
+            # L8e (ADR-071): one n-gram read per token, fed to every iteration's input
+            self.engram = Engram(cfg.engram, cfg.d, cfg.vocab) if cfg.engram.enabled else None
             if cfg.middle.h_every:  # L5e: the slow dense H block, own weights (ADR-034)
                 self.h_block = Block(cfg, "dense", cfg.middle.h_d_ff, "parallel")
             n_pred = cfg.pred_only_final
@@ -75,6 +79,10 @@ class BigMoE(nn.Module):
                 for i in range(cfg.final_blocks)
             )
         self.out_norm = nn.RMSNorm(cfg.d)
+        if cfg.numerics.qat_format != "none":  # L10b′ (ADR-073): off until set_qat
+            from model.quant import swap_linears
+
+            swap_linears(self, cfg.numerics.qat_format, cfg.numerics.qat_group)
         self.mtp: MTPHeads | MTPModules | None = None
         if cfg.mtp.m > 1 and cfg.mtp.style == "sequential":
             self.mtp = MTPModules(cfg)  # L3c (ADR-039)
@@ -132,7 +140,8 @@ class BigMoE(nn.Module):
         cfg = self.cfg
         b, t = tokens.shape
         dev = tokens.device
-        final_vec = cfg.attention.global_source == "final_vector"
+        final_vec = cfg.attention.has_global
+        j_b = cfg.attention.bridge_iteration  # L5h (ADR-067); 0 = the final vector
         seg = cfg.attention.window if final_vec else t
         n_iter = cfg.middle.r_max if r is None else r
         fixed = cfg.halting.mode == "fixed"
@@ -144,6 +153,7 @@ class BigMoE(nn.Module):
         nb_s = rc.stride if rc is not None else 1  # L8b: positions per neighbour row
         hs, r_maps, ponders, loads = [], [], [], []
         aux = torch.zeros((), device=dev)
+        eng = None if self.engram is None else self.engram(tokens)  # [B, T, d], ADR-071
         q_sum: Tensor | None = None  # L8q: summed (L_q, count) over segments and iterations
         for s0 in range(0, t, seg):
             pos = torch.arange(s0, s0 + seg, device=dev)
@@ -165,12 +175,28 @@ class BigMoE(nn.Module):
                 nbr=None
                 if neighbours is None
                 else neighbours[:, s0 // nb_s : -(-(s0 + seg) // nb_s)],
+                eng=None if eng is None else eng[:, s0 : s0 + seg],
             )
             if st.nbr is not None and cfg.memory.hoist:  # L8b-pv (ADR-060): maps per boundary
                 st = replace(st, nbr_kv=self.middle.mem.prepare(st.nbr))
+            c_bridge: Tensor | None = None
+            mix = cfg.middle.input_mix == "attention_residual"  # L5f (ADR-072)
+            src_v = [st.c] if mix else []
+            src_k = [F.rms_norm(st.c, (cfg.d,))] if mix else []
+            mix_w: list[Tensor] = []
             for j in range(1, n_iter + 1):
                 prev_active = st.active
+                if mix:
+                    x_in = self.middle.input_mix(src_k, src_v, j)
+                    mix_w.append(self.middle.last_mix)
+                    st = replace(st, c=x_in)
                 st, a = self._iterate(st, j, pos, mem, fixed)
+                if mix:
+                    upd = st.c - x_in  # the iteration's update u^(j), a source from now on
+                    src_v.append(upd)
+                    src_k.append(F.rms_norm(upd, (cfg.d,)))
+                if j == j_b:
+                    c_bridge = st.c  # L5h: G's entry is built from the state after iteration j_b
                 if expert and j > cfg.middle.r_min:
                     self.middle.record_tau(j, st.cum_halt, prev_active)
                 aux = aux + a
@@ -179,6 +205,10 @@ class BigMoE(nn.Module):
                     st = self._apply_h(st, pos)
                 if not fixed and not st.active.any():
                     break
+            if mix:
+                st = replace(st, c=self.middle.input_mix(src_k, src_v, None))
+                mix_w.append(self.middle.last_mix)
+                self.last_mix_weights = mix_w  # per mix: mean weight on each source (logging)
             loads.extend(st.loads)
             if st.q_loss is not None:
                 q_sum = st.q_loss if q_sum is None else q_sum + st.q_loss
@@ -190,7 +220,9 @@ class BigMoE(nn.Module):
             r_maps.append(st.r)
             ponders.append(st.r.float() + st.remainder)
             if final_vec:
-                g = self.middle.global_entry(st.c, pos)
+                if j_b and c_bridge is None:
+                    raise RuntimeError("L5h: the loop ended before the bridge iteration")
+                g = self.middle.global_entry(st.c if c_bridge is None else c_bridge, pos)
                 if mem is None:
                     mem = g
                 else:
@@ -231,13 +263,13 @@ class BigMoE(nn.Module):
         outs = checkpoint(
             self.middle.iteration_flat,
             j, pos, fixed, st.c, st.p, st.active, st.r, st.cum_halt, st.remainder,
-            fk, fv, st.frozen, mk, mv, st.q_tgt, st.q_loss, st.nbr, nk, nv,
+            fk, fv, st.frozen, mk, mv, st.q_tgt, st.q_loss, st.nbr, nk, nv, st.g_sel, st.eng,
             use_reentrant=False,
         )
-        c, p, active, r, cum, rem, fk2, fv2, frozen, aux, load, q_loss = outs
+        c, p, active, r, cum, rem, fk2, fv2, frozen, aux, load, q_loss, g_sel = outs
         new = IterState(
             c, p, active, r, cum, rem, None if fk2 is None else (fk2, fv2), frozen,
-            [*st.loads, load], st.q_tgt, q_loss, st.nbr, st.nbr_kv,
+            [*st.loads, load], st.q_tgt, q_loss, st.nbr, st.nbr_kv, g_sel, st.eng,
         )
         return new, aux
 
@@ -285,7 +317,19 @@ class BigMoE(nn.Module):
         `q_target` [B, T, 2] (L8q, ADR-055): the teacher's PQ code per input position.
         `neighbours` (L8b, ADR-057): per-boundary table rows of the inputs, else computed."""
         inp = tokens[:, :-1]
-        h, ex = self.forward_hidden(inp, r, q_target, neighbours)
+        routers = [m for m in self.modules() if getattr(m, "eqb", False)]
+        moes = [m for m in self.modules() if hasattr(m, "call_loads")]
+        for rt in routers:  # ADR-069: record this forward's logits, not backward's replays
+            rt.eqb_record = True
+        for mo in moes:  # ADR-074: and this forward's loads per call
+            mo.record_loads = self.training
+        try:
+            h, ex = self.forward_hidden(inp, r, q_target, neighbours)
+        finally:
+            for rt in routers:
+                rt.eqb_record = False
+            for mo in moes:
+                mo.record_loads = False
         main = self._chunked_ce(h, tokens[:, 1:])
         metrics: dict[str, float] = {}
         if self.mtp is not None:
@@ -302,6 +346,12 @@ class BigMoE(nn.Module):
             metrics["q_loss"] = float(ex.q_loss.detach())
         if ex.r_map is not None:
             metrics["r_mean"] = float(ex.r_map.float().mean())
+        if self.cfg.arch == "recurrent" and self.middle.attn.zero_stats:  # ADR-068 (L9-relu2)
+            zs = torch.stack(self.middle.attn.zero_stats).mean(0)
+            self.middle.attn.zero_stats.clear()
+            h = self.cfg.attention.heads
+            metrics["g_zero_frac"] = float(zs[:h].mean())
+            metrics["g_vskip_frac"] = float(zs[h:].mean())
         return LossOut(total, main, mtp, ex.router_aux, ponder, metrics)
 
     def _chunked_ce(self, h: Tensor, targets: Tensor) -> Tensor:

@@ -24,7 +24,7 @@ import torch.distributed as dist
 from torch import Tensor, nn
 
 from model.config import ModelCfg
-from model.layers import Attention, DepthNorm, local_window_mask
+from model.layers import Attention, DepthNorm, apply_rotary, local_window_mask, rotary_cos_sin
 from model.memory import KnowledgeMemory
 from model.moe import MoE
 
@@ -46,6 +46,8 @@ class IterState:
     q_loss: Tensor | None = None  # [2] running (summed L_q, valid count) over iterations
     nbr: Tensor | None = None  # [B, T / s, K] L8b neighbours per boundary, -1 = none (ADR-057)
     nbr_kv: tuple[Tensor, Tensor] | None = None  # L8b-pv (ADR-060): (kappa_n, V_n) per boundary
+    g_sel: Tensor | None = None  # L5g (ADR-070): [B, Hkv, T, |G|] keys picked at the last F
+    eng: Tensor | None = None  # L8e (ADR-071): [B, T, d] engram input u_t, added to c's input
 
 
 class MiddleBlock(nn.Module):
@@ -55,16 +57,18 @@ class MiddleBlock(nn.Module):
         self.cfg = cfg
         self.depth = nn.Embedding(m.r_max + 1, m.depth_embed)  # e_j, j = 1..r_max (0 unused)
         self.norm = DepthNorm(cfg.d, m.depth_embed)
+        rope = a.rope_scope != "none"  # ADR-066
         self.attn = Attention(
             cfg.d, a.heads, a.kv_heads, a.head_dim, a.rope_theta,
-            lora_rank=m.per_iter_lora_rank, lora_slots=m.r_max,
+            lora_rank=m.per_iter_lora_rank, lora_slots=m.r_max, rope=rope,
+            two_branch=a.global_combine == "two_branch", scoring=a.global_scoring,  # ADR-068
         )
         # L5c: iterations 2..r_max get their own attention; iteration 1 uses self.attn
         self.attn_rest = (
             None
             if m.shared_attention
             else nn.ModuleList(
-                Attention(cfg.d, a.heads, a.kv_heads, a.head_dim, a.rope_theta)
+                Attention(cfg.d, a.heads, a.kv_heads, a.head_dim, a.rope_theta, rope=rope)
                 for _ in range(m.r_max - 1)
             )
         )
@@ -74,7 +78,19 @@ class MiddleBlock(nn.Module):
             KnowledgeMemory(cfg.memory, cfg.d, m.depth_embed) if cfg.memory.enabled else None
         )
         # norm applied to final vectors before the G K/V; only exists when G is used (L5d+)
-        self.g_norm = nn.RMSNorm(cfg.d) if a.global_source == "final_vector" else None
+        self.g_norm = nn.RMSNorm(cfg.d) if a.has_global else None
+        # L5h (ADR-067): G's own K/V projections, applied to the state after iteration j_b
+        kvd = a.kv_heads * a.head_dim
+        self.bridge_k = nn.Linear(cfg.d, kvd, bias=False) if a.global_source == "bridged" else None
+        self.bridge_v = nn.Linear(cfg.d, kvd, bias=False) if a.global_source == "bridged" else None
+        # L5f (ADR-072): mix queries q_j = w + W_q e_j (zero at init: a uniform mix) and the
+        # final blocks' own query
+        self.res_w = self.res_wq = self.res_final = None
+        if m.input_mix == "attention_residual":
+            self.res_w = nn.Parameter(torch.zeros(cfg.d))
+            self.res_wq = nn.Linear(m.depth_embed, cfg.d, bias=False)
+            nn.init.zeros_(self.res_wq.weight)
+            self.res_final = nn.Parameter(torch.zeros(cfg.d))
         self.halt = nn.Linear(cfg.d + m.depth_embed, 1)
         nn.init.zeros_(self.halt.weight)
         nn.init.constant_(self.halt.bias, -2.0)  # start with a low halting probability
@@ -85,6 +101,19 @@ class MiddleBlock(nn.Module):
             # differ from the first step; thresholds tau_j learned as an EMA (NaN = not yet set)
             self.halt.reset_parameters()
             self.register_buffer("depth_tau", torch.full((m.r_max + 1,), float("nan")))
+
+    def input_mix(self, keys: list[Tensor], values: list[Tensor], j: int | None) -> Tensor:
+        """L5f: x = sum_s alpha_s v_s, alpha = softmax_s(q . RMSNorm(v_s) / sqrt(d)); `keys` are
+        the sources' RMSNorms. j = None: the final blocks' query."""
+        assert self.res_w is not None and self.res_wq is not None and self.res_final is not None
+        if j is None:
+            q = self.res_final
+        else:
+            q = self.res_w + self.res_wq(self.depth(torch.tensor(j, device=self.res_w.device)))
+        k = torch.stack(keys, dim=-2)  # [B, T, S, d]
+        a = torch.softmax((k @ q.to(k.dtype)) / k.shape[-1] ** 0.5, dim=-1)  # [B, T, S]
+        self.last_mix = a.detach().float().mean((0, 1))
+        return (a.unsqueeze(-1) * torch.stack(values, dim=-2)).sum(-2)
 
     def attention_at(self, j: int) -> Attention:
         """The attention used at iteration j (1-based): shared, or L5c's own copy."""
@@ -97,7 +126,20 @@ class MiddleBlock(nn.Module):
             raise RuntimeError("global cache requested with global_source = per_iteration")
         if self.cfg.attention.segment_memory_grad == "stop":
             c_final = c_final.detach()  # ADR-023: no gradient into earlier segments' vectors
-        return self.attn.kv(self.g_norm(c_final), positions)
+        # ADR-066: under rope_scope local / none the entries are stored unrotated (NoPE)
+        rotate = self.cfg.attention.rope_scope == "all"
+        x = self.g_norm(c_final)
+        if self.bridge_k is None or self.bridge_v is None:
+            return self.attn.kv(x, positions, rotate=rotate)
+        # L5h: c_final is the state after iteration j_b; the bridge pair, not the local W_K/W_V
+        a = self.attn
+        b, t, _ = x.shape
+        k = self.bridge_k(x).view(b, t, a.kv_heads, a.head_dim).transpose(1, 2)
+        v = self.bridge_v(x).view(b, t, a.kv_heads, a.head_dim).transpose(1, 2)
+        if rotate and a.rope:
+            cos, sin = rotary_cos_sin(positions, a.head_dim, a.theta)
+            k = apply_rotary(k, cos, sin)
+        return k, v
 
     # ---- checkpoint-friendly wrapper -----------------------------------------------
     def iteration_flat(
@@ -121,11 +163,13 @@ class MiddleBlock(nn.Module):
         nbr: Tensor | None = None,
         nbr_k: Tensor | None = None,
         nbr_v: Tensor | None = None,
+        g_sel: Tensor | None = None,
+        eng: Tensor | None = None,
     ) -> tuple[Tensor | None, ...]:
         """`iteration` over flat tensors so `torch.utils.checkpoint` can replay it."""
         st = IterState(
             c, p, active, r, cum, rem, None if fk is None else (fk, fv), frozen, [], q_tgt, q_loss,
-            nbr, None if nbr_k is None else (nbr_k, nbr_v),
+            nbr, None if nbr_k is None else (nbr_k, nbr_v), g_sel, eng,
         )
         mem = None if mem_k is None else (mem_k, mem_v)
         out, aux = self.iteration(st, j, positions, mem, force_active)
@@ -133,7 +177,7 @@ class MiddleBlock(nn.Module):
         load = out.loads[-1]
         return (
             out.c, out.p, out.active, out.r, out.cum_halt, out.remainder,
-            fk2, fv2, out.frozen, aux, load, out.q_loss,
+            fk2, fv2, out.frozen, aux, load, out.q_loss, out.g_sel,
         )
 
     # ---- L6c thresholds (ADR-042) ------------------------------------------------
@@ -186,7 +230,8 @@ class MiddleBlock(nn.Module):
         cfg = self.cfg
         b, t, d = st.c.shape
         e = self.depth(torch.tensor(j, device=st.c.device))
-        uc = self.norm(st.c, e)
+        # L8e (ADR-071 §2): the block reads c + u; the residual below carries c alone
+        uc = self.norm(st.c if st.eng is None else st.c + st.eng.to(st.c.dtype), e)
         attn = self.attention_at(j)
         mode = cfg.halting.mode
         # L6c: the depth router decides at the start of iteration j > r_min who continues
@@ -220,10 +265,31 @@ class MiddleBlock(nn.Module):
         # key set = [global memory | local per-iteration], mask = [all | local window].
         # L5 baseline (`per_iteration`): the "local" range is the whole context, i.e. plain
         # causal attention over same-iteration caches; L5d: a window W within the segment.
-        window = cfg.attention.window if cfg.attention.global_source == "final_vector" else t
+        window = cfg.attention.window if cfg.attention.has_global else t
         mask = local_window_mask(t, window, st.c.device)
+        # L5g (ADR-070): F = all of G (and, if sparse iterations follow, pick each token's top
+        # k_sel G keys per KV head); S = only the picked keys; L = no global range at all
+        sched = cfg.attention.schedule
+        kind = sched[j - 1] if sched else "F"
+        g_sel = st.g_sel
+        if mem_kv is not None and kind == "F" and "S" in sched:
+            with torch.no_grad():
+                sc = attn.global_scores(
+                    uc, positions, mem_kv[0], cfg.attention.rope_scope == "local", j
+                )
+                top = sc.topk(min(cfg.attention.k_sel, sc.shape[-1]), dim=-1).indices
+                g_sel = torch.zeros_like(sc, dtype=torch.bool).scatter_(-1, top, True)
+        if kind == "L":
+            mem_kv = None
         plain_causal = mem_kv is None and window >= t
-        if mem_kv is not None:
+        if mem_kv is not None and kind == "S":
+            assert g_sel is not None, "a sparse iteration before any full one"
+            rep = cfg.attention.heads // cfg.attention.kv_heads
+            gm = g_sel.repeat_interleave(rep, dim=1)  # [B, H, T, |G|]
+            k = torch.cat([mem_kv[0], k], dim=2)
+            v = torch.cat([mem_kv[1], v], dim=2)
+            mask = torch.cat([gm, mask.expand(*gm.shape[:2], t, t)], dim=-1)
+        elif mem_kv is not None:
             k = torch.cat([mem_kv[0], k], dim=2)
             v = torch.cat([mem_kv[1], v], dim=2)
             ones = torch.ones(t, mem_kv[0].shape[2], dtype=torch.bool, device=mask.device)
@@ -242,8 +308,17 @@ class MiddleBlock(nn.Module):
                 if mem_kv is None:
                     loc[0, 0] = True
             fast = plain_causal and (i == 0 or cfg.streams.p_sees_own_context)
-            a = attn(u, positions, (k, v), None if fast else m_i, is_causal=fast, j=j)
-            y, lm = self.moe(u, e)
+            n_plain = (  # ADR-066: NoPE G entries scored by the unrotated query
+                mem_kv[0].shape[2]
+                if mem_kv is not None and cfg.attention.rope_scope == "local"
+                else 0
+            )
+            n_glob = mem_kv[0].shape[2] if mem_kv is not None else 0  # ADR-068 two-branch
+            a = attn(
+                u, positions, (k, v), None if fast else m_i, is_causal=fast, j=j,
+                n_plain=n_plain, n_glob=n_glob,
+            )
+            y, lm = self.moe(u, e, j=j)
             aux = aux + lm
             upd = a + y
             if self.mem is not None:
@@ -269,7 +344,7 @@ class MiddleBlock(nn.Module):
             p_new = new[1] if len(new) > 1 else None
             return IterState(
                 new[0], p_new, active, r, cum, rem, frozen_kv, frozen, st.loads, st.q_tgt, q_loss,
-                st.nbr, st.nbr_kv,
+                st.nbr, st.nbr_kv, g_sel, st.eng,
             ), aux
         # halting head on the context stream (§4.7)
         h = torch.sigmoid(self.halt(torch.cat([uc, e.expand(b, t, -1)], dim=-1))).squeeze(-1)
@@ -288,6 +363,6 @@ class MiddleBlock(nn.Module):
         p_new = new[1] if len(new) > 1 else None
         out = IterState(
             new[0], p_new, active, r, cum, rem, frozen_kv, frozen, st.loads, st.q_tgt, q_loss,
-            st.nbr, st.nbr_kv,
+            st.nbr, st.nbr_kv, g_sel, st.eng,
         )
         return out, aux

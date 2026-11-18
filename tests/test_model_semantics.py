@@ -47,6 +47,18 @@ STEPS = [
     "L5b",
     "L5c",
     "L5d",
+    "L5d-nope",
+    "L5d-nope-all",
+    "L5h-jb1",
+    "L5h-jb2",
+    "L9-2b",
+    "L9-relu2",
+    "L5-eqb-iter",
+    "L5-eqb-step",
+    "L5g-fsss",
+    "L5f",
+    "L5-qat0",
+    "L0-qat0",
     "L5e",
     "L6",
     "L6c",
@@ -77,7 +89,18 @@ def tiny(step: str, **kw) -> ModelCfg:
         context=64,
         layers=3,
         dense_d_ff=128,
-        attention=dc.replace(c.attention, heads=4, kv_heads=2, head_dim=16, window=16),
+        attention=dc.replace(
+            c.attention,
+            heads=4,
+            kv_heads=2,
+            head_dim=16,
+            window=16,
+            # L5g: the schedule's first r_max = 3 letters, k_sel 8 of up to 48 G keys
+            schedule=c.attention.schedule[:3],
+            k_sel=8 if c.attention.k_sel else 0,
+            # L5h: the bridge iteration within the tiny loop
+            bridge_iteration=min(c.attention.bridge_iteration, 3),
+        ),
         experts=dc.replace(c.experts, d_ff=32),
         # L5e: K = 4 so that H runs inside the tiny loop, once, after iteration 2
         middle=dc.replace(c.middle, r_max=3, depth_embed=8, h_every=4 if c.middle.h_every else 0),
@@ -1456,3 +1479,389 @@ def test_l8q_teacher_matches_the_table_encoding() -> None:
     ref = torch.from_numpy(np.array(table[[r["cell"] for r in rows]], dtype=np.float32))
     cos = (emb * torch.nn.functional.normalize(ref, dim=-1)).sum(-1)
     assert cos.min() > 0.999
+
+
+# ---- ADR-066: L5d-nope (RoPE on the local range only) ----------------------------------
+def test_nope_split_head_equals_explicit_two_query_attention() -> None:
+    """The widened-head trick: plain keys scored by the unrotated query, the rest by the
+    rotated one, in one softmax with the 1/sqrt(dh) scale."""
+    from model.layers import Attention, apply_rotary, rotary_cos_sin
+
+    torch.manual_seed(0)
+    att = Attention(32, heads=4, kv_heads=2, head_dim=8, theta=10_000.0)
+    b, tq, ng = 2, 5, 7
+    x = torch.randn(b, tq, 32)
+    pos = torch.arange(20, 20 + tq)
+    kg, vg = att.kv(torch.randn(b, ng, 32), torch.arange(ng), rotate=False)
+    kl, vl = att.kv(x, pos)
+    k, v = torch.cat([kg, kl], 2), torch.cat([vg, vl], 2)
+    mask = torch.cat([torch.ones(tq, ng, dtype=torch.bool), causal_mask(tq, tq, x.device)], 1)
+    out = att(x, pos, (k, v), mask, n_plain=ng)
+    # explicit reference
+    q = att.wq(x).view(b, tq, 4, 8).transpose(1, 2)
+    cos, sin = rotary_cos_sin(pos, 8, 10_000.0)
+    qr = apply_rotary(q, cos, sin)
+    kk, vv = k.repeat_interleave(2, 1), v.repeat_interleave(2, 1)
+    sc = torch.cat(
+        [q @ kk[:, :, :ng].transpose(-1, -2), qr @ kk[:, :, ng:].transpose(-1, -2)], -1
+    ) / math.sqrt(8)
+    sc = sc.masked_fill(~mask, float("-inf"))
+    ref = att.wo((sc.softmax(-1) @ vv).transpose(1, 2).reshape(b, tq, -1))
+    assert torch.allclose(out, ref, atol=1e-5)
+
+
+def test_nope_global_entries_are_position_free_and_all_is_unchanged() -> None:
+    torch.manual_seed(0)
+    x = torch.randn(1, 16, 64)
+    for scope, free in (("all", False), ("local", True), ("none", True)):
+        cfg = tiny("L5d", attention=dc.replace(tiny("L5d").attention, rope_scope=scope))
+        m = BigMoE(cfg)
+        k1, _ = m.middle.global_entry(x, torch.arange(16))
+        k2, _ = m.middle.global_entry(x, torch.arange(100, 116))
+        assert torch.allclose(k1, k2) == free, scope
+
+
+def test_nope_local_matches_l5d_before_any_global_entry() -> None:
+    """With the same weights, L5d-nope equals L5d on the first segment (no G yet) and differs
+    once G exists; NoPE-everywhere differs from the start (the skeleton loses RoPE too)."""
+    torch.manual_seed(0)
+    base = BigMoE(tiny("L5d")).eval()
+    toks = torch.randint(0, 97, (1, 64))
+    with torch.no_grad():
+        h0, _ = base.forward_hidden(toks, r=3)
+        for step, same_first in (("L5d-nope", True), ("L5d-nope-all", False)):
+            m = BigMoE(tiny(step)).eval()
+            m.load_state_dict(base.state_dict())
+            h, _ = m.forward_hidden(toks, r=3)
+            assert torch.allclose(h[0, :16], h0[0, :16], atol=1e-5) == same_first, step
+            assert not torch.allclose(h[0, 16:], h0[0, 16:], atol=1e-5), step
+    m = BigMoE(tiny("L5d-nope-all"))
+    assert not any(mod.rope for mod in m.modules() if hasattr(mod, "rope"))
+
+
+# ---- ADR-067: L5h (G bridged from iteration j_b) ----------------------------------------
+def test_l5h_widths_match_l5d() -> None:
+    assert {ladder(f"L5h-jb{j}").expert_width() for j in (1, 2, 4, 8)} == {
+        ladder("L5d").expert_width()
+    }
+
+
+def test_l5h_at_the_last_iteration_with_copied_projections_is_l5d() -> None:
+    torch.manual_seed(0)
+    base = BigMoE(tiny("L5d")).eval()
+    cfg = tiny("L5h-jb1", attention=dc.replace(tiny("L5h-jb1").attention, bridge_iteration=3))
+    m = BigMoE(cfg).eval()
+    missing, unexpected = m.load_state_dict(base.state_dict(), strict=False)
+    assert set(missing) == {"middle.bridge_k.weight", "middle.bridge_v.weight"} and not unexpected
+    with torch.no_grad():
+        m.middle.bridge_k.weight.copy_(base.middle.attn.wk.weight)
+        m.middle.bridge_v.weight.copy_(base.middle.attn.wv.weight)
+        toks = torch.randint(0, 97, (1, 64))
+        assert torch.allclose(m.forward_hidden(toks, r=3)[0], base.forward_hidden(toks, r=3)[0])
+
+
+def test_l5h_entries_come_from_the_bridge_iteration() -> None:
+    torch.manual_seed(0)
+    m = BigMoE(tiny("L5h-jb2")).eval()
+    states: list[torch.Tensor] = []
+    inputs: list[torch.Tensor] = []
+    it, ge = m._iterate, m.middle.global_entry
+
+    def rec_it(st, j, *a, **k):  # noqa: ANN001, ANN202
+        out = it(st, j, *a, **k)
+        if j == 2:
+            states.append(out[0].c)
+        return out
+
+    def rec_ge(c, pos):  # noqa: ANN001, ANN202
+        inputs.append(c)
+        return ge(c, pos)
+
+    m._iterate, m.middle.global_entry = rec_it, rec_ge
+    with torch.no_grad():
+        m.forward_hidden(torch.randint(0, 97, (1, 64)), r=3)
+    assert len(inputs) == 4 and all(torch.equal(a, b) for a, b in zip(inputs, states, strict=True))
+
+
+# ---- ADR-068: two-branch combination and ReLU^2 global scoring ----------------------------
+def test_relu2_weights_rows_sum_to_one_or_are_zero() -> None:
+    from model.layers import _relu2_weights
+
+    torch.manual_seed(0)
+    q, k = torch.randn(2, 4, 6, 16), torch.randn(2, 4, 9, 16)
+    a = _relu2_weights(q, k, 0)
+    s = a.sum(-1)
+    assert ((s - 1).abs() < 1e-4).logical_or(s == 0).all()
+    assert (a >= 0).all()
+    z = _relu2_weights(q, -q.clone()[:, :, :1].expand(2, 4, 9, 16).contiguous(), 0)  # all <= 0
+    assert torch.isfinite(z).all() and (z[:, :, 0] == 0).all()
+    capped = _relu2_weights(q, k, 2)
+    assert ((capped > 0).sum(-1) <= 2).all()
+
+
+def test_two_branch_is_gated_local_plus_global() -> None:
+    from model.layers import Attention
+
+    torch.manual_seed(0)
+    att = Attention(32, 4, 2, 8, 10_000.0, two_branch=True)
+    with torch.no_grad():
+        att.g_gate.fill_(30.0)  # sigmoid ~ 1
+    b, tq, ng = 1, 5, 7
+    x = torch.randn(b, tq, 32)
+    pos = torch.arange(20, 20 + tq)
+    kg, vg = att.kv(torch.randn(b, ng, 32), torch.arange(ng))
+    kl, vl = att.kv(x, pos)
+    mask_l = causal_mask(tq, tq, x.device)
+    mask = torch.cat([torch.ones(tq, ng, dtype=torch.bool), mask_l], 1)
+    out = att(x, pos, (torch.cat([kg, kl], 2), torch.cat([vg, vl], 2)), mask, n_glob=ng)
+    one = Attention(32, 4, 2, 8, 10_000.0)
+    one.load_state_dict(att.state_dict(), strict=False)
+    with torch.no_grad():
+        one.wo.weight.copy_(att.wo.weight)
+    ref = one(x, pos, (kl, vl), mask_l) + one(x, pos, (kg, vg), None)
+    assert torch.allclose(out, ref, atol=1e-5)
+
+
+def test_l9_first_segment_matches_l5d_nope_and_logs_zero_fraction() -> None:
+    torch.manual_seed(0)
+    base = BigMoE(tiny("L5d-nope")).eval()
+    toks = torch.randint(0, 97, (1, 64))
+    for step in ("L9-2b", "L9-relu2"):
+        m = BigMoE(tiny(step)).eval()
+        missing, _ = m.load_state_dict(base.state_dict(), strict=False)
+        assert missing == ["middle.attn.g_gate"]
+        with torch.no_grad():
+            h, _ = m.forward_hidden(toks, r=3)
+            h0, _ = base.forward_hidden(toks, r=3)
+        assert torch.allclose(h[0, :16], h0[0, :16], atol=1e-5), step
+    m = BigMoE(tiny("L9-relu2"))
+    out = m.loss(torch.randint(0, 97, (2, 65)), r=3)
+    assert 0.0 <= out.metrics["g_zero_frac"] <= 1.0 and 0.0 <= out.metrics["g_vskip_frac"] <= 1.0
+
+
+# ---- ADR-069: Exact Quantile Balancing ---------------------------------------------------
+def test_eqb_solve_gives_every_expert_its_share() -> None:
+    from model.router import _eqb_solve
+
+    torch.manual_seed(0)
+    for n_e, k in ((8, 2), (128, 4)):
+        lg = torch.randn(20_000, n_e) + torch.linspace(0, 3, n_e)  # skewed: later experts favoured
+        b, err = _eqb_solve(lg, torch.zeros(n_e), k, float(lg.shape[0]), rounds=6, steps=40)
+        sel = (lg + b).topk(k, -1).indices
+        share = torch.bincount(sel.reshape(-1), minlength=n_e).float() / lg.shape[0]
+        assert err < 0.05 and (share - k / n_e).abs().max() / (k / n_e) < 0.05, (n_e, err)
+
+
+def test_eqb_records_forward_logits_only_and_updates_biases() -> None:
+    torch.manual_seed(0)
+    for step in ("L5-eqb-iter", "L5-eqb-step"):
+        m = BigMoE(tiny(step)).train()
+        rt = m.middle.moe.router
+        out = m.loss(torch.randint(0, 97, (2, 65)), r=3)
+        n_rec = len(rt._eqb_buf)
+        assert n_rec == 3  # one call per iteration (L5: one segment)
+        out.loss.backward()
+        assert len(rt._eqb_buf) == n_rec  # backward replays do not record
+        rt.eqb_update()
+        assert not rt._eqb_buf and rt.last_eqb_err is not None
+        if step == "L5-eqb-iter":
+            assert rt.bias_iter.shape[0] == 4 and rt.bias_iter[1:].abs().sum() > 0
+        else:
+            assert rt.bias.abs().sum() > 0
+        assert float(out.router_aux.detach()) == 0.0  # EQB has no auxiliary loss
+
+
+# ---- ADR-070: L5g (per-iteration global schedule with selection reuse) ---------------------
+def _l5g(sched: str, k_sel: int) -> ModelCfg:
+    base = tiny("L5d")
+    return dc.replace(
+        base, attention=dc.replace(base.attention, schedule=tuple(sched), k_sel=k_sel)
+    )
+
+
+def test_l5g_all_full_or_selecting_everything_is_l5d() -> None:
+    torch.manual_seed(0)
+    base = BigMoE(tiny("L5d")).eval()
+    toks = torch.randint(0, 97, (2, 64))
+    with torch.no_grad():
+        h0, _ = base.forward_hidden(toks, r=3)
+        for sched, k_sel in (("FFF", 0), ("FSS", 64)):  # 64 >= |G| = 48: S keeps every key
+            m = BigMoE(_l5g(sched, k_sel)).eval()
+            m.load_state_dict(base.state_dict())
+            h, _ = m.forward_hidden(toks, r=3)
+            assert torch.allclose(h, h0, atol=1e-5), sched
+
+
+def test_l5g_sparse_and_local_iterations_change_the_far_range_only() -> None:
+    torch.manual_seed(0)
+    base = BigMoE(tiny("L5d")).eval()
+    toks = torch.randint(0, 97, (1, 64))
+    with torch.no_grad():
+        h0, _ = base.forward_hidden(toks, r=3)
+        for sched in ("FSS", "FLL"):
+            m = BigMoE(_l5g(sched, 4)).eval()
+            m.load_state_dict(base.state_dict())
+            h, _ = m.forward_hidden(toks, r=3)
+            assert torch.allclose(h[0, :16], h0[0, :16], atol=1e-5)  # first segment: no G
+            assert not torch.allclose(h[0, 16:], h0[0, 16:], atol=1e-5), sched
+
+
+def test_l5g_selection_keeps_k_sel_keys_per_token_and_kv_head() -> None:
+    torch.manual_seed(0)
+    m = BigMoE(_l5g("FSS", 4)).eval()
+    seen: list[torch.Tensor] = []
+    it = m._iterate
+
+    def rec(st, j, *a, **k):  # noqa: ANN001, ANN202
+        out = it(st, j, *a, **k)
+        if out[0].g_sel is not None:
+            seen.append(out[0].g_sel)
+        return out
+
+    m._iterate = rec
+    with torch.no_grad():
+        m.forward_hidden(torch.randint(0, 97, (2, 64)), r=3)
+    assert seen and all((g.sum(-1) == 4).all() and g.shape[:2] == (2, 2) for g in seen)
+
+
+# ---- ADR-071: L8e (hashed n-gram engram) ---------------------------------------------------
+def _l8e(placement: str = "gpu") -> ModelCfg:
+    base = tiny("L5")
+    return dc.replace(
+        base, engram=dc.replace(ladder("L8e").engram, rows=256, placement=placement)
+    )
+
+
+def test_engram_ids_are_deterministic_in_range_and_order_specific() -> None:
+    from model.engram import ngram_ids
+
+    cfg = _l8e().engram
+    toks = torch.randint(0, 97, (2, 40))
+    a, b = ngram_ids(toks, cfg, 97), ngram_ids(toks.clone(), cfg, 97)
+    assert torch.equal(a, b) and a.shape == (2, 40, 2)
+    assert (a >= 0).all() and (a < cfg.rows).all()
+    assert (a[..., 0] != a[..., 1]).float().mean() > 0.9  # 2-gram and 3-gram rows differ
+    alt = toks.clone()
+    alt[0, 10] = (alt[0, 10] + 1) % 97
+    c = ngram_ids(alt, cfg, 97)
+    changed = (c != a).any(-1)[0]
+    assert changed[10:13].all() and not changed[:10].any() and not changed[13:].any()
+
+
+def test_engram_zero_init_is_l5_and_its_input_is_not_accumulated() -> None:
+    torch.manual_seed(0)
+    base = BigMoE(tiny("L5")).eval()
+    m = BigMoE(_l8e()).eval()
+    missing, _ = m.load_state_dict(base.state_dict(), strict=False)
+    assert all(k.startswith("engram.") for k in missing)
+    toks = torch.randint(0, 97, (1, 64))
+    with torch.no_grad():
+        assert torch.allclose(m.forward_hidden(toks, r=3)[0], base.forward_hidden(toks, r=3)[0])
+        m.engram.proj.weight.normal_()
+        assert not torch.allclose(
+            m.forward_hidden(toks, r=3)[0], base.forward_hidden(toks, r=3)[0]
+        )
+    assert ladder("L8e").expert_width() <= ladder("L5").expert_width()
+
+
+def test_engram_host_lazy_adam_first_step_equals_dense_adam() -> None:
+    from scripts.train.engram_host import HostEngram
+
+    torch.manual_seed(0)
+    cfg = _l8e("host")
+    m = BigMoE(cfg).train()
+    he = HostEngram(cfg.engram, cfg.d, "pytest-engram", rank=0, world=1, seed=0)
+    try:
+        ref = nn.Embedding(cfg.engram.rows, cfg.d)
+        with torch.no_grad():
+            ref.weight.copy_(he.master)
+        m.engram.attach_host_table(he.values)
+        out = m.loss(torch.randint(0, 97, (2, 65)), r=3)
+        with torch.no_grad():
+            m.engram.proj.weight.normal_()  # so the rows get a non-zero gradient
+        out = m.loss(torch.randint(0, 97, (2, 65)), r=3)
+        m.engram.pending = m.engram.pending[-1:]
+        out.loss.backward()
+        ids, rows = m.engram.pending[0]
+        g = torch.zeros_like(ref.weight)
+        g.index_add_(0, ids.reshape(-1), rows.grad.reshape(-1, cfg.d).repeat_interleave(2, 0))
+        ref.weight.grad = g
+        opt = torch.optim.Adam(ref.parameters(), lr=1e-2, betas=(0.9, 0.95), eps=1e-8)
+        opt.step()
+        he.step(m.engram, 1e-2, (0.9, 0.95), 1e-8)
+        assert torch.allclose(he.master, ref.weight, atol=1e-6)
+        assert torch.equal(he.values, he.master.to(torch.bfloat16))
+    finally:
+        he.close()
+
+
+# ---- ADR-072: L5f (attention residuals over iterations) ------------------------------------
+def test_l5f_mix_is_uniform_at_init_and_learns() -> None:
+    torch.manual_seed(0)
+    m = BigMoE(tiny("L5f")).train()
+    out = m.loss(torch.randint(0, 97, (2, 65)), r=3)
+    w = m.last_mix_weights  # iterations 1..3, then the final blocks' mix
+    assert [x.numel() for x in w] == [1, 2, 3, 4]
+    assert all(torch.allclose(x, torch.full_like(x, 1 / x.numel()), atol=1e-6) for x in w)
+    out.loss.backward()
+    mid = m.middle
+    assert mid.res_final.grad is not None and mid.res_final.grad.abs().sum() > 0
+    assert mid.res_w.grad is not None and mid.res_w.grad.abs().sum() > 0
+    with pytest.raises(NotImplementedError):
+        tiny("L5f", attention=dc.replace(tiny("L5d").attention))
+
+
+# ---- ADR-073: L10b′ (4-bit weight fake-quant) ----------------------------------------------
+def test_fp4_e2m1_rounds_to_the_grid_per_group() -> None:
+    from model.quant import fake_quant
+
+    w = torch.tensor([[6.0, 0.2, 0.3, 2.4, 2.6, 5.1, -1.2, -0.76] + [0.0] * 56])
+    q = fake_quant(w, "fp4_e2m1", 64)
+    assert q[0, :8].tolist() == [6.0, 0.0, 0.5, 2.0, 3.0, 6.0, -1.0, -1.0]
+    two = torch.cat([w, w * 0.5], dim=1)  # second group: absmax 3 -> scale 0.5
+    q2 = fake_quant(two, "fp4_e2m1", 64)
+    assert torch.allclose(q2[0, 64:72], q[0, :8] * 0.5)
+    i4 = fake_quant(torch.linspace(-1, 1, 64)[None], "int4", 64)
+    assert i4.unique().numel() <= 16 and (i4 - torch.linspace(-1, 1, 64)).abs().max() < 0.07
+
+
+def test_qat_linear_is_straight_through_and_swaps_only_attention_and_ffn() -> None:
+    from model.quant import QATLinear, set_qat
+
+    torch.manual_seed(0)
+    m = BigMoE(tiny("L5-qat0"))
+    swapped = [mod for mod in m.modules() if isinstance(mod, QATLinear)]
+    assert swapped and not isinstance(m.middle.moe.router.wq, QATLinear)
+    assert set_qat(m, True) == len(swapped)
+    lin = swapped[0]
+    x = torch.randn(3, lin.in_features)
+    lin.weight.grad = None
+    lin(x).sum().backward()
+    g_q = lin.weight.grad.clone()
+    lin.qat_on = False
+    lin.weight.grad = None
+    lin(x).sum().backward()
+    assert torch.allclose(g_q, lin.weight.grad)
+
+
+# ---- ADR-074 (I43): what the bias controller sees -----------------------------------------
+def test_controller_as_built_sees_iteration_1_and_all_calls_sees_every_iteration() -> None:
+    torch.manual_seed(0)
+    m = BigMoE(tiny("L5-balfix")).train()
+    moe = m.middle.moe
+    seen = []
+    orig = moe.router.forward
+
+    def rec(*a, **k):  # noqa: ANN002, ANN003, ANN202
+        out = orig(*a, **k)
+        seen.append((k.get("j"), out.load))
+        return out
+
+    moe.router.forward = rec
+    out = m.loss(torch.randint(0, 97, (2, 65)), r=3)
+    assert len(moe.call_loads) == 3  # the forward's three iterations, recorded
+    out.loss.backward()  # checkpoint replays: 3, 2, 1 -- not recorded
+    assert len(moe.call_loads) == 3 and seen[-1][0] == 1  # last_route = iteration 1's replay
+    assert torch.allclose(torch.stack(moe.call_loads).mean(0),
+                          torch.stack([ld for _, ld in seen[:3]]).mean(0))
+

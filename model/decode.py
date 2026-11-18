@@ -102,14 +102,16 @@ def check_supported(model: BigMoE) -> None:
         reasons.append("layered arch")
     if cfg.halting.mode != "fixed":
         reasons.append(f"halting {cfg.halting.mode}")
-    if cfg.attention.global_source != "per_iteration":
-        reasons.append("global_source final_vector (L5d)")
+    if cfg.attention.has_global:
+        reasons.append(f"global_source {cfg.attention.global_source} (L5d family)")
     if cfg.streams.two_stream:
         reasons.append("two streams")
     if cfg.middle.per_iteration_attention:
         reasons.append("per-iteration attention (L5b/L5c)")
     if cfg.middle.h_every:
         reasons.append("H block (L5e)")
+    if cfg.attention.rope_scope != "all":
+        reasons.append(f"rope_scope {cfg.attention.rope_scope} (ADR-066)")
     if reasons:
         raise NotImplementedError("decode supports L5 only (ADR-049 §1): " + ", ".join(reasons))
 

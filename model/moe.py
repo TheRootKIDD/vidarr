@@ -22,18 +22,29 @@ class MoE(nn.Module):
         g = cfg.experts.granularity
         self.n_experts = cfg.router.n_experts * g
         self.d_ff = cfg.expert_width() // g
-        self.router = Router(cfg.d, cfg.router, self.n_experts, depth_dim, k=cfg.router.k * g)
+        self.router = Router(
+            cfg.d, cfg.router, self.n_experts, depth_dim, k=cfg.router.k * g,
+            iter_slots=cfg.middle.r_max if cfg.router.balance == "eqb_iteration" else 0,
+        )
         self.experts = nn.ModuleList(
             Expert(cfg.d, self.d_ff, cfg.experts.layers) for _ in range(self.n_experts)
         )
         self.last_route: RouteResult | None = None
+        # ADR-074 (I43): loads of the training forward's calls (not backward's replays)
+        self.record_loads = False
+        self.call_loads: list[Tensor] = []
 
-    def forward(self, u: Tensor, e: Tensor | None = None) -> tuple[Tensor, Tensor]:
-        """u: [..., d] -> (output [..., d], aux loss). Stores the route for logging."""
+    def forward(
+        self, u: Tensor, e: Tensor | None = None, j: int | None = None
+    ) -> tuple[Tensor, Tensor]:
+        """u: [..., d] -> (output [..., d], aux loss). Stores the route for logging.
+        `j`: the middle-block iteration (EQB per iteration, ADR-069)."""
         shape = u.shape
         flat = u.reshape(-1, shape[-1])
-        route = self.router(flat, e)
+        route = self.router(flat, e, j=j)
         self.last_route = route
+        if self.record_loads:
+            self.call_loads.append(route.load)
         out = torch.zeros_like(flat)
         n, k = route.idx.shape
         token_of = torch.arange(n, device=u.device).repeat_interleave(k)  # [N*k]
