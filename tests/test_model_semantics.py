@@ -53,6 +53,8 @@ STEPS = [
     "L5h-jb2",
     "L9-2b",
     "L9-relu2",
+    "L5-eqb-iter",
+    "L5-eqb-step",
     "L5e",
     "L6",
     "L6c",
@@ -1620,4 +1622,36 @@ def test_l9_first_segment_matches_l5d_nope_and_logs_zero_fraction() -> None:
     m = BigMoE(tiny("L9-relu2"))
     out = m.loss(torch.randint(0, 97, (2, 65)), r=3)
     assert 0.0 <= out.metrics["g_zero_frac"] <= 1.0 and 0.0 <= out.metrics["g_vskip_frac"] <= 1.0
+
+
+# ---- ADR-069: Exact Quantile Balancing ---------------------------------------------------
+def test_eqb_solve_gives_every_expert_its_share() -> None:
+    from model.router import _eqb_solve
+
+    torch.manual_seed(0)
+    for n_e, k in ((8, 2), (128, 4)):
+        lg = torch.randn(20_000, n_e) + torch.linspace(0, 3, n_e)  # skewed: later experts favoured
+        b, err = _eqb_solve(lg, torch.zeros(n_e), k, float(lg.shape[0]), rounds=6, steps=40)
+        sel = (lg + b).topk(k, -1).indices
+        share = torch.bincount(sel.reshape(-1), minlength=n_e).float() / lg.shape[0]
+        assert err < 0.05 and (share - k / n_e).abs().max() / (k / n_e) < 0.05, (n_e, err)
+
+
+def test_eqb_records_forward_logits_only_and_updates_biases() -> None:
+    torch.manual_seed(0)
+    for step in ("L5-eqb-iter", "L5-eqb-step"):
+        m = BigMoE(tiny(step)).train()
+        rt = m.middle.moe.router
+        out = m.loss(torch.randint(0, 97, (2, 65)), r=3)
+        n_rec = len(rt._eqb_buf)
+        assert n_rec == 3  # one call per iteration (L5: one segment)
+        out.loss.backward()
+        assert len(rt._eqb_buf) == n_rec  # backward replays do not record
+        rt.eqb_update()
+        assert not rt._eqb_buf and rt.last_eqb_err is not None
+        if step == "L5-eqb-iter":
+            assert rt.bias_iter.shape[0] == 4 and rt.bias_iter[1:].abs().sum() > 0
+        else:
+            assert rt.bias.abs().sum() > 0
+        assert float(out.router_aux.detach()) == 0.0  # EQB has no auxiliary loss
 

@@ -291,7 +291,14 @@ class BigMoE(nn.Module):
         `q_target` [B, T, 2] (L8q, ADR-055): the teacher's PQ code per input position.
         `neighbours` (L8b, ADR-057): per-boundary table rows of the inputs, else computed."""
         inp = tokens[:, :-1]
-        h, ex = self.forward_hidden(inp, r, q_target, neighbours)
+        routers = [m for m in self.modules() if getattr(m, "eqb", False)]
+        for rt in routers:  # ADR-069: record this forward's logits, not backward's replays
+            rt.eqb_record = True
+        try:
+            h, ex = self.forward_hidden(inp, r, q_target, neighbours)
+        finally:
+            for rt in routers:
+                rt.eqb_record = False
         main = self._chunked_ce(h, tokens[:, 1:])
         metrics: dict[str, float] = {}
         if self.mtp is not None:

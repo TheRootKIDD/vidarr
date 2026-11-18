@@ -323,6 +323,12 @@ def worker(rank: int, world: int, a: TrainArgs, cfg: ModelCfg, out: Path) -> Non
                     dist.all_reduce(ld)
                     ld /= world
                 moe.router.update_bias(ld)
+        eqb_errs = []  # ADR-069: EQB biases from this step's logits, on every rank
+        for m in raw.modules():
+            if getattr(m, "eqb", False):
+                m.eqb_update()
+                if m.last_eqb_err is not None:
+                    eqb_errs.append(m.last_eqb_err)
         step += 1
         tokens_seen += step_tokens
         torch.cuda.synchronize(dev)  # the step time must include queued GPU work (I22)
@@ -348,6 +354,8 @@ def worker(rank: int, world: int, a: TrainArgs, cfg: ModelCfg, out: Path) -> Non
             }
             for k, v in metric_sums.items():
                 rec[k] = v / accum
+            if eqb_errs:
+                rec["eqb_err"] = max(eqb_errs)  # largest relative share error on its own step
             if load_sums:
                 ld = torch.stack([ls / accum for ls in load_sums])  # [n_moe, n_exp]
                 rec["load_max"] = float(ld.max())

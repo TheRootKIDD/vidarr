@@ -271,7 +271,7 @@ class MiddleBlock(nn.Module):
                 u, positions, (k, v), None if fast else m_i, is_causal=fast, j=j,
                 n_plain=n_plain, n_glob=n_glob,
             )
-            y, lm = self.moe(u, e)
+            y, lm = self.moe(u, e, j=j)
             aux = aux + lm
             upd = a + y
             if self.mem is not None:

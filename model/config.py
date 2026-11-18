@@ -64,7 +64,9 @@ class RouterCfg:
     d_r: int = 128  # router query / key dim
     product_keys: bool = False  # only needed at N_e >= 256; plain keys otherwise
     hierarchical: bool = False
-    balance: Literal["aux_free", "none"] = "aux_free"
+    # ADR-069: eqb_iteration / eqb_step = Exact Quantile Balancing (bias set each step to the exact
+    # cutoff giving every expert k/N_e of the pairs, per iteration or over the step; no aux loss)
+    balance: Literal["aux_free", "none", "eqb_iteration", "eqb_step"] = "aux_free"
     bias_update_rate: float = 1e-3  # aux-loss-free load controller step (DeepSeek-V3 style)
     aux_loss_coef: float = 1e-3  # small sequence-level auxiliary loss
     use_depth_embed: bool = True  # False = E-Q2 ablation (router without e_j)
@@ -371,6 +373,8 @@ class ModelCfg:
                 raise NotImplementedError("L5h with variable depth is not specified (ADR-067)")
         elif a.bridge_iteration:
             raise ValueError("attention.bridge_iteration needs global_source = bridged")
+        if self.router.balance == "eqb_iteration" and self.arch != "recurrent":
+            raise ValueError("eqb_iteration needs the recurrent arch (ADR-069)")
         if a.global_combine == "two_branch" and not a.has_global:
             raise ValueError("global_combine two_branch needs the global cache (ADR-068)")
         if a.global_scoring == "relu2" and a.global_combine != "two_branch":
@@ -497,6 +501,13 @@ def ladder(step: str, **overrides: Any) -> ModelCfg:
         # ADR-034: one dense H block with its own weights after iteration 4
         "L5e": replace(rec, middle=MiddleCfg(h_every=8), experts=ExpertsCfg(d_ff=896)),
         "L5d": replace(rec, attention=AttentionCfg(global_source="final_vector")),
+        # ADR-069: Exact Quantile Balancing per iteration / per step, at N_e = 8 and 128
+        "L5-eqb-iter": replace(rec, router=RouterCfg(balance="eqb_iteration")),
+        "L5-eqb-step": replace(rec, router=RouterCfg(balance="eqb_step")),
+        "L5-ne128-eqb-iter": replace(
+            rec, router=RouterCfg(k=4, n_experts=128, balance="eqb_iteration")
+        ),
+        "L5-ne128-eqb-step": replace(rec, router=RouterCfg(k=4, n_experts=128, balance="eqb_step")),
         # ADR-066: RoPE on the local range only (NoPE on G), and NoPE everywhere
         # ADR-067: G bridged from iteration j_b through its own projections; jb8 = untied control
         **{
