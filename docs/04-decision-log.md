@@ -1543,7 +1543,7 @@ Consequences: 3 runs × ≈ 8.3 h, plus the `sim/` counters. Bears on H21; touch
 
 ### ADR-071 — L8e as built: a hashed 2/3-gram engram table of 2²¹ × $d$ in host RAM, read once per token, added to every iteration's block input; rig `052`, run `197`
 2026-11-18 · accepted (the user's decision: "Accept them all, in the handoff's order"; drafted on "Do the ADRs")
-Context: H24 as restated (ADR-065). At $d$ = 768, the table has 1.61 B parameters: ≈ 3.2 GB in bf16, ≈ 22.5 GB with fp32 master weights and Adam states. That is over the 10 GB-per-GPU limit, so the table lives in host RAM (128 GB). The four DDP ranks share one copy. Precedents: DeepSeek's Engram, Qwen3.8-Next (host-prefetched), Embla 1 (SSD).
+Context: H24 as restated (ADR-065). At $d$ = 768, the table has 1.61 B parameters: ≈ 3.2 GB in bf16, ≈ 22.5 GB with fp32 master weights and Adam states. That is over the 10 GB-per-GPU limit, so the table lives in host RAM (256 GB; "128 GB" as first written, corrected 2026-11-18). The four DDP ranks share one copy. Precedents: DeepSeek's Engram, Qwen3.8-Next (host-prefetched), Embla 1 (SSD).
 Decision:
 1. **Lookup.**
    - Per token, the 2-gram $(x_{t-1}, x_t)$ and the 3-gram $(x_{t-2}, x_{t-1}, x_t)$ are hashed with two seeds (64-bit multiply-xorshift, mod 2²¹) into one shared table $T$.
@@ -1628,6 +1628,23 @@ Decision:
    - STE gradient = identity inside the range.
 
 Consequences: 2 runs × ≈ 4.3 h (L0) + 2 × ≈ 5.8 h (L5), plus ≈ 1 h of evals ≈ 21 h. Bears on H3; touches `01 §8`, `§11`, L10b.
+
+### ADR-074 — I43's control: L5 with the bias controller fed every iteration's load (`router.bias_load: all_calls`), run `203`; the default stays as built
+2026-11-18 · accepted (the user: "Regarding I43 if you recommend to fix it we should"; the recommendation is to measure before changing the default)
+Context: I43. The aux-loss-free controller reads each MoE's `last_route` after backward.
+- **What that is in practice:** activation checkpointing recomputes the middle iterations in reverse during backward, so the last call is **iteration 1's replay** (checked 2026-11-18 on the toy L5: call order 1, 2, 3, 3, 2, 1). The shared middle router's biases have been moved by iteration 1's load alone. I43 first said iteration $r$; corrected.
+- **What balances the rest:** the auxiliary loss, summed over every call, and every recurrent run ends with healthy routing.
+- **Why the default is not changed now:** every queued Embla comparison (`182`–`202` against `110`/`112`/`162`) would carry a second difference.
+
+Decision:
+1. **Knob.** `router.bias_load: last_call | all_calls`, default `last_call` (as built). `all_calls` feeds the controller the mean load over every call of the training forward. Loads are recorded between the start of `model.loss` and its loss, so backward's replays do not count.
+2. **Run.** `203-l5-balfix-screen` (L5, `screen`, seed 0), against `110`, in `queue_screen_21` after `193` (beside the other balancing runs), with `probe_routing` (per-iteration histograms).
+3. **Reading** (ADR-066 §1):
+   - **$|\Delta| \le 4σ$:** I43 closes as immaterial, and the default stays.
+   - **Better or worse by more than 4σ:** a follow-up ADR decides the default. Changing it needs new baselines for every comparison that would mix the two.
+   - **Reported either way:** the per-iteration expert entropy against `110`'s.
+
+Consequences: one run ≈ 6 h. Code on `embla` (`31e0981`; test: the forward's calls recorded, the replay order ends at iteration 1). Bears on ADR-004, I43, ADR-069.
 
 ## Proposed / pending
 - **ADR-028** — Unit model revisions from the author's hardware document (`docs/07 §4`): (a) two compute classes per chip — an FF core with a large array ($s_{min,ff}$ = 256–1024) and attention cores with small arrays ($s_{min,attn}$ ≈ 64), hence $\phi_{ff}$, $\phi_{attn}$ as separate scenario inputs; (b) the tile floor is a *row* floor, $N$ = $M$ × (LHS bw / RHS bw) rows per weight tile, with each token contributing 1 + $m$ rows under $m$-token speculation — the scheduler's queues count rows; (c) the reduce leg of the local fabric carries ≥ 16-bit partial sums: `02 §2` traffic becomes $b d\, b_{act} + b d\, b_{sum}$, $b_{sum}$ ≥ 2; (d) full pipelining inside the unit doubles tokens in flight and per-token latency — the Little's-law budget $Z$ of `02 §5.5` carries the factor; (e) router-based unit fabrics are ≤ 50 % link-efficient (avg. 2 hops), torus collectives 100 %: `02 §1`'s "switch" option is not equivalent to a torus; (f) the asymmetric 4×4×4 torus all-gather costs ≈ 3X/(8B) vs ≈ X/(2B) on a flat ring (our derivation from the author's algorithm) — the number S1/S3 must reproduce; (g) the failure domain is the 4-chip ring board, and a failed rail port is bypassed through torus neighbours at ¼ load (`02 §11`); (h) the replica-rounding utilisation floor $\ell / \lceil \ell \rceil$ reported beside the Little's-law model in S4. Also fills `note64.yaml` with the sourced ratios of `docs/07 §6`; absolute $\phi$, $\beta_C$, $\lambda_C$, $\nu_C$ stay placeholders (I4). Bears on H1, H5, H8, H9, H10, H11, H16; changes `02 §1, §2, §5, §11`.
@@ -1840,7 +1857,7 @@ Cost units from `docs/06 §4`: one `screen` run ≈ 8 h (1 B tokens, 1 seed); on
     - (b) read the first-sentence clause on the covered splits, whose seed spread is small, and keep the full splits as reported;
     - (c) add a seed term to every floor, estimated from the `132`/`133` spread (one pair, so itself noisy; it would put the rest-of-lead floor near 0.04);
     - (d) (b) plus (c) for the rest-of-lead split.
-- **I43** *(2026-11-18, found while building ADR-069; open)* **The aux-loss-free bias controller of the shared middle router sees only the last iteration's load.**
+- **I43** *(2026-11-18, found while building ADR-069; **answered 2026-11-18 by ADR-074**: a control run `203` decides whether it matters; the default stays as built until then)* **The aux-loss-free bias controller of the shared middle router sees only one iteration's load: iteration 1's, because activation checkpointing replays the iterations in reverse and the last replay sets `last_route`** (the first text below said iteration $r$; corrected the same day).
   - **What the code does:** the trainer collects `m.last_route.load` from every MoE after each micro-step (`scripts/train/train.py`, the load controller). The middle block's single `MoE` is called once per iteration per segment, and `last_route` keeps only the last call. So the middle router's biases are moved by the load of iteration $r$ of the last segment, not by its load over all iterations.
   - **Not ADR-004's intent:** `01 §4.4` says to balance in space and time, and per-iteration histograms are a stated diagnostic.
   - **Evidence it mattered little:** every recurrent run ends with healthy routing over all iterations (e.g. `110`: 7.99 of 8 effective experts; `112`, `138`, `142`: none dead). The auxiliary loss, summed over every call, carries the balancing of the other iterations.
@@ -2731,6 +2748,15 @@ and an ADR first, L6c likewise; the `small` programme (L0, L1, L2, L3, L5, L5d a
 the ladder's own next step and needs no new code. The choice between "more `screen` variants" and
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
+
+### 2026-11-18 (09:05) — **ADR-074 accepted (I43's control run `203`, appended to `queue_screen_21`); I43 corrected (the controller sees iteration 1, not $r$); RAM figures fixed; e-means assessed (no run now)**
+- **I43.** The user: "if you recommend to fix it we should". The recommendation is to measure first: one L5 run with the controller fed every iteration's load (ADR-074), because changing the default now would confound every queued comparison. Checking the replay order showed the controller has seen iteration 1's load, not iteration $r$'s (activation checkpointing recomputes in reverse). I43 is corrected. Code on `embla` (`31e0981`). `queue_screen_21`–`25` were stopped and re-armed to add `203` after `193`. The chain is unchanged otherwise.
+- **RAM.** The user confirms 251 GB (256 GB of DDR4, 251.5 GiB), which `06 §1` already says (since `020`–`022`). The stale "128 GB" was in `CLAUDE.md`, `README.md` and `03 §7`, now fixed, and in ADR-071's context, corrected in place with a note. ADR-015's 2026-09-02 context keeps its historical figure. The 08:55 entry's "against `06 §1`'s 128 GB" was wrong: `06` was right.
+- **e-means** (Bessa et al. 2026, arXiv:2611.09501, FAIR; the user's question).
+  - **The method:** mini-batch k-means with EMA centroids, a cosine step, dead-cluster revival and fitted batch/step laws. It beats Lloyd's 25-epoch loss in 1.4–2.6 epochs, at 10–45× wall-clock on GPU, for 1 M–10 B embedding vectors.
+  - **Where k-means touches this project:** L8's product-key grid (closed, ADR-057); the `040` table build; and L9's cold-tier IVF over $\mathcal{G}$ (H15b-S, `007`'s `IVF4000,PQ96x8`, I14).
+  - **Why no run now:** none is a live training question. At our sizes a per-sequence $\mathcal{G}$ holds ≤ 8 k keys, where Lloyd costs milliseconds and the paper says its laws are not tuned for small data. L9 is not built.
+  - **Where it would matter:** L9 with a streaming per-sequence index (P15's pitfall (ii), incremental maintenance per decoded token), since e-means' mini-batch EMA updates are a natural fit. It is recorded in `05` and `03 §2`'s L9 row as a candidate there, not scheduled.
 
 ### 2026-11-18 (08:55) — **ADR-066–073 built on branch `embla` (worktree `../vidarr-embla`) and queued as `queue_screen_18`–`25`, chained behind `queue_medium_1`**; full unit suite passes on the branch (213 tests, ruff clean); I43 opened
 - **Code** (`embla`; merged by `queue_screen_18` after `181`'s queue ends, then each queue re-merges, a no-op unless new commits landed):
