@@ -1389,6 +1389,14 @@ Consequences: `06 §3` (the DDP amendment for these runs), `03 §2` (L8 row) and
 ## Proposed / pending
 - **ADR-028** — Unit model revisions from the author's hardware document (`docs/07 §4`): (a) two compute classes per chip — an FF core with a large array ($s_{min,ff}$ = 256–1024) and attention cores with small arrays ($s_{min,attn}$ ≈ 64), hence $\phi_{ff}$, $\phi_{attn}$ as separate scenario inputs; (b) the tile floor is a *row* floor, $N$ = $M$ × (LHS bw / RHS bw) rows per weight tile, with each token contributing 1 + $m$ rows under $m$-token speculation — the scheduler's queues count rows; (c) the reduce leg of the local fabric carries ≥ 16-bit partial sums: `02 §2` traffic becomes $b d\, b_{act} + b d\, b_{sum}$, $b_{sum}$ ≥ 2; (d) full pipelining inside the unit doubles tokens in flight and per-token latency — the Little's-law budget $Z$ of `02 §5.5` carries the factor; (e) router-based unit fabrics are ≤ 50 % link-efficient (avg. 2 hops), torus collectives 100 %: `02 §1`'s "switch" option is not equivalent to a torus; (f) the asymmetric 4×4×4 torus all-gather costs ≈ 3X/(8B) vs ≈ X/(2B) on a flat ring (our derivation from the author's algorithm) — the number S1/S3 must reproduce; (g) the failure domain is the 4-chip ring board, and a failed rail port is bypassed through torus neighbours at ¼ load (`02 §11`); (h) the replica-rounding utilisation floor $\ell / \lceil \ell \rceil$ reported beside the Little's-law model in S4. Also fills `note64.yaml` with the sourced ratios of `docs/07 §6`; absolute $\phi$, $\beta_C$, $\lambda_C$, $\nu_C$ stay placeholders (I4). Bears on H1, H5, H8, H9, H10, H11, H16; changes `02 §1, §2, §5, §11`.
 - **ADR-024** — Parallel prefill mode for long prompts (the author's "less effective mode"): (a) all segments at once with local attention only, global cache filled afterwards from context-poor final vectors; (b) pipelined segments, segment $k+1$ at iteration $j$ attending globally to segment $k$'s iteration-$j$ caches (transient per-iteration global cache during prefill, in-flight depth up to $r$ segments). Both are inference-time modes of a sequentially trained model; E-Q12 evaluates both against sequential prefill on continuation loss and TTFT (S5). If both degrade, a mixed-mode training variant becomes a later ladder step.
+- **ADR-062** *(proposed 2026-11-18, Embla 1 follow-ups `03 §2.1`; the handoff's "ADR-026")* — **Global cache source: bridged from iteration $j_b$.** If H20 holds at `small`, $\mathcal{G}$ is built from $c^{(j_b)}$ through separate bridge projections, with default $j_b = r/2$. That supersedes "final vector" as ADR-021's default while keeping one entry per token. Results decide (L5h, S5). Touches ADR-021, ADR-024 (option b with $j_b$ is the bridged prefill mode), `01 §4.3`, `02 §6`.
+- **ADR-063** *(proposed 2026-11-18; the handoff's "ADR-027")* — **Positional encoding: RoPE in the local range only, NoPE on $\mathcal{G}$**, if H22 holds (L5d-nope). *Changed at merge:* the handoff also had this ADR "make ADR-008's two-branch combination the default". NoPE does not need two branches; only L9-relu2's ReLU² normaliser does. So that consequence moves to L9-relu2, which needs ADR-008 amended for its variant before it runs. ADR-008 (one softmax, accepted 2026-10-29) is unaffected by this ADR. Touches `01 §4.3`, `§6`.
+- **ADR-064** *(proposed 2026-11-18; the handoff's "ADR-028")* — **Router balancing: EQB per step replaces ADR-004's bias update** if H26 holds (E-router-EQB at $N_e$ = 8 and 128); EQB per iteration is recorded as rejected, with its per-iteration histogram evidence. Touches ADR-004, `01 §4.4`.
+- **ADR-065** *(proposed 2026-11-18; the handoff's "ADR-029", **restated at merge**)* — **Knowledge-memory baseline.** The handoff's rule, that L8 (product-key memory) must beat L8e (engram) at matched parameters to stay in the design, has no L8 arm left: ADR-057 closed it at `screen`, and H17's live arm is L8b-pv (retrieval from a frozen table, with no learned memory parameters to match). Restated as two tests:
+  - L8e against L5 on held-out loss and wiki-lead, by ADR-013's bands, with the table's parameters reported but not matched.
+  - L8e + L8b-pv against L8b-pv. If the engram adds nothing beside retrieval, it stays a P16 placement measurement, not a P17 mechanism.
+
+  The parameter-matched engram-vs-product-key question is recorded as unscheduled. Touches ADR-009, ADR-057, `01 §4.6`.
 
 ## Open questions
 
@@ -1401,7 +1409,7 @@ Consequences: `06 §3` (the DDP amendment for these runs), `03 §2` (L8 row) and
 - **Q6** *(answered — ADR-018)* What total expert count and parameter budget is envisaged? (Our estimate for a 64-chip unit at $d$ = 8192: 0.2–0.8 B params per expert depending on tile width, hundreds of experts resident per unit.)
 - **Q7** *(answered — ADR-019)* P3: weight sparsity only, or activation sparsity too? Fixed mask after 1% of tokens, or periodically updated?
 - **Q8** *(answered — `note64` scenario input)* P5: what is the "asymmetric-bw 4×4×4 torus" — different bandwidth per dimension, or per direction?
-- **Q9** *(half-answered by v2: the index lives over the final-vector cache, per sequence, shared across iterations; the indexer and training remain ours)* P15: is the index per head, per iteration, or shared? Any view on training with the index in the loop?
+- **Q9** *(half-answered by v2: the index lives over the final-vector cache, per sequence, shared across iterations; the indexer and training remain ours)* P15: is the index per head, per iteration, or shared? Any view on training with the index in the loop? *(2026-11-18, Embla follow-ups:)* selection reuse in the style of Embla 1 and HySparse2 (one full pass picks the top keys, later layers or iterations reuse the selection) answers the query-count part (L5g, H21). The sub-linear K-side structure remains ours. NoPE keys (L5d-nope, H22) and ReLU²'s exact-zero support (L9-relu2, H23) are two candidate inputs to it.
 - **Q11** *(assumed, not asked — ADR-021 amendment)* "See all the prior layer KV caches with local attention": read as "the per-iteration caches are the ones local attention touches", with same-iteration visibility (standard layered semantics). Derivation: P6's "simulate the standard layer structure" presumes it; the only constraint the author states concerns *final* vectors; seeing iterations $j' \le j$ as well is a superset that needs no serialisation either, so it is an optional ablation, not a question.
 - **Q12** *(decided by us — ADR-022 accepted, ADR-024 proposed)* The in-flight depth follows from the segment-sequential regime (one segment per document, plus speculative drafts); the previous segment is complete when the current one starts, so a sliding local window may cross the boundary at no cost. Which "less effective" parallel prefill mode the author means is not derivable from the text, but it is an inference-time choice between two obvious candidates, evaluated on the L5d model in hours (E-Q12) — no training runs, no answer needed.
 - **Q10** *(answered — ADR-009)* P17: is the entailment table frozen after construction, and are the value vectors learned or fixed?
@@ -2470,6 +2478,37 @@ and an ADR first, L6c likewise; the `small` programme (L0, L1, L2, L3, L5, L5d a
 the ladder's own next step and needs no new code. The choice between "more `screen` variants" and
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
+
+### 2026-11-18 (08:05) — **Embla 1 follow-ups merged as proposals**: H20–H26, ladder steps L5d-nope / L5h / L9-relu2 / E-router-EQB / L5g / L8e / L5f / L10b′ (`03 §2.1`), S12, ADR-062–065 proposed; no accepted ADR or result changes; `181` still running
+- **Source.** The spec session's handoff, received from the user as `07-embla-followups.md` and kept as received at `docs/source/embla-followups-2026-11-18.md`. Its ids date from 2026-09-02, so they were renumbered by its own rule (§0.1): next free ids, names kept where free.
+- **Renumbered.**
+
+  | handoff | merged as | why |
+  |---|---|---|
+  | L5e | L5h | ADR-034's H/L split is L5e |
+  | S11 | S12 | the non-uniform-experts sim is S11 |
+  | ADR-025 (optimiser) | no ADR; `03 §5` Phase 5 note | the handoff's own rule: the ladder already runs AdamW |
+  | ADR-026 / 027 / 028 / 029 | ADR-062 / 063 / 064 / 065 | ADR-025–029 are accepted |
+  | config schema `01 §9` | `01 §11` | |
+
+  H20–H26, L5d-nope, L5g, L5f, L8e, L9-relu2, L10b′ and E-router-EQB were free.
+- **Corrections at merge** (recorded, not silent):
+  1. ADR-063 no longer makes ADR-008's two-branch form the default. NoPE does not need it; L9-relu2's zero normaliser does, so that variant needs ADR-008 amended before it runs.
+  2. H24 and ADR-065 are restated. L8 (product-key) closed by ADR-057, so the engram is tested against L5 and alongside L8b-pv instead of against a parameter-matched L8.
+  3. The ragged-depth clauses are inactive while ADR-046 keeps fixed $r$: L5g's halted-token rule and traps 5 and 8.
+  4. L10b′'s from-step-0 arm is a full `screen` run, not ≈ 0.2.
+  5. E-router-EQB at both $N_e$ is 4 runs, not 2.
+  6. The budget is re-estimated from `06 §4`'s measured rung times: ≈ 18 `screen` runs, ≈ 7–8 GPU-days, against the handoff's 5–6.
+- **Citations verified** against the posts and arXiv abstracts. Details are in `05 §Embla 1 follow-ups`.
+  - **Confirmed:** both Embla posts; HySparse2 (2609.26368); DeepSeek-V4.1-Flash (2609.19969); Attention Residuals (2603.15031); EQB (2609.28053); Kolibri-1's model card.
+  - **Corrected:**
+    - The handoff's "DeepSeek-V4.1-Flash n-gram memory" is not in its abstract (dropped as an engram precedent; kept for its causal encoder-decoder).
+    - The Qwen report is arXiv 2608.30320, not GitHub-only.
+    - Embla's engram is an attention-residual source, not an additive branch.
+    - Embla states ReLU² for "the MLPs", not explicitly the experts.
+  - **Missed by the handoff:** DeepSeek's Engram (2601.07372), already in `05 §P17`, is the closest L8e precedent.
+  - **Not verified:** Kolibri's report §2.1.5 (the PDF was not opened).
+- **Nothing runs from this.** Every step needs its own as-built ADR with ADR-013 bands, and the GPUs are busy with `181` until ≈ 23:30. The user decides when, and which first. The handoff's order is in `03 §5` Phase 3. S12 is arithmetic and can run any time, as a `costmodel/` change after the queue.
 
 ### 2026-11-13 (20:21) — **`180` L5-medium done: 2.7250 (−0.350 vs the L5 `small` pair; −0.166 at equal tokens), 104.0 h under DDP, 5.93 GiB, 18.9 k tok/s, `n_thermal` 0; `181` L8b-pv-medium started 20:13**
 

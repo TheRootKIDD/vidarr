@@ -278,6 +278,38 @@ Notes for `sim/scenarios/`: (i) the 2026 DRAM/NAND market is in a shortage cycle
 - Biderman et al. 2024 — LoRA Learns Less and Forgets Less (arXiv:2405.09673, TMLR 2024). At r = 16–256 LoRA substantially underperforms full FT on code/math continued pretraining; full-FT updates have 10–100× the rank of typical LoRAs, but LoRA forgets less. → H18 (weakens the ≥ 80 % prior for large-data adaptation).
 - Schulman et al. 2025 — LoRA Without Regret (Thinking Machines blog, 2025-09-29, https://thinkingmachines.ai/blog/lora/). LoRA on all layers (incl. MLP/MoE) matches full FT for SFT while the dataset fits its capacity, and matches full FT in RL at rank 1; ≈ ⅔ the FLOPs per pass. → H18 (supports rank ≤ 4 for post-training-size data).
 
+## Embla 1 follow-ups (added 2026-11-18; H20–H26, `03 §2.1`)
+Checked 2026-11-18 against the posts and the arXiv abstract pages. Entries marked *(from memory)* are pre-2026 papers whose ids were not re-fetched.
+- Sevren 2026 — Embla 1 (`sevren.ai/blog/embla-1`) and The Architecture of Embla 1 (`sevren.ai/blog/embla-1-architecture`), November 2026.
+  - *Architecture*: 10 B total, ≈ 1 B active; 32 layers of width 2048, vocabulary 65,536; layer 0 dense, the rest 8 of 96 routed experts plus 1 shared.
+  - *Attention*: 15 sliding-window layers (128 tokens, softmax, the only RoPE layers), 5 full layers (NoPE, ReLU² scoring: ≈ 50.8 % zeros at initialisation, ≈ 95 % after training, no sparsity loss) and 12 sparse layers that reuse their block's full-layer cache, restricted to the top 1,024 keys by score plus the 128 most recent.
+  - *Bridges*: layer 20 takes its K/V input from layer 16's point, layers 24 and 28 from layer 7's, so caches for layers 16–31 exist after layer 15 and only the last prompt token runs all 32 layers (≈ 2× prefill).
+  - *Residuals and engram*: block attention residuals over 8 blocks of 4 (≤ 10 sources per mix). A 3 B-parameter hashed 2/3-gram engram serves as an attention-residual source, storable on SSD.
+  - *Rest of the recipe*: ReLU² MLPs (≈ 78 % of down-projection bytes saved at batch 1); EQB with no auxiliary loss; 1.4 T pretraining tokens with distillation from the first step (0.9 × KL on the top-256 logits of Qwen3.5-35B-A3B-Base), embeddings from the teacher's principal components; QAT in the last 2,000 SFT steps at 4 bits; Muon for weight matrices, AdamW for the rest, constant LR.
+  - *Results*: 57.4 average over five benchmarks at 4 bits; 1.77 s per answer on an iPhone 18 Pro.
+
+  → H20–H26, S12 (the regime is batch 1 on a phone, so only KV-side savings transfer: `03 §2.1`)
+- Wei et al. 2026 — HySparse2: Hybrid Sparse Attention with Two-Level KV Sharing (arXiv:2609.26368). KV caches shared at two levels, so prefill skips the cross-decoder layers; less compute and KV storage on long-context agent tasks. → H20, H21 (successor to HySparse, `§P15`)
+- DeepSeek-AI 2026 — DeepSeek-V4.1-Flash: Pushing the Limits of KV Cache Compression (arXiv:2609.19969). 552 B backbone, 1 M context. A causal encoder-decoder activates 16 B parameters per token in decode but 8 B in prefill; cross-layer KV reuse in CSA2, FP4 KV, "SWA Bounded Replay" for the host/SSD cache. → H20 (prefill at half depth ships at scale)
+- Qiu et al. (Qwen Team) 2026 — On the Design of Qwen3.8-Next Architecture: Evaluation, Efficiency, and Training Stability (arXiv:2608.30320). 125 B total / 6 B active, plus 51 B parameters of n-gram embedding tables held off the accelerator and prefetched from host memory. A larger n-gram vocabulary keeps lowering loss while downstream accuracy levels off; Muon for 2-D weights. → H24, P16/P17 (host-resident tables ship at scale; loss gains need not become task gains)
+- Kimi Team 2026 — Attention Residuals (arXiv:2603.15031). Input-dependent attention over earlier layers' outputs in place of the fixed residual sum, with a block variant that bounds memory; gains at scale in Kimi Linear. → H25
+- Neitemeier et al. 2026 — Exact Quantile Balancing and Load-Error Injection for Mixture-of-Experts (arXiv:2609.28053). Exact global quantiles computed cheaply set each expert's bias every step; gains in balance and downstream quality at 7.5 B. → H26
+- Aleph Alpha 2026 — Kolibri-1 (model card `huggingface.co/Aleph-Alpha/Kolibri-1`; tech report `aleph-alpha.com/downloads/tech-report.pdf`). 50 layers, 4:1 SWA:GQA, 384 routed experts per layer with 6 active and 1 shared, Exact Quantile Balancing, Nesterov Muon on 2-D weights, AdamW elsewhere. → H26 (EQB at 384 experts per layer)
+- So et al. 2021 — Primer: Searching for Efficient Transformers for Language Modeling (arXiv:2109.08668) *(from memory)*. Squared ReLU and depthwise convolution after Q/K/V; squared ReLU alone carries much of the gain. → H23 (the ReLU² precedent, on the MLP side)
+- Kazemnejad et al. 2023 — The Impact of Positional Encoding on Length Generalization in Transformers (arXiv:2305.19466, NeurIPS 2023) *(from memory)*. Decoder-only models without positional encoding length-generalise better than RoPE / ALiBi on synthetic reasoning tasks at small scale. → H22
+- Jordan et al. 2024 — Muon (blog, `kellerjordan.github.io/posts/muon`) *(from memory)*. Orthogonalised momentum updates for 2-D weights; NanoGPT speedrun records. → `03 §5` Phase 5 (not the ladder)
+- Jacob et al. 2018 — Quantization and Training of Neural Networks for Efficient Integer-Arithmetic-Only Inference (CVPR 2018, arXiv:1712.05877; the id as Embla cites it). → H3 (L10b′)
+- Phase 5 only: Xu et al. 2024 — Initializing Models with Larger Ones (ICLR 2024, arXiv:2311.18823); Agarwal et al. 2024 — On-Policy Distillation of Language Models (ICLR 2024, arXiv:2306.13649). Ids as Embla cites them.
+- Already listed: YOCO (`§P15`, arXiv:2405.05254); HySparse (`§P15`, arXiv:2602.03560); **DeepSeek's Engram** (Cheng et al. 2026, arXiv:2601.07372, `§P17`). The handoff did not cite Engram, but it is the closest L8e precedent: 27 B n-gram parameters beating an iso-param, iso-FLOPs MoE.
+
+### Verification notes (handoff vs sources)
+- **DeepSeek-V4.1-Flash as an n-gram-memory precedent**: not supported by the abstract, which names no n-gram or engram table and no host prefetch of parameters. It is dropped from L8e's precedents and from `00 §P16/§P17`, and kept for L5h on its causal encoder-decoder. The full paper was not read.
+- **"Qwen3.8-Flash-Next technical report (GitHub)"**: the report is arXiv:2608.30320, titled for "Qwen3.8-Next". Secondary sites call the model "Qwen3.8-Flash-Next".
+- **Embla's engram** enters as a source of the attention-residual mix, "not added to the residual stream". The handoff's additive branch is our option, not Embla's.
+- **"ReLU² experts"**: the post says the MLPs use ReLU² and saves ≈ 78 % of down-projection bytes at batch 1. It does not say explicitly that the routed experts do. S12's $p$ = 0.22 comes from that 78 %.
+- **"10 B total / 1 B active"**: stated on the architecture page ("10B … A1B"), not on the announcement.
+- **Kolibri report §2.1.5**: not verified; the PDF was not opened. The model card names EQB and describes the bias update as "a recentered global-quantile target update".
+
 ## Priors for ADR-013 (per section)
 
 ### P2 / P3 / P12 / P13

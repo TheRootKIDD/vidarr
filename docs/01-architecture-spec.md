@@ -101,6 +101,11 @@ Grouped-query attention with rotary positions. Two key ranges, combined in **one
 - **Visibility rule**: a token becomes globally visible only when its iterations are complete. Hence batches (segments) of one document are processed in order, each attending globally to the previous ones' final vectors, while parallelism comes from many documents in flight — Transformer-XL-style segment recurrence with a single global cache. Whether local attention should also reach into the previous segment's per-iteration caches is ADR-022; gradients do not flow into earlier segments' final vectors (ADR-023: stop-gradient; `through` is an ablation knob).
 - **Consequence**: the persistent KV cache is one entry per token; only the last $W$ tokens of each in-flight sequence carry $r_{max}$ caches (ADR-017 as amended). Sharing K/V across iterations (L6b) now concerns the transient local caches only.
 - **Baseline semantics** (ladder L5, before L5d): global attention over per-iteration caches of the same iteration, i.e. the standard layered semantics; L5d switches the global range to $\mathcal{G}$ and measures the cost (H15a).
+- **Proposed variants (Embla follow-ups, `03 §2.1`; not the default):**
+  - L5h builds $\mathcal{G}$ from iteration $j_b$ through separate bridge projections (H20, ADR-062).
+  - L5d-nope drops RoPE on the global range (H22, ADR-063). NoPE keys are content-only, so they are the natural keys for the §6 index.
+  - L9-relu2 scores the global range with ReLU² (H23). Its normaliser can be zero, which needs a two-branch combination: ADR-008 has to be amended for that variant.
+  - L5g reuses the last full iteration's key selection in sparse iterations (H21).
 
 ### 4.4 Router
 Input: $u$ (projected to $q = W_q u \in \mathbb{R}^{d_r}$), $e_j$, tenant $\tau$. With expert keys $\kappa_i$, per-expert bias $b_i$ and an additive mask $\mu_\tau \in \{0, -\infty\}^{N_e}$:
@@ -195,6 +200,8 @@ Terminology: the note's "index" is the sub-linear structure over the keys (the a
 
 One low-dimensional indexer per iteration, shared across heads: $q_{idx} = W_{idx}[u; e_j] \in \mathbb{R}^{d_{idx}}$. Each block has a summary key $\kappa_{blk}$ (mean or learned pooling of its final vectors $c_s^{(r_s)}$). Score → top-$K_{idx}$ blocks → all heads attend to those blocks' tokens with normal K/V. This bounds queries to one per (token, iteration) rather than one per head (lightning-indexer / NSA-style block selection).
 
+*Proposed alternative (L9-relu2, `03 §2.1`):* if global scoring is ReLU², the indexer can be trained as a classifier of "block holds a key with nonzero weight" against the model's own exact-zero support, instead of by KL to a softmax teacher. Over NoPE keys (L5d-nope) the block summaries carry no position, only content.
+
 ### 6.3 Training with the index in the loop
 - Warm up with dense attention; enable the indexer; train its scores against the dense teacher's block-attention mass (KL); then end-to-end through the selected values only (top-k is non-differentiable; gradient flows through the selected set).
 - Curriculum on $W$ and $K_{idx}$.
@@ -249,6 +256,7 @@ model:
     shared_attention: true         # false = L5c, one attention block per iteration (ADR-032)
     h_every: 0                     # K; 8 = L5e, a dense H block after iteration K/2 (ADR-034)
     h_d_ff: 2048                   # H block's SwiGLU width (L5e)
+    # input_mix: residual | attention_residual                # proposed L5f (03 s2.1)
   streams:
     two_stream: false              # true = L4 (optional, last ladder step)
     p_sees_own_context: true       # false = L4b
@@ -259,6 +267,7 @@ model:
     hierarchical: false
     balance: aux_free
     segment_aux: mean              # ADR-038; sum = runs before it (111, 134/135, 159), which configs without the key do not reproduce
+    # balance (proposed, E-router-EQB / ADR-064): aux_free | eqb_iteration | eqb_step
   experts:
     unit_width: 4                  # U (simulated)
     tile_min: 128                  # s_min
@@ -272,6 +281,11 @@ model:
     prev_segment_local: false      # ADR-022
     kv_share_every: 1              # L6b (transient local caches only)
     index: { enabled: false, block: 16, topk: 32, indexer_dim: 32 }
+    # proposed (Embla follow-ups, 03 s2.1; not built):
+    #   global_source: bridged + bridge_iteration: int          # L5h (ADR-062)
+    #   rope_scope: all | local | none                          # L5d-nope (ADR-063); all = current
+    #   global_scoring: softmax | relu2                         # L9-relu2 (needs ADR-008 amended)
+    #   schedule: [F,S,S,S, F,S,S,S]; k_sel: 1024               # L5g
   memory: { enabled: false, n_entries: 1048576, grid: 1024, key_dim: 128, topk: 32, half_topk: 32, values: parametric,   # L8 (ADR-053)
             encoder: bge-base-en-v1.5, source: wiki-20231101-lead, table: /mnt/nvme/memory/wiki-20231101-lead, encoder_finetune: false,
             query_aux: null, keys: learned }   # GPU product-key memory (L8); L8b = chunk retrieval; L8c = encoder fine-tune
@@ -282,9 +296,10 @@ model:
              gate: true,                     # ADR-041/042: scale updates by the running probability (act) or the score (expert)
              survival: linear, survival_last: 0.3, tau_momentum: 0.99 }   # L6c schedule s_j and threshold EMA (ADR-042)
   mtp: { m: 4, style: independent, subsample: auto, curriculum: none, module_d_ff: 2048 }   # ADR-012; m: 1 disables; curriculum: forward = L3b (ADR-036); style: sequential = L3c (ADR-039, layered only)
+  # engram (proposed L8e, ADR-065): { enabled: false, rows: 2097152, ngrams: [2, 3], placement: host | gpu }
   numerics: { dtype: bf16, sparsity_2_4: false }   # mask, when on, is fixed after 1% of tokens (ADR-019)
   tenants: { lora_rank: 0 }
 ```
 
 ## 12. Dependencies
-Accepted: ADR-001 ($U$ abstract), ADR-002 (stream visibility), ADR-003 (depth conditioning), ADR-004 (router shape), ADR-009 (parametric memory values), ADR-010 (last state), ADR-011 (halted-token KV once), ADR-016 (lockstep training), ADR-017 (per-iteration KV), ADR-018 (local expert count), ADR-019 (weight-only fixed 2:4 mask), ADR-020 (two streams optional), ADR-021 (v2 attention: local per-iteration, global final-vector). ADR-022 (sliding local window), ADR-007 (prefill = learned depth rule), ADR-008 (one softmax), ADR-041 (gated ACT, L6), ADR-042 (threshold expert-choice depth, L6c), ADR-006 (dense skeleton), ADR-012 (independent MTP heads), ADR-023 (stop-gradient memory), ADR-025/026/027 (widths, L4 budget, key convention), ADR-013/014/015 (thresholds, corpus, envelope). ADR-029 (reference-implementation decisions, `model/README.md`). Pending: ADR-007, 008, 024. Open: Q9 (indexer is ours; the index lives over $\mathcal{G}$), Q11, Q12.
+Accepted: ADR-001 ($U$ abstract), ADR-002 (stream visibility), ADR-003 (depth conditioning), ADR-004 (router shape), ADR-009 (parametric memory values), ADR-010 (last state), ADR-011 (halted-token KV once), ADR-016 (lockstep training), ADR-017 (per-iteration KV), ADR-018 (local expert count), ADR-019 (weight-only fixed 2:4 mask), ADR-020 (two streams optional), ADR-021 (v2 attention: local per-iteration, global final-vector). ADR-022 (sliding local window), ADR-007 (prefill = learned depth rule), ADR-008 (one softmax), ADR-041 (gated ACT, L6), ADR-042 (threshold expert-choice depth, L6c), ADR-006 (dense skeleton), ADR-012 (independent MTP heads), ADR-023 (stop-gradient memory), ADR-025/026/027 (widths, L4 budget, key convention), ADR-013/014/015 (thresholds, corpus, envelope). ADR-029 (reference-implementation decisions, `model/README.md`). Pending: ADR-007, 008, 024; ADR-062–065 (Embla follow-ups, proposed 2026-11-18). Open: Q9 (indexer is ours; the index lives over $\mathcal{G}$), Q11, Q12.
