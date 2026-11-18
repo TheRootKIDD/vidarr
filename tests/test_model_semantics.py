@@ -55,6 +55,7 @@ STEPS = [
     "L9-relu2",
     "L5-eqb-iter",
     "L5-eqb-step",
+    "L5g-fsss",
     "L5e",
     "L6",
     "L6c",
@@ -85,7 +86,18 @@ def tiny(step: str, **kw) -> ModelCfg:
         context=64,
         layers=3,
         dense_d_ff=128,
-        attention=dc.replace(c.attention, heads=4, kv_heads=2, head_dim=16, window=16),
+        attention=dc.replace(
+            c.attention,
+            heads=4,
+            kv_heads=2,
+            head_dim=16,
+            window=16,
+            # L5g: the schedule's first r_max = 3 letters, k_sel 8 of up to 48 G keys
+            schedule=c.attention.schedule[:3],
+            k_sel=8 if c.attention.k_sel else 0,
+            # L5h: the bridge iteration within the tiny loop
+            bridge_iteration=min(c.attention.bridge_iteration, 3),
+        ),
         experts=dc.replace(c.experts, d_ff=32),
         # L5e: K = 4 so that H runs inside the tiny loop, once, after iteration 2
         middle=dc.replace(c.middle, r_max=3, depth_embed=8, h_every=4 if c.middle.h_every else 0),
@@ -1654,4 +1666,57 @@ def test_eqb_records_forward_logits_only_and_updates_biases() -> None:
         else:
             assert rt.bias.abs().sum() > 0
         assert float(out.router_aux.detach()) == 0.0  # EQB has no auxiliary loss
+
+
+# ---- ADR-070: L5g (per-iteration global schedule with selection reuse) ---------------------
+def _l5g(sched: str, k_sel: int) -> ModelCfg:
+    base = tiny("L5d")
+    return dc.replace(
+        base, attention=dc.replace(base.attention, schedule=tuple(sched), k_sel=k_sel)
+    )
+
+
+def test_l5g_all_full_or_selecting_everything_is_l5d() -> None:
+    torch.manual_seed(0)
+    base = BigMoE(tiny("L5d")).eval()
+    toks = torch.randint(0, 97, (2, 64))
+    with torch.no_grad():
+        h0, _ = base.forward_hidden(toks, r=3)
+        for sched, k_sel in (("FFF", 0), ("FSS", 64)):  # 64 >= |G| = 48: S keeps every key
+            m = BigMoE(_l5g(sched, k_sel)).eval()
+            m.load_state_dict(base.state_dict())
+            h, _ = m.forward_hidden(toks, r=3)
+            assert torch.allclose(h, h0, atol=1e-5), sched
+
+
+def test_l5g_sparse_and_local_iterations_change_the_far_range_only() -> None:
+    torch.manual_seed(0)
+    base = BigMoE(tiny("L5d")).eval()
+    toks = torch.randint(0, 97, (1, 64))
+    with torch.no_grad():
+        h0, _ = base.forward_hidden(toks, r=3)
+        for sched in ("FSS", "FLL"):
+            m = BigMoE(_l5g(sched, 4)).eval()
+            m.load_state_dict(base.state_dict())
+            h, _ = m.forward_hidden(toks, r=3)
+            assert torch.allclose(h[0, :16], h0[0, :16], atol=1e-5)  # first segment: no G
+            assert not torch.allclose(h[0, 16:], h0[0, 16:], atol=1e-5), sched
+
+
+def test_l5g_selection_keeps_k_sel_keys_per_token_and_kv_head() -> None:
+    torch.manual_seed(0)
+    m = BigMoE(_l5g("FSS", 4)).eval()
+    seen: list[torch.Tensor] = []
+    it = m._iterate
+
+    def rec(st, j, *a, **k):  # noqa: ANN001, ANN202
+        out = it(st, j, *a, **k)
+        if out[0].g_sel is not None:
+            seen.append(out[0].g_sel)
+        return out
+
+    m._iterate = rec
+    with torch.no_grad():
+        m.forward_hidden(torch.randint(0, 97, (2, 64)), r=3)
+    assert seen and all((g.sum(-1) == 4).all() and g.shape[:2] == (2, 2) for g in seen)
 

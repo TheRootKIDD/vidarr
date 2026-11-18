@@ -140,6 +140,20 @@ class Attention(nn.Module):
             y = y + self.lora[name](x, j)
         return y
 
+    def global_scores(
+        self, q_in: Tensor, positions: Tensor, kg: Tensor, plain: bool, j: int | None = None
+    ) -> Tensor:
+        """ADR-070: pre-softmax scores of every query head against G's keys kg [B, Hkv, Ng, dh],
+        summed over each KV group's query heads -> [B, Hkv, Tq, Ng]. `plain`: G is NoPE."""
+        b, tq, _ = q_in.shape
+        q = self._proj("q", self.wq, q_in, j).view(b, tq, self.heads, self.head_dim).transpose(1, 2)
+        if self.rope and not plain:
+            cos, sin = rotary_cos_sin(positions, self.head_dim, self.theta)
+            q = apply_rotary(q, cos, sin)
+        rep = self.heads // self.kv_heads
+        q = q.view(b, self.kv_heads, rep, tq, self.head_dim)
+        return torch.einsum("bgrtd,bgnd->bgtn", q, kg) * self.head_dim**-0.5
+
     def _two_branch(
         self, q: Tensor, q_g: Tensor, k: Tensor, v: Tensor, n_glob: int, mask: Tensor | None
     ) -> Tensor:

@@ -50,6 +50,10 @@ class AttentionCfg:
     # two_branch: o = o_loc + sigmoid(gamma_h) o_glob (amends ADR-008 for these arms only)
     global_combine: Literal["one_softmax", "two_branch"] = "one_softmax"
     global_scoring: Literal["softmax", "relu2"] = "softmax"
+    # ADR-070 (L5g): one letter per iteration; F = all of G, S = the top-k_sel G keys by score
+    # at the token's last F iteration (per KV head), L = local window only. Empty = all F
+    schedule: tuple[str, ...] = ()
+    k_sel: int = 0
 
     @property
     def has_global(self) -> bool:
@@ -375,6 +379,15 @@ class ModelCfg:
             raise ValueError("attention.bridge_iteration needs global_source = bridged")
         if self.router.balance == "eqb_iteration" and self.arch != "recurrent":
             raise ValueError("eqb_iteration needs the recurrent arch (ADR-069)")
+        if a.schedule:
+            if len(a.schedule) != self.middle.r_max or set(a.schedule) - {"F", "S", "L"}:
+                raise ValueError("attention.schedule needs one of F/S/L per iteration (ADR-070)")
+            if a.schedule[0] != "F" or not a.has_global or self.halting.mode != "fixed":
+                raise ValueError("L5g: iteration 1 is F, G exists, fixed depth (ADR-070)")
+            if "S" in a.schedule and a.k_sel < 1:
+                raise ValueError("a sparse iteration needs k_sel >= 1 (ADR-070)")
+            if a.global_combine != "one_softmax" or self.streams.two_stream:
+                raise NotImplementedError("L5g with two branches or two streams: one feature")
         if a.global_combine == "two_branch" and not a.has_global:
             raise ValueError("global_combine two_branch needs the global cache (ADR-068)")
         if a.global_scoring == "relu2" and a.global_combine != "two_branch":
@@ -501,6 +514,18 @@ def ladder(step: str, **overrides: Any) -> ModelCfg:
         # ADR-034: one dense H block with its own weights after iteration 4
         "L5e": replace(rec, middle=MiddleCfg(h_every=8), experts=ExpertsCfg(d_ff=896)),
         "L5d": replace(rec, attention=AttentionCfg(global_source="final_vector")),
+        # ADR-070: per-iteration global schedules with selection reuse, k_sel 128 at 2 k
+        **{
+            f"L5g-{name}": replace(
+                rec,
+                attention=AttentionCfg(
+                    global_source="final_vector", schedule=tuple(sched), k_sel=128
+                ),
+            )
+            for name, sched in (
+                ("fsss", "FSSSFSSS"), ("fsssllll", "FSSSLLLL"), ("fs7", "FSSSSSSS")
+            )
+        },
         # ADR-069: Exact Quantile Balancing per iteration / per step, at N_e = 8 and 128
         "L5-eqb-iter": replace(rec, router=RouterCfg(balance="eqb_iteration")),
         "L5-eqb-step": replace(rec, router=RouterCfg(balance="eqb_step")),

@@ -237,13 +237,13 @@ class BigMoE(nn.Module):
         outs = checkpoint(
             self.middle.iteration_flat,
             j, pos, fixed, st.c, st.p, st.active, st.r, st.cum_halt, st.remainder,
-            fk, fv, st.frozen, mk, mv, st.q_tgt, st.q_loss, st.nbr, nk, nv,
+            fk, fv, st.frozen, mk, mv, st.q_tgt, st.q_loss, st.nbr, nk, nv, st.g_sel,
             use_reentrant=False,
         )
-        c, p, active, r, cum, rem, fk2, fv2, frozen, aux, load, q_loss = outs
+        c, p, active, r, cum, rem, fk2, fv2, frozen, aux, load, q_loss, g_sel = outs
         new = IterState(
             c, p, active, r, cum, rem, None if fk2 is None else (fk2, fv2), frozen,
-            [*st.loads, load], st.q_tgt, q_loss, st.nbr, st.nbr_kv,
+            [*st.loads, load], st.q_tgt, q_loss, st.nbr, st.nbr_kv, g_sel,
         )
         return new, aux
 

@@ -46,6 +46,7 @@ class IterState:
     q_loss: Tensor | None = None  # [2] running (summed L_q, valid count) over iterations
     nbr: Tensor | None = None  # [B, T / s, K] L8b neighbours per boundary, -1 = none (ADR-057)
     nbr_kv: tuple[Tensor, Tensor] | None = None  # L8b-pv (ADR-060): (kappa_n, V_n) per boundary
+    g_sel: Tensor | None = None  # L5g (ADR-070): [B, Hkv, T, |G|] keys picked at the last F
 
 
 class MiddleBlock(nn.Module):
@@ -140,11 +141,12 @@ class MiddleBlock(nn.Module):
         nbr: Tensor | None = None,
         nbr_k: Tensor | None = None,
         nbr_v: Tensor | None = None,
+        g_sel: Tensor | None = None,
     ) -> tuple[Tensor | None, ...]:
         """`iteration` over flat tensors so `torch.utils.checkpoint` can replay it."""
         st = IterState(
             c, p, active, r, cum, rem, None if fk is None else (fk, fv), frozen, [], q_tgt, q_loss,
-            nbr, None if nbr_k is None else (nbr_k, nbr_v),
+            nbr, None if nbr_k is None else (nbr_k, nbr_v), g_sel,
         )
         mem = None if mem_k is None else (mem_k, mem_v)
         out, aux = self.iteration(st, j, positions, mem, force_active)
@@ -152,7 +154,7 @@ class MiddleBlock(nn.Module):
         load = out.loads[-1]
         return (
             out.c, out.p, out.active, out.r, out.cum_halt, out.remainder,
-            fk2, fv2, out.frozen, aux, load, out.q_loss,
+            fk2, fv2, out.frozen, aux, load, out.q_loss, out.g_sel,
         )
 
     # ---- L6c thresholds (ADR-042) ------------------------------------------------
@@ -241,8 +243,29 @@ class MiddleBlock(nn.Module):
         # causal attention over same-iteration caches; L5d: a window W within the segment.
         window = cfg.attention.window if cfg.attention.has_global else t
         mask = local_window_mask(t, window, st.c.device)
+        # L5g (ADR-070): F = all of G (and, if sparse iterations follow, pick each token's top
+        # k_sel G keys per KV head); S = only the picked keys; L = no global range at all
+        sched = cfg.attention.schedule
+        kind = sched[j - 1] if sched else "F"
+        g_sel = st.g_sel
+        if mem_kv is not None and kind == "F" and "S" in sched:
+            with torch.no_grad():
+                sc = attn.global_scores(
+                    uc, positions, mem_kv[0], cfg.attention.rope_scope == "local", j
+                )
+                top = sc.topk(min(cfg.attention.k_sel, sc.shape[-1]), dim=-1).indices
+                g_sel = torch.zeros_like(sc, dtype=torch.bool).scatter_(-1, top, True)
+        if kind == "L":
+            mem_kv = None
         plain_causal = mem_kv is None and window >= t
-        if mem_kv is not None:
+        if mem_kv is not None and kind == "S":
+            assert g_sel is not None, "a sparse iteration before any full one"
+            rep = cfg.attention.heads // cfg.attention.kv_heads
+            gm = g_sel.repeat_interleave(rep, dim=1)  # [B, H, T, |G|]
+            k = torch.cat([mem_kv[0], k], dim=2)
+            v = torch.cat([mem_kv[1], v], dim=2)
+            mask = torch.cat([gm, mask.expand(*gm.shape[:2], t, t)], dim=-1)
+        elif mem_kv is not None:
             k = torch.cat([mem_kv[0], k], dim=2)
             v = torch.cat([mem_kv[1], v], dim=2)
             ones = torch.ones(t, mem_kv[0].shape[2], dtype=torch.bool, device=mask.device)
@@ -297,7 +320,7 @@ class MiddleBlock(nn.Module):
             p_new = new[1] if len(new) > 1 else None
             return IterState(
                 new[0], p_new, active, r, cum, rem, frozen_kv, frozen, st.loads, st.q_tgt, q_loss,
-                st.nbr, st.nbr_kv,
+                st.nbr, st.nbr_kv, g_sel,
             ), aux
         # halting head on the context stream (§4.7)
         h = torch.sigmoid(self.halt(torch.cat([uc, e.expand(b, t, -1)], dim=-1))).squeeze(-1)
@@ -316,6 +339,6 @@ class MiddleBlock(nn.Module):
         p_new = new[1] if len(new) > 1 else None
         out = IterState(
             new[0], p_new, active, r, cum, rem, frozen_kv, frozen, st.loads, st.q_tgt, q_loss,
-            st.nbr, st.nbr_kv,
+            st.nbr, st.nbr_kv, g_sel,
         )
         return out, aux
