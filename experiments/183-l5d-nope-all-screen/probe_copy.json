@@ -1,0 +1,20 @@
+{
+  "id": "183-l5d-nope-all-screen",
+  "step": 1907,
+  "context": 2048,
+  "windows": 512,
+  "src": [
+    256,
+    320
+  ],
+  "dst": [
+    1792,
+    1856
+  ],
+  "scored_tokens": 32256,
+  "copy_loss": 3.5652928144362654,
+  "control_loss": 3.3824225117458395,
+  "gap": -0.1828703026904256,
+  "wall_s": 117.3,
+  "device": "cuda"
+}

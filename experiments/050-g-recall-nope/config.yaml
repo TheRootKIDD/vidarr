@@ -1,0 +1,17 @@
+# Rig 050 (ADR-066 §6): ANN recall@32 over the global cache's keys, NoPE (204) vs RoPE (162). H22's second clause.
+# No training. One card per lane, rig idle (end of queue_screen_18b), 2026-11-20 00:20-00:31, code b64d4b6.
+# 204 is the rerun of 182 (outage 2026-11-19): read 204 where ADR-066 says 182.
+commands:
+  - python -m scripts.analysis.probe_g_recall --id 162-l5d-segmean-screen --context 2048
+  - python -m scripts.analysis.probe_g_recall --id 204-l5d-nope-screen --context 2048
+  - python -m scripts.analysis.probe_g_recall --id 162-l5d-segmean-screen --context 8192 --windows 64
+  - python -m scripts.analysis.probe_g_recall --id 204-l5d-nope-screen --context 8192 --windows 64
+hnsw: {M: 32, efSearch: 64, metric: inner_product}
+k: 32
+windows: {2048: 256, 8192: 64}
+outputs:
+  - experiments/162-l5d-segmean-screen/probe_g_recall_ctx2048.json
+  - experiments/162-l5d-segmean-screen/probe_g_recall_ctx8192.json
+  - experiments/204-l5d-nope-screen/probe_g_recall_ctx2048.json
+  - experiments/204-l5d-nope-screen/probe_g_recall_ctx8192.json
+logs: /mnt/nvme/post_queue18b/recall{2k,8k}_{162,204}.log

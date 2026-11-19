@@ -81,10 +81,12 @@ is recorded, not fixed; it is why the chain's rungs on this path take ≈ 9.9 h 
 
 ## Post-run probes
 
-Not run yet. `queue_screen_18b` runs them on idle GPUs after `183`: the copy probe and
-`eval_context` at 2048 on `162`/`204`/`183` (ADR-066 §2) and the recall probe at 2 k and 8 k on
-`162`/`204` (rig `050`, H22's second clause). Outputs go to `/mnt/nvme/post_queue18b/` and are
-written up with `183`.
+Run 2026-11-20 00:20–00:54 at the end of `queue_screen_18b`; outputs are in this directory
+(`probe_copy.json`, `eval_ctx2048.json`, `probe_g_recall_ctx{2048,8192}.json`). They are written
+up in `183-l5d-nope-all-screen/results.md` (copy probe, loss by position) and in rig
+`050-g-recall-nope` (H22's second clause). **One of them corrects the interpretation below:** this
+run's cost is +0.0140 already in positions 0–512, where the global range is empty, so it is a
+whole-model effect and not confined to where $\mathcal{G}$ acts.
 
 ## Interpretation
 

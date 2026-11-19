@@ -1,0 +1,20 @@
+{
+  "id": "204-l5d-nope-screen",
+  "step": 1907,
+  "context": 2048,
+  "windows": 512,
+  "src": [
+    256,
+    320
+  ],
+  "dst": [
+    1792,
+    1856
+  ],
+  "scored_tokens": 32256,
+  "copy_loss": 3.418259574320876,
+  "control_loss": 3.257322192319111,
+  "gap": -0.16093738200176527,
+  "wall_s": 138.4,
+  "device": "cuda"
+}
