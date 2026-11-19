@@ -2793,6 +2793,17 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-11-19 (06:55) — **ADR-076 built on branch `i44b` (`9844483`, worktree `../vidarr-i44b`) and queued as `/mnt/nvme/queue_screen_26.sh` behind `queue_screen_25`**
+- **Code:** `scripts/data/build_unknown_facts.py` (pool, renaming, the extra table rows), `scripts/analysis/eval_unknown_facts.py` (the eval-time table swap, and `--report` with ADR-076 §4's readings), `tests/test_unknown_facts.py` (8 tests: the renaming rules, seeding, "T_0 plus rows keeps T_0's neighbours in order", a toy L8b-pv end-to-end swap, the four readings). Ruff clean; the full unit suite passes on the branch (one niced core, no GPU; `204` held 28.2–28.5 k tok/s).
+- **As built, against ADR-076's wording** (same function, recorded):
+  1. The eval is its own script that reuses `eval_wiki_lead`'s `Pipeline` and `score_articles`, not a `--table` / `--pool` flag on `eval_wiki_lead`; that file is unchanged.
+  2. $T_{real}$ and $T_{ren}$ are not written as full tables. The build stores the 2,000 extra rows per version in `/mnt/nvme/memory/unknown-facts-054/`, and the eval appends them to `040`'s table in memory.
+  3. The leak rule is stricter than "no title survives": an article is also skipped if a title word of four or more letters, or the title run together (a domain spelling), is still in the renamed sentence.
+  4. Recorded limit: other cues to the entity stay (an abbreviation in parentheses, a call sign's frequency). §4's premise check is what measures whether the pool separates known from unknown.
+- **Dry run** (CPU, one shard of the dump, one niced core): 74,901 of 140,052 eligible articles begin with their title; 326 of 2,326 walked were skipped as leaks. ≈ 24 covered first-sentence tokens per real document and ≈ 29 per renamed one, so ≈ 48 k / 57 k tokens over the pool (wiki-lead's covered split has 55.5 k).
+- **Queue 26:** waits for `queue_screen_25`'s QUEUE DONE, merges `i44b`, gates (ruff + pytest), builds the pool (all GPUs for the encoder), scores `178`/`132` on GPU 0, `179`/`133` on GPU 1, `181` on GPU 2, `180` on GPU 3, then writes `experiments/054-l8b-unknown-facts/report.json` and logs the reading. Armed 06:51. Do not merge `i44b` by hand while the chain runs.
+- The hourly loop now covers `queue_screen_18b` and `19`–`26`, and writes up `054` (session cron, expires 2026-11-26).
+
 ### 2026-11-19 (06:50) — **ADR-075 and ADR-076 accepted** (the user: "Accept both, push, then build it on a branch"); moved to §Accepted
 - H17 is recorded as *supported at `small`* (`178`/`179`) and *silent at `medium`* (`181`); no further L8b-family training runs. `03`'s L8 row follows.
 - ADR-076's code is built on branch `i44b` (worktree `../vidarr-i44b`), not merged by hand: `/mnt/nvme/queue_screen_26.sh` waits for `queue_screen_25`, merges, gates, runs rig `054-l8b-unknown-facts`. I44 closes when `054` is written up.
