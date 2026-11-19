@@ -2755,6 +2755,15 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-11-19 (06:40) — **power outage killed `182` at step 117 of 1907; `182` kept as a partial record, rerun as `204`; the Embla chain relaunched (`queue_screen_18b`, then 19–25)**
+- **What happened.** Mains outage at ≈ 00:36 (last journal line 00:36:39); the host came back at 06:23. `182-l5d-nope-screen` died at step 117 (0.061 B tokens, held-out 5.5224 at step 100, 28.5 k tok/s, 3.89 GiB); last checkpoint step 98. All eight queue waiters (`queue_screen_18`–`25`) died with it. Nothing else was running; `181`'s write-up (`b64d4b6`) was already committed and pushed.
+- **Pick-up checklist held.** `nvidia-smi` works; the `027` UUID map is unchanged (index 0 = `GPU-4673cc7d`), links x16/x8/x8/x16; driver 615.71.09 and kernel 7.2.5 as in `029`, so no soak; cards idle at 32–36 °C; `git fsck` clean; `/mnt/nvme` mounted, `180`/`181` checkpoints present. `/mnt/hdd` did not mount — it was already absent at the previous boot (2026-10-09) and nothing in the project uses it.
+- **`182` not resumed** (append-only; the `101`/`109` precedent). It keeps a partial `results.md` (H22 silent, not a result). Ids `183`–`203` are reserved, so **the rerun is `204-l5d-nope-screen`** — same preset, seed, tokens. **Wherever ADR-066–068 say `182`, read `204`.** Cost: ≈ 36 min.
+- **Queues.** `/mnt/nvme/queue_screen_18b.sh` (log `queue_screen_18b.log`, probes in `post_queue18b/`) = `queue_screen_18` without the wait and the merge (`embla` is already in as `c072e86`), with `204` in place of `182` in the run list and the probe lanes. `queue_screen_19.sh` now waits on `queue_screen_18b.log`; `queue_screen_20.sh` reads ADR-066 §7's base choice from `204`'s summary. Queues 21–25 are unchanged. All eight relaunched as plain `nohup` lines.
+- **State.** Gate passed 06:38:13 on `b64d4b6` (ruff + pytest); `204` started 06:38:13 and its first three losses equal `182`'s to four decimals. At 18.4 s per step the rung takes ≈ 9.7 h, not the header's ≈ 8.3 h: `204` ETA ≈ 16:25, `183` ≈ 02:10 on 2026-11-20. If the other Embla rungs run at the same rate the chain is nearer 8.5 days than 7.5.
+- Don't commit to `model/`/`scripts/`/`costmodel/` while the chain runs (each queue refuses code changed since its gate).
+- Next free ladder id 205, rig id 054.
+
 ### 2026-11-19 (00:10) — **`181` L8b-pv-medium done: 2.7276, +0.0026 vs `180` (0.9σ) → H17 *silent* at `medium` (ADR-059's rule; ADR-061 §7: the `small` pair's *supported* stands)**; I44 opened; `queue_screen_18` merged `embla` and started `182`
 - `queue_medium_1`: `181` ended at 23:45 on 2026-11-18, exit 0, after 123.5 h. Its eval ended at 23:53, and the compare's verdict was `silent` / covered `silent`. QUEUE DONE was logged at 23:53:05.
 - The clauses:
