@@ -2793,7 +2793,7 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
-### 2026-11-19 (16:45) — **`204` L5d-nope done: 3.3595, +0.0152 vs `162` (5.1σ) → H22's first clause *weakened* at `screen` (ADR-066 §7)**; L9-relu2 will build on L5d; `183` running
+### 2026-11-19 (16:42) — **`204` L5d-nope done: 3.3595, +0.0152 vs `162` (5.1σ) → H22's first clause *weakened* at `screen` (ADR-066 §7)**; L9-relu2 will build on L5d; `183` running
 - **Result.** `204-l5d-nope-screen` (RoPE on the local range only, NoPE on $\mathcal{G}$; the rerun of `182`) ended 16:30 with exit 0: **3.3595 nats** on the full held-out set, **+0.0152 vs `162`** (3.3443) = 5.1σ = 1.28× 4σ. By ADR-066 §7, $\Delta$ > 4σ **weakens H22's first clause at `screen`**, one seed. The gap opens by step 700 (+0.0120) and widens slowly; routing ends at 8.00 of 8 like `162`, so it is not a routing effect.
 - **What follows, by the ADRs as written.** `queue_screen_20` reads `204`'s summary (3.3595 > 3.3443 + 0.0119) and builds `188`/`189` on L5d with `rope_scope: all`. ADR-063 (NoPE default) has no support from the loss side. No `small` pair.
 - **Still owed.** H22's second clause (recall@32 over NoPE vs RoPE'd keys, rig `050`) and ADR-066 §2's copy and context evals run after `183`, at the end of `queue_screen_18b`; they are written up with `183`.
