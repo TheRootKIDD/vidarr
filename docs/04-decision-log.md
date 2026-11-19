@@ -1658,6 +1658,17 @@ Consequences: one run ≈ 6 h. Code on `embla` (`31e0981`; test: the forward's c
 
   The parameter-matched engram-vs-product-key question is recorded as unscheduled. Touches ADR-009, ADR-057, `01 §4.6`.
 
+- **ADR-075** *(proposed 2026-11-19; I44 option (a), the user's choice: "(a) for now, draft the ADR")* — **H17's retrieval arm stops at `medium`: the L8b-pv `small` pair is H17's result, `181` is its recorded limit; no further L8b-family runs.**
+  - **Context.** H17's live arm is L8b-pv (ADR-057, ADR-060). At `small`, the pair `178`/`179` = 3.0730, −0.0017 vs the L5 pair `132`/`133`: *supported* at two seeds under ADR-059's rule (covered first sentence −0.054; rest of lead −0.015 against a 0.012 floor, marginal and below the control's −0.038). At `medium` (ADR-061), `181` = 2.7276, +0.0026 vs `180` (0.9σ): *silent* at one seed (covered first sentence −0.0173 against a 0.0145 floor; rest −0.0040 against 0.0120, misses). I44: the sentence-specific margin is gone at `medium` (covered − control +0.005, `small` −0.016), reliance on retrieved cells halves (+0.024 vs +0.053), and retrieval itself is unchanged (coverage 78.2 %, accuracy 98.3 %). `180` is 0.46 nats below `132` on covered first sentences against 0.35 on general text: the larger base learns the table's content from the corpus. ADR-061 §7 already fixes that the `small` pair's verdict stands. Precedents for closing by ADR on the user's decision: ADR-044 (H13), ADR-046 (H7), ADR-048 (H4).
+  - **Decision.**
+    1. **H17 is recorded as *supported at `small`* (two seeds, `178`/`179`), *silent at `medium`* (one seed, `181`).** Both are stated wherever H17 is quoted, together with I44's finding: on Wikipedia lead sentences the memory's specific value shrinks as the base grows. Neither verdict is rewritten.
+    2. **No further L8b / L8b-pv runs**: no second `medium` seed (I44 option (c): ≈ 5 days, and it cannot move the rest-of-lead clause), no further table, width or cadence variants on the Wikipedia-lead table.
+    3. **I44 closes** as answered by (a). Option (b), a table of facts the base cannot learn from the corpus (post-cutoff or synthetic), at `small`, is the recorded route if H17 is reopened. It needs its own ADR (table, eval, floor) and is added to the Phase 3.9 brainstorm's agenda (I28's session), not to a queue.
+    4. **Unaffected:** L8e (`197`, ADR-071) and ADR-065's baseline rule keep their own H24 / H17 readings; ADR-065's "L8e + L8b-pv against L8b-pv" arm is not scheduled by this ADR and is not forbidden by it. I42's limit on the rest-of-lead clause stays recorded. L8b-pv's code and preset stay in `model/`.
+    5. **No default changes.** The ladder's base stays L5 / L5d without a memory; putting L8b-pv into a default needs its own ADR.
+  - **Consequences.** `03`'s H17 and L8 rows and `README.md` take the two-part verdict; no GPU time is committed. What is given up: a `medium` σ for H17 (one seed only), and any test of the regime a memory is for (knowledge absent from the weights) until (b) is taken up. Systems-side claims about retrieval placement (P16, S6) are untouched: they are not quality claims.
+  - **Bears on:** H17 (closes its retrieval arm), H24 (unaffected), I44 (closes), I42 (unchanged), L8b / L8b-pv, ADR-057, ADR-060, ADR-061, ADR-065.
+
 ## Open questions
 
 ### For the note's author
@@ -1867,7 +1878,7 @@ Cost units from `docs/06 §4`: one `screen` run ≈ 8 h (1 B tokens, 1 seed); on
     - (a) record it and change nothing;
     - (b) fix the controller to sum loads over all calls, by ADR, for new runs only, with an L5 control run;
     - (c) (a) now, and (b) only if E-router-EQB shows balancing matters for loss.
-- **I44** *(2026-11-19, `181`; open, the user's call)* **The L8b-pv memory's specific value shrinks as the base model grows.** At `medium`, the covered first-sentence gain over L5 is −0.017 (`small` pair −0.054), below the out-of-table control's −0.023 (covered − control +0.005, `small` −0.016). Reliance on retrieved cells halves (+0.024 vs +0.053; FineWeb +0.005 vs +0.020). Retrieval itself is unchanged (coverage 78.2 %, accuracy 98.3 %). `180` already knows much of the table: its covered first sentence is 0.46 nats below `132`'s, against −0.35 on general text.
+- **I44** *(2026-11-19, `181`; **answered 2026-11-19: option (a), by ADR-075 — proposed, closes on acceptance**)* **The L8b-pv memory's specific value shrinks as the base model grows.** At `medium`, the covered first-sentence gain over L5 is −0.017 (`small` pair −0.054), below the out-of-table control's −0.023 (covered − control +0.005, `small` −0.016). Reliance on retrieved cells halves (+0.024 vs +0.053; FineWeb +0.005 vs +0.020). Retrieval itself is unchanged (coverage 78.2 %, accuracy 98.3 %). `180` already knows much of the table: its covered first sentence is 0.46 nats below `132`'s, against −0.35 on general text.
   - **Options (each by ADR):**
     - (a) stop H17 here, with the `small` pair as its result and `181` as its recorded limit;
     - (b) a table of facts the base does not learn from the corpus (e.g. post-cutoff or synthetic facts), at `small`;
@@ -2754,6 +2765,12 @@ and an ADR first, L6c likewise; the `small` programme (L0, L1, L2, L3, L5, L5d a
 the ladder's own next step and needs no new code. The choice between "more `screen` variants" and
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
+
+### 2026-11-19 (07:00) — **I44 answered: option (a) (the user: "(a) for now, draft the ADR"); ADR-075 drafted, proposed**; hourly loop re-armed
+- ADR-075 (proposed): H17's retrieval arm stops at `medium`. H17 is recorded as *supported at `small`* (`178`/`179`) and *silent at `medium`* (`181`), with I44's finding stated beside it. No second `medium` seed and no further L8b-family runs. I44 option (b) (a table of facts the base cannot learn) is the recorded reopening route and goes on the Phase 3.9 agenda. L8e (`197`) and ADR-065 are unaffected. No default changes, no GPU time.
+- On acceptance: move ADR-075 to §Accepted, close I44, update `03`'s H17 / L8 rows and `README.md`.
+- The hourly results loop is re-armed on `queue_screen_18b.log` and `queue_screen_19`–`25` (session cron, expires 2026-11-26; the chain ends later, so it needs one re-arm).
+- `204` is running (started 06:38). Docs only; nothing under `model/`/`scripts/`/`costmodel/` touched.
 
 ### 2026-11-19 (06:40) — **power outage killed `182` at step 117 of 1907; `182` kept as a partial record, rerun as `204`; the Embla chain relaunched (`queue_screen_18b`, then 19–25)**
 - **What happened.** Mains outage at ≈ 00:36 (last journal line 00:36:39); the host came back at 06:23. `182-l5d-nope-screen` died at step 117 (0.061 B tokens, held-out 5.5224 at step 100, 28.5 k tok/s, 3.89 GiB); last checkpoint step 98. All eight queue waiters (`queue_screen_18`–`25`) died with it. Nothing else was running; `181`'s write-up (`b64d4b6`) was already committed and pushed.
