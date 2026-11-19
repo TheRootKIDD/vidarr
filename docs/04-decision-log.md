@@ -2791,18 +2791,18 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
-### 2026-11-19 (07:20) — **I44 option (b) scheduled after the Embla chain (the user: "And fit b after the Embla chain"): ADR-076 drafted, proposed; ADR-075's draft amended to match**
+### 2026-11-19 (06:45) — **I44 option (b) scheduled after the Embla chain (the user: "And fit b after the Embla chain"): ADR-076 drafted, proposed; ADR-075's draft amended to match**
 - ADR-076 (proposed): L8b-pv's table is a frozen directory and its trained maps act on the encoder's space, so (b) needs no training. Rig `054-l8b-unknown-facts` swaps in a table holding 2,000 renamed-entity first sentences (real predicates, pseudo-names) and scores `178`/`179`, `181` and their bases; the reading is whether the memory's specific value survives at `medium` where the base cannot know the fact. ≈ 40 min after `queue_screen_25`, via `queue_screen_26`.
 - ADR-075's draft: "no further L8b-family *training* runs"; I44 stays open on its cause until `054`; the Phase 3.9 agenda item is dropped in favour of ADR-076.
 - Nothing is built: code waits for acceptance and goes on a branch (the chain's gates refuse changes under `model/`/`scripts/`/`costmodel/`). Rig id `054` reserved; next free rig id 055, ladder id 205.
 
-### 2026-11-19 (07:00) — **I44 answered: option (a) (the user: "(a) for now, draft the ADR"); ADR-075 drafted, proposed**; hourly loop re-armed
+### 2026-11-19 (06:42) — **I44 answered: option (a) (the user: "(a) for now, draft the ADR"); ADR-075 drafted, proposed**; hourly loop re-armed
 - ADR-075 (proposed): H17's retrieval arm stops at `medium`. H17 is recorded as *supported at `small`* (`178`/`179`) and *silent at `medium`* (`181`), with I44's finding stated beside it. No second `medium` seed and no further L8b-family runs. I44 option (b) (a table of facts the base cannot learn) is the recorded reopening route and goes on the Phase 3.9 agenda. L8e (`197`) and ADR-065 are unaffected. No default changes, no GPU time.
 - On acceptance: move ADR-075 to §Accepted, close I44, update `03`'s H17 / L8 rows and `README.md`.
 - The hourly results loop is re-armed on `queue_screen_18b.log` and `queue_screen_19`–`25` (session cron, expires 2026-11-26; the chain ends later, so it needs one re-arm).
 - `204` is running (started 06:38). Docs only; nothing under `model/`/`scripts/`/`costmodel/` touched.
 
-### 2026-11-19 (06:40) — **power outage killed `182` at step 117 of 1907; `182` kept as a partial record, rerun as `204`; the Embla chain relaunched (`queue_screen_18b`, then 19–25)**
+### 2026-11-19 (06:39) — **power outage killed `182` at step 117 of 1907; `182` kept as a partial record, rerun as `204`; the Embla chain relaunched (`queue_screen_18b`, then 19–25)**
 - **What happened.** Mains outage at ≈ 00:36 (last journal line 00:36:39); the host came back at 06:23. `182-l5d-nope-screen` died at step 117 (0.061 B tokens, held-out 5.5224 at step 100, 28.5 k tok/s, 3.89 GiB); last checkpoint step 98. All eight queue waiters (`queue_screen_18`–`25`) died with it. Nothing else was running; `181`'s write-up (`b64d4b6`) was already committed and pushed.
 - **Pick-up checklist held.** `nvidia-smi` works; the `027` UUID map is unchanged (index 0 = `GPU-4673cc7d`), links x16/x8/x8/x16; driver 615.71.09 and kernel 7.2.5 as in `029`, so no soak; cards idle at 32–36 °C; `git fsck` clean; `/mnt/nvme` mounted, `180`/`181` checkpoints present. `/mnt/hdd` did not mount — it was already absent at the previous boot (2026-10-09) and nothing in the project uses it.
 - **`182` not resumed** (append-only; the `101`/`109` precedent). It keeps a partial `results.md` (H22 silent, not a result). Ids `183`–`203` are reserved, so **the rerun is `204-l5d-nope-screen`** — same preset, seed, tokens. **Wherever ADR-066–068 say `182`, read `204`.** Cost: ≈ 36 min.
