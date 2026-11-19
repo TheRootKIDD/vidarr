@@ -2793,6 +2793,13 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-11-19 (16:45) — **`204` L5d-nope done: 3.3595, +0.0152 vs `162` (5.1σ) → H22's first clause *weakened* at `screen` (ADR-066 §7)**; L9-relu2 will build on L5d; `183` running
+- **Result.** `204-l5d-nope-screen` (RoPE on the local range only, NoPE on $\mathcal{G}$; the rerun of `182`) ended 16:30 with exit 0: **3.3595 nats** on the full held-out set, **+0.0152 vs `162`** (3.3443) = 5.1σ = 1.28× 4σ. By ADR-066 §7, $\Delta$ > 4σ **weakens H22's first clause at `screen`**, one seed. The gap opens by step 700 (+0.0120) and widens slowly; routing ends at 8.00 of 8 like `162`, so it is not a routing effect.
+- **What follows, by the ADRs as written.** `queue_screen_20` reads `204`'s summary (3.3595 > 3.3443 + 0.0119) and builds `188`/`189` on L5d with `rope_scope: all`. ADR-063 (NoPE default) has no support from the loss side. No `small` pair.
+- **Still owed.** H22's second clause (recall@32 over NoPE vs RoPE'd keys, rig `050`) and ADR-066 §2's copy and context evals run after `183`, at the end of `queue_screen_18b`; they are written up with `183`.
+- **Run health.** 9.86 h, 0.0 % unaccounted; `n_thermal` 0 of 190 records, max 74 °C, min clock 1905 MHz. **The `local` path costs 16 % of the step** (28.5 k tok/s vs `162`'s 33.9 k; `183` with no RoPE runs at 35.6 k, so the rig is healthy): recorded, not fixed.
+- **Now.** `183-l5d-nope-all-screen` started 16:30, ETA ≈ 00:25 on 2026-11-20 at its present rate; then the probes (≈ 1 h), then `queue_screen_19`.
+
 ### 2026-11-19 (06:55) — **ADR-076 built on branch `i44b` (`9844483`, worktree `../vidarr-i44b`) and queued as `/mnt/nvme/queue_screen_26.sh` behind `queue_screen_25`**
 - **Code:** `scripts/data/build_unknown_facts.py` (pool, renaming, the extra table rows), `scripts/analysis/eval_unknown_facts.py` (the eval-time table swap, and `--report` with ADR-076 §4's readings), `tests/test_unknown_facts.py` (8 tests: the renaming rules, seeding, "T_0 plus rows keeps T_0's neighbours in order", a toy L8b-pv end-to-end swap, the four readings). Ruff clean; the full unit suite passes on the branch (one niced core, no GPU; `204` held 28.2–28.5 k tok/s).
 - **As built, against ADR-076's wording** (same function, recorded):
