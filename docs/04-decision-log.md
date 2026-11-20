@@ -2793,6 +2793,13 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-11-20 (09:39) — **`184` L5h $j_b$ = 1 done: 3.3293, −0.0150 vs `162` (5.0σ, beats L5d)** → H20's loss clause met at the smallest bridge point; attribution waits on `187`; `185` running
+- **Result.** `184-l5h-jb1-screen` ended 09:18 with exit 0: **3.3293**, −0.0150 vs `162` (3.3443), −0.0035 vs `110`. ADR-067 §5 asks for $\Delta \le T$ = 0.0667; the arm beats L5d by more than 4σ. Behind until step ≈ 600, ahead by 0.015–0.017 over the last third. Prefill arithmetic at 2 k: 0.34× of L5d's iterations (§3; not measured).
+- **Not yet separable.** L5h also unties the global projections (+0.39 M parameters). `187` ($j_b$ = 8, untied only) says how much of the gain is that; `185`/`186` say whether it depends on $j_b$.
+- **What follows.** By ADR-066 §1 (an L5-family arm > 4σ better) and ADR-067 §5 (smallest passing $j_b$), $j_b$ = 1 is the candidate for a `small` pair, by its own ADR, after `187`. Nothing is queued for it.
+- **Run health.** 8.34 h, 33.7 k tok/s (0.99× `162`), 3.90 GiB, `n_thermal` 0 of 190, max 73 °C.
+- **Now.** `185-l5h-jb2-screen` started 09:18, ETA ≈ 17:40; `186` ≈ 02:00 and `187` ≈ 10:20 on 2026-11-21, then the copy/context evals of the four.
+
 ### 2026-11-20 (00:55) — **`183` L5d-nope-all done: 3.4891, +0.1448 vs `162` (48σ; the reference point, worse as expected)**; rig `050`: NoPE recall@32 +0.072 at 2 k (58 SE), +0.002 at 8 k (0.6 SE) → **H22's second clause not met as written**; `204`'s cost is already there at positions 0–512; `queue_screen_18b` done
 - **`183-l5d-nope-all-screen`** (no RoPE on either range) ended 00:20 with exit 0: **3.4891**, +0.1448 vs `162`, +0.1296 vs `204`. ADR-066 §7 makes it a reference point, not a verdict arm. Nine tenths of RoPE's value is in the local range. The gap was 0.48 at step 300 and is still closing slowly at the end. 7.83 h, 35.9 k tok/s, `n_thermal` 0.
 - **Rig `050-g-recall-nope`** (ADR-066 §6; `162` vs `204`). Recall@32 of HNSW (M 32, efSearch 64) against the model's own top-32 global keys: at 2048, 0.8959 → **0.9679** (+0.0720, 58 SE, every iteration); at 8192, 0.9071 → 0.9090 (+0.0019, 0.6 SE; 64 windows, both models extrapolating). ADR-066 §7 needs > 2 SE at both lengths, so **H22's second clause is not met as written**: true at the trained length only. The ADR has no weakens band for it; recorded as silent, split by length.
