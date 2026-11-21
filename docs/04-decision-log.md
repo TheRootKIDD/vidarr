@@ -2793,6 +2793,15 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-11-21 (10:45) — **`187` L5h untied control done: 3.3447, +0.0004 vs `162`** → untying is worth nothing; **L5h's gain is the early source** ($j_b$ 1 / 2 / 4 = −0.0154 / −0.0155 / −0.0092 vs `187`); H20's loss clause supported at `screen`; `queue_screen_19` done, `queue_screen_20` running `188`
+- **Result.** `187-l5h-jb8-screen` ended 10:20 with exit 0: **3.3447**, +0.0004 vs `162` (0.1σ). ADR-067 §5's table: Δ vs `162` = −0.0150 / −0.0151 / −0.0088 / +0.0004 for $j_b$ = 1 / 2 / 4 / 8; Δ vs `187` = −0.0154 / −0.0155 / −0.0092. Every arm is inside $T$ = 0.0667; $j_b$ = 1 and 2 beat both comparators by > 4σ. Loss is monotone in $j_b$.
+- **This corrects `185`'s guess** (that the gain was probably the untied projections): the control says it is not. `186`'s smaller gain was the start of the fade, not an outlier.
+- **Loss by position** (`eval_context`, 2048). Gain of `184` / `185` vs `162`: −0.007 / −0.005 in 0–512, −0.016 / −0.017 in 512–1 k, −0.019 / −0.020 in 1–2 k: it sits where $\mathcal{G}$ acts. `187` is flat (+0.002 / 0.000 / 0.000).
+- **Copy probe** (no threshold). No arm copies: control − copy = −0.635 / −0.639 / −0.650 / −0.664 (`162` −0.661).
+- **H20 now:** loss clause *supported* at `screen`, one seed, sign reversed (the early source helps); prefill clause is arithmetic (0.34× at 2 k for $j_b$ = 1), 10:45FT is S5's. **Owed, the user's call:** an ADR for the L5h $j_b$ = 1 `small` pair (ADR-067 §5, ADR-066 §1; ≈ 2 × 21 h against the L5d pair `134`/`135`). Nothing is queued for it; ADR-062 waits on it.
+- **Run health.** 8.33 h, 33.7 k tok/s, 3.90 GiB, `n_thermal` 0 of 190, max 75 °C.
+- **Chain.** `queue_screen_19` logged QUEUE DONE 10:41. `queue_screen_20` merged `embla` (no-op, `9c0e5b7`), passed its gate 10:44, read `204` = 3.3595 > `162` + 4σ and started `188-l9-2b-screen` on L5d (`rope_scope: all`); `189` follows.
+
 ### 2026-11-21 (02:39) — **`186` L5h $j_b$ = 4 done: 3.3355, −0.0088 vs `162` (2.9σ, matches L5d), +0.006 vs `184`/`185` (2.1σ)** → H20's loss clause met; a later bridge point is not better; attribution waits on `187`; `187` running
 - **Result.** `186-l5h-jb4-screen` ended 02:00 with exit 0: **3.3355**, −0.0088 vs `162` (3.3443), +0.0062 / +0.0063 vs `184` / `185`, +0.0027 vs `110`. ADR-067 §5: $\Delta \le T$ = 0.0667, met; by ADR-066 §1 it matches L5d (inside 4σ) where $j_b$ = 1 and 2 beat it. Prefill arithmetic at 2 k: 0.63× (§3, not measured).
 - **Reading.** The three bridge points order 1 ≈ 2 < 4 in loss. The gap of `186` to the other two is 2.1σ and steady from step 1000: recorded, not claimed (inside 4σ, one seed). It does not fit the reading that the gain is only the untied projections; `187` ($j_b$ = 8, untied) says whether `186` is an outlier or the gain fades with $j_b$. $j_b$ = 1 stays the `small`-pair candidate (own ADR, after `187`).
