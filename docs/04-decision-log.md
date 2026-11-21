@@ -2793,6 +2793,14 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-11-21 (19:39) — **`188` L9-2b (two-branch softmax control) done: 3.3720, +0.0277 vs `162` (9.2σ worse)** → ADR-008's one softmax stands; H23 waits on `189`, which runs at 22.8 k tok/s (ETA ≈ 07:15 on 2026-11-22)
+- **Result.** `188-l9-2b-screen` ended 19:00 with exit 0: **3.3720**, +0.0277 vs `162`, +0.0125 vs `204`. Built on L5d (`rope_scope: all`) by ADR-066 §7, so ADR-068 §4's "$\Delta$(`188` − `182`)" is read against `162`, the same base with one softmax. The gap is 0.084 at step 100 and flat at ≈ 0.028 over the last quarter.
+- **ADR-008 side reading.** The two-branch gated sum does not beat one softmax; it loses by 2.3× the 4σ line. No new ADR; the two-branch form stays confined to `188`/`189`.
+- **H23.** Silent until `189`: the loss clause is $\Delta$(`189` − `188`) against $T$ = 0.0334. An arm that passes against `188` could still sit ≈ 0.03 above L5d; that goes to the `189` write-up.
+- **Not read yet.** The gates $g_h$ are not logged; they need the checkpoint and free GPUs. ADR-068 §3's measures and ADR-066 §2's evals run after `189`.
+- **Run health.** 8.27 h, 33.9 k tok/s, 3.89 GiB, `n_thermal` 0 of 190, max 75 °C.
+- **Now.** `189-l9-relu2-screen` started 19:00 at 22.8 k tok/s, 4.21 GiB (0.67× `188`): ≈ 12.2 h, so `queue_screen_20` ends ≈ 07:45 instead of ≈ 04:15 and the rest of the chain moves ≈ 3.5 h later.
+
 ### 2026-11-21 (10:45) — **`187` L5h untied control done: 3.3447, +0.0004 vs `162`** → untying is worth nothing; **L5h's gain is the early source** ($j_b$ 1 / 2 / 4 = −0.0154 / −0.0155 / −0.0092 vs `187`); H20's loss clause supported at `screen`; `queue_screen_19` done, `queue_screen_20` running `188`
 - **Result.** `187-l5h-jb8-screen` ended 10:20 with exit 0: **3.3447**, +0.0004 vs `162` (0.1σ). ADR-067 §5's table: Δ vs `162` = −0.0150 / −0.0151 / −0.0088 / +0.0004 for $j_b$ = 1 / 2 / 4 / 8; Δ vs `187` = −0.0154 / −0.0155 / −0.0092. Every arm is inside $T$ = 0.0667; $j_b$ = 1 and 2 beat both comparators by > 4σ. Loss is monotone in $j_b$.
 - **This corrects `185`'s guess** (that the gain was probably the untied projections): the control says it is not. `186`'s smaller gain was the start of the fade, not an outlier.
