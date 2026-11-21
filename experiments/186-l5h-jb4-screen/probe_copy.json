@@ -1,0 +1,20 @@
+{
+  "id": "186-l5h-jb4-screen",
+  "step": 1907,
+  "context": 2048,
+  "windows": 512,
+  "src": [
+    256,
+    320
+  ],
+  "dst": [
+    1792,
+    1856
+  ],
+  "scored_tokens": 32256,
+  "copy_loss": 3.8935926183070526,
+  "control_loss": 3.2435490307917414,
+  "gap": -0.6500435875153112,
+  "wall_s": 114.6,
+  "device": "cuda"
+}
