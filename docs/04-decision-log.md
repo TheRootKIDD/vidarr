@@ -2793,6 +2793,12 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-11-21 (02:39) — **`186` L5h $j_b$ = 4 done: 3.3355, −0.0088 vs `162` (2.9σ, matches L5d), +0.006 vs `184`/`185` (2.1σ)** → H20's loss clause met; a later bridge point is not better; attribution waits on `187`; `187` running
+- **Result.** `186-l5h-jb4-screen` ended 02:00 with exit 0: **3.3355**, −0.0088 vs `162` (3.3443), +0.0062 / +0.0063 vs `184` / `185`, +0.0027 vs `110`. ADR-067 §5: $\Delta \le T$ = 0.0667, met; by ADR-066 §1 it matches L5d (inside 4σ) where $j_b$ = 1 and 2 beat it. Prefill arithmetic at 2 k: 0.63× (§3, not measured).
+- **Reading.** The three bridge points order 1 ≈ 2 < 4 in loss. The gap of `186` to the other two is 2.1σ and steady from step 1000: recorded, not claimed (inside 4σ, one seed). It does not fit the reading that the gain is only the untied projections; `187` ($j_b$ = 8, untied) says whether `186` is an outlier or the gain fades with $j_b$. $j_b$ = 1 stays the `small`-pair candidate (own ADR, after `187`).
+- **Run health.** 8.34 h, 33.7 k tok/s (0.99× `162`), 3.90 GiB, `n_thermal` 0 of 190, max 74 °C. Last dead expert at step 34, 7.99 of 8 at the end.
+- **Now.** `187-l5h-jb8-screen` started 02:00 (33.5 k tok/s), ETA ≈ 10:20; then the copy/context evals of `184`–`187` and `queue_screen_20`.
+
 ### 2026-11-20 (18:39) — **`185` L5h $j_b$ = 2 done: 3.3292, −0.0151 vs `162` (5.0σ, beats L5d), −0.0001 vs `184`** → H20's loss clause met again; no dependence on $j_b$ between 1 and 2; attribution waits on `187`; `186` running
 - **Result.** `185-l5h-jb2-screen` ended 17:39 with exit 0: **3.3292**, −0.0151 vs `162` (3.3443), −0.0036 vs `110`, −0.0001 vs `184` (0.03σ). ADR-067 §5: $\Delta \le T$ = 0.0667 and past 4σ on the good side, as `184`. The two curves are within 0.001 of each other at every eval from step 700. Prefill arithmetic at 2 k: 0.44× (`184` 0.34×; §3, not measured).
 - **Reading.** Inside $j_b$ ∈ {1, 2} the bridge point changes nothing in loss, so $j_b$ = 1 stays the smallest passing point and the `small`-pair candidate (own ADR, after `187`). The agreement points at what the two arms share, the untied global projections, as the source of the gain over `162`; `187` decides that, not this run.
