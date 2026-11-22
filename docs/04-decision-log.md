@@ -2793,6 +2793,14 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-11-22 (20:39) — `191` EQB per step at $N_e$ = 8: 3.3286, −0.0042 vs `110` (matches, clause 3 met); iter − step = +0.0065 (clause 2 silent, pointing against)
+
+- **`191-eqb-step-screen`** (ADR-069; `router.balance: eqb_step`; 13:56–19:45, 5.81 h, 48.4 k tok/s, 3.88 GiB, `n_thermal` 0 of 190): **3.3286, −0.0042 vs `110` (1.4σ)**, −0.0065 vs `190`.
+- **H26 at $N_e$ = 8 (ADR-069 §6), one seed:** clause 3 **met** (per-step EQB matches ADR-004's balancer); clause 2 **silent, pointing against** ($\Delta$(iter − step) = +0.0065 = 2.2σ against 0.0334; the order holds at every eval, 0.10 at step 100 shrinking to ≈ 0.007); clause 1 waits on `probe_routing`. No `small` pair at this pool size.
+- **Routing:** under per-step EQB the one logged iteration (iteration 1, I43) ends at 5.61 of 8 effective experts with two nearly dead (loads 0.0006–0.249), where `110` and `190` end at 7.997: per-step balance lets the router specialise by depth at $N_e$ = 8. The probe's per-iteration table will confirm or correct this.
+- **Solver:** `eqb_err` > 1 % in 45 steps (44 in the first 100), none after step 500; median 0.17 %.
+- **Chain:** `192-eqb-iter-ne128-screen` started 19:45 (15.7 k tok/s, 6.26 GiB; ≈ 17.7 h → ≈ 13:30 Nov 23), `193` ≈ 07:15 Nov 24, then `203` and the probes.
+
 ### 2026-11-22 (14:40) — `190` EQB per iteration at $N_e$ = 8: 3.3351, +0.0023 vs `110` (0.8σ, matches); H26 silent until `191` and the probe
 
 - **`190-eqb-iter-screen`** (ADR-069; `router.balance: eqb_iteration`, no aux loss; 08:09–13:56, 5.78 h, 48.5 k tok/s = 1.00× `110`, 3.88 GiB, `n_thermal` 0 of 190): **3.3351, +0.0023 vs `110` (0.8σ)**. Starts 0.04 behind, closes to inside 1σ. Routing aggregates as `110` (worst 4.06 of 8 at step 19, last dead expert step 38, 7.997 at the end, loads 0.119–0.130).
