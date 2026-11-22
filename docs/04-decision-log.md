@@ -2793,6 +2793,10 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-11-22 (08:39) — rig `051-eqb-sizing` passed: EQB at $N_e$ = 128 peaks at 6.26 GiB (+0.25) and costs 3 % of the step, the same per iteration and per step; `190` running at 49.0 k tok/s
+- **Rig `051`** (ADR-069 §3; three 6-step DDP smokes, 07:52–08:09): L5-ne128 `aux_free` 6.01 GiB, 15.6 k tok/s; `eqb_iteration` 6.26 GiB, 15.1 k; `eqb_step` 6.26 GiB, 15.1 k. The 10 GiB gate passed. `192`/`193` ≈ 18.4 h each at the smoke's rate (ADR-069 planned ≈ 17 h). Bears on H26 as a gate; no verdict.
+- **Now.** `190-eqb-iter-screen` started 08:09, 49.0 k tok/s, 3.88 GiB, ETA ≈ 13:50; `191` ≈ 19:35; `192` ≈ 14:00 and `193` ≈ 08:30 on the next two days; then `203`.
+
 ### 2026-11-22 (07:52) — **`189` L9-relu2 done: 3.3870, +0.0150 vs `188` (5.0σ, inside $T$: silent); exact zeros 53.7 % against 90 % → H23's sparsity clause not met**; cap $K$ = 128 +0.0008 (met); `queue_screen_20` done, `queue_screen_21` gated
 - **Result.** `189-l9-relu2-screen` ended 07:24 with exit 0: **3.3870**, +0.0150 vs its control `188`, +0.0427 vs `162`. ADR-068 §4, clause by clause: loss, $\Delta$ = +0.0150 against $T$ = 0.0334 → silent (a cost inside the allowance, ADR-066 §1); sparsity, zero fraction 0.537 (probe; 0.529 at the last training step; best head 0.80) against ≥ 0.90 → **not met**; cap, $K$ = 64 / 128 / 256 = +0.0021 / +0.0008 / +0.0002 → met. V-skip rate 0.384.
 - **H23 at `screen`, one seed: not supported** on its defining clause. The clause has a threshold and no band in ADR-068, so it is recorded as not met. The 8 k cap clause stays owed and is not worth running on this result.

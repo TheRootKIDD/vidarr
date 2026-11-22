@@ -1,0 +1,14 @@
+# Rig 051 (ADR-069 §3): sizing of EQB at N_e = 128 before runs 192/193. Bears on H26 (no verdict: a gate).
+# Three 6-step DDP smokes (3.2e6 tokens each), 4 x RTX 3060, micro-batch 4, seed 0, started by
+# /mnt/nvme/queue_screen_21.sh on 2026-11-22 07:52-08:09, code at the queue's gate commit 36b7c2f.
+# Abort rule in the queue: peak > 10 GiB per GPU.
+commands:
+  - python -m scripts.train.train --rung L5-ne128 --id 051-eqb-sizing/L5-ne128 --tokens 3.2e6 --micro-batch 4 --seed 0 --eval-every 1000
+  - python -m scripts.train.train --rung L5-ne128-eqb-iter --id 051-eqb-sizing/L5-ne128-eqb-iter --tokens 3.2e6 --micro-batch 4 --seed 0 --eval-every 1000
+  - python -m scripts.train.train --rung L5-ne128-eqb-step --id 051-eqb-sizing/L5-ne128-eqb-step --tokens 3.2e6 --micro-batch 4 --seed 0 --eval-every 1000
+arms:
+  L5-ne128: {router.balance: aux_free}
+  L5-ne128-eqb-iter: {router.balance: eqb_iteration}
+  L5-ne128-eqb-step: {router.balance: eqb_step}
+outputs: each arm's directory holds config.yaml, log.jsonl, summary.json and the trainer's results.md
+log: /mnt/nvme/queue_screen_21.log (lines "rig 051 <arm> peak <GiB>")
