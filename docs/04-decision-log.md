@@ -2793,6 +2793,13 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-11-22 (14:40) — `190` EQB per iteration at $N_e$ = 8: 3.3351, +0.0023 vs `110` (0.8σ, matches); H26 silent until `191` and the probe
+
+- **`190-eqb-iter-screen`** (ADR-069; `router.balance: eqb_iteration`, no aux loss; 08:09–13:56, 5.78 h, 48.5 k tok/s = 1.00× `110`, 3.88 GiB, `n_thermal` 0 of 190): **3.3351, +0.0023 vs `110` (0.8σ)**. Starts 0.04 behind, closes to inside 1σ. Routing aggregates as `110` (worst 4.06 of 8 at step 19, last dead expert step 38, 7.997 at the end, loads 0.119–0.130).
+- **H26 (ADR-069 §6, $N_e$ = 8): silent.** Clause 1 waits on `probe_routing` (end of `queue_screen_21`), clauses 2 and 3 on `191`. For clause 2 ($\Delta$(iter − step) ≥ 0.0334) `191` would have to reach ≤ 3.3017, 0.031 below `110`. No `small` pair from this arm (it does not beat `110`).
+- **As-built limit:** the solver's share error `eqb_err` exceeds ADR-069 §2's 1 % in 132 of 1907 steps (95 of the first 100, max 34 % at step 19; 7 after step 500, max 1.2 %); median 0.5 %. Not diagnosed; applies to `191`–`193`.
+- **Chain:** `191-eqb-step-screen` started 13:56 (48.9 k tok/s, ETA ≈ 19:45), then `192` (≈ 14:10 Nov 23), `193` (≈ 08:40 Nov 24), `203`, probes.
+
 ### 2026-11-22 (08:39) — rig `051-eqb-sizing` passed: EQB at $N_e$ = 128 peaks at 6.26 GiB (+0.25) and costs 3 % of the step, the same per iteration and per step; `190` running at 49.0 k tok/s
 - **Rig `051`** (ADR-069 §3; three 6-step DDP smokes, 07:52–08:09): L5-ne128 `aux_free` 6.01 GiB, 15.6 k tok/s; `eqb_iteration` 6.26 GiB, 15.1 k; `eqb_step` 6.26 GiB, 15.1 k. The 10 GiB gate passed. `192`/`193` ≈ 18.4 h each at the smoke's rate (ADR-069 planned ≈ 17 h). Bears on H26 as a gate; no verdict.
 - **Now.** `190-eqb-iter-screen` started 08:09, 49.0 k tok/s, 3.88 GiB, ETA ≈ 13:50; `191` ≈ 19:35; `192` ≈ 14:00 and `193` ≈ 08:30 on the next two days; then `203`.
