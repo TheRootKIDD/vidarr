@@ -2793,6 +2793,15 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-11-22 (07:52) — **`189` L9-relu2 done: 3.3870, +0.0150 vs `188` (5.0σ, inside $T$: silent); exact zeros 53.7 % against 90 % → H23's sparsity clause not met**; cap $K$ = 128 +0.0008 (met); `queue_screen_20` done, `queue_screen_21` gated
+- **Result.** `189-l9-relu2-screen` ended 07:24 with exit 0: **3.3870**, +0.0150 vs its control `188`, +0.0427 vs `162`. ADR-068 §4, clause by clause: loss, $\Delta$ = +0.0150 against $T$ = 0.0334 → silent (a cost inside the allowance, ADR-066 §1); sparsity, zero fraction 0.537 (probe; 0.529 at the last training step; best head 0.80) against ≥ 0.90 → **not met**; cap, $K$ = 64 / 128 / 256 = +0.0021 / +0.0008 / +0.0002 → met. V-skip rate 0.384.
+- **H23 at `screen`, one seed: not supported** on its defining clause. The clause has a threshold and no band in ADR-068, so it is recorded as not met. The 8 k cap clause stays owed and is not worth running on this result.
+- **Gates** (from the checkpoints): every $g_h$ is 0.38–0.60 in both arms. Neither shut the global branch, so `188`'s +0.0277 against one softmax is an always-on branch at about half weight, not a closed one.
+- **Loss by position.** `188` − `162`: +0.014 / +0.031 / +0.033 over 0–512 / 512–1 k / 1–2 k. `189` − `188`: +0.013 / +0.016 / +0.015 (flat). **Copy probe:** no arm copies (−0.646, −0.641; `162` −0.661).
+- **The user's call.** ADR-068 §4 names "`189` within $T$" as the condition for a `small` pair by its own ADR. The letter is met; I recommend against it: the sparsity clause fails and both two-branch arms are 9σ and 14σ above L5d. A ReLU² arm with a learned threshold or a sparsity term would be a new feature under a new ADR. Nothing is queued.
+- **Run health.** 12.40 h, 22.7 k tok/s (0.67× `188`: the ReLU² path in the reference implementation), 4.21 GiB, `n_thermal` 0 of 190, max 75 °C.
+- **Chain.** `queue_screen_20` logged QUEUE DONE 07:48. `queue_screen_21` merged `embla` (no-op, `36b7c2f`), passed its gate 07:52 and started the sizing rig `051-eqb-sizing`; then `190`–`193` and `203`. The chain is ≈ 4 h behind the 2026-11-20 estimates.
+
 ### 2026-11-21 (19:39) — **`188` L9-2b (two-branch softmax control) done: 3.3720, +0.0277 vs `162` (9.2σ worse)** → ADR-008's one softmax stands; H23 waits on `189`, which runs at 22.8 k tok/s (ETA ≈ 07:15 on 2026-11-22)
 - **Result.** `188-l9-2b-screen` ended 19:00 with exit 0: **3.3720**, +0.0277 vs `162`, +0.0125 vs `204`. Built on L5d (`rope_scope: all`) by ADR-066 §7, so ADR-068 §4's "$\Delta$(`188` − `182`)" is read against `162`, the same base with one softmax. The gap is 0.084 at step 100 and flat at ≈ 0.028 over the last quarter.
 - **ADR-008 side reading.** The two-branch gated sum does not beat one softmax; it loses by 2.3× the 4σ line. No new ADR; the two-branch form stays confined to `188`/`189`.

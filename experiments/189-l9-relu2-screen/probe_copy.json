@@ -1,0 +1,20 @@
+{
+  "id": "189-l9-relu2-screen",
+  "step": 1907,
+  "context": 2048,
+  "windows": 512,
+  "src": [
+    256,
+    320
+  ],
+  "dst": [
+    1792,
+    1856
+  ],
+  "scored_tokens": 32256,
+  "copy_loss": 3.9319936829548983,
+  "control_loss": 3.2911952313236488,
+  "gap": -0.6407984516312496,
+  "wall_s": 132.6,
+  "device": "cuda"
+}
