@@ -1,4 +1,4 @@
-# 051-eqb-sizing — rig for ADR-069 §3: EQB at $N_e$ = 128 fits (6.26 GiB) and costs 2.8 % of the step → `192`/`193` run, ≈ 18.3 h each
+# 051-eqb-sizing — rig for ADR-069 §3: EQB at $N_e$ = 128 fits (6.26 GiB) and costs 3.2 % of the step → `192`/`193` run, ≈ 18.3 h each
 
 Three 6-step DDP smokes (3.2 M tokens each) of the L5-ne128 preset under the three balancers, run
 by `queue_screen_21` on 2026-11-22 07:52–08:09 before the EQB ladder runs. 4 × RTX 3060, DDP,
