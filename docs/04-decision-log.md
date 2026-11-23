@@ -2793,6 +2793,14 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-11-23 (13:39) — `192` EQB per iteration at $N_e$ = 128: 3.2229, −0.0003 vs `112` (matches); H26 at 128 silent until `193` and the probe
+
+- **`192-eqb-iter-ne128-screen`** (ADR-069; 19:45 Nov 22 – 13:31, 17.77 h, 15.75 k tok/s = 0.953× `112`, 6.26 GiB, `n_thermal` 0 of 190): **3.2229, −0.0003 vs `112` (0.1σ)**. Behind by 0.05 at step 100, level from step 1000.
+- **H26 (ADR-069 §6, $N_e$ = 128): silent.** Clause 1 waits on `probe_routing`, clauses 2 and 3 on `193` (clause 2 would need `193` ≤ 3.1895). No `small` pair from this arm.
+- **Routing (logged iteration):** balanced much sooner than `112` (124 of 128 effective experts at step 100 against 93; last dead expert step 155 against 364), same end state; no effect on loss.
+- **As-built limit:** `eqb_err` is above ADR-069 §2's 1 % at every step (median 3.9 % after step 100, max 7.7 % after step 500; a maximum over 1024 cutoffs). Not diagnosed.
+- **Chain:** `193-eqb-step-ne128-screen` started 13:31 (≈ 17.8 h → ≈ 07:20 Nov 24), then `203` (≈ 13:10 Nov 24) and the routing probes.
+
 ### 2026-11-22 (20:39) — `191` EQB per step at $N_e$ = 8: 3.3286, −0.0042 vs `110` (matches, clause 3 met); iter − step = +0.0065 (clause 2 silent, pointing against)
 
 - **`191-eqb-step-screen`** (ADR-069; `router.balance: eqb_step`; 13:56–19:45, 5.81 h, 48.4 k tok/s, 3.88 GiB, `n_thermal` 0 of 190): **3.3286, −0.0042 vs `110` (1.4σ)**, −0.0065 vs `190`.
