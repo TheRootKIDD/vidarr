@@ -2793,6 +2793,15 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-11-24 (07:40) — `193` EQB per step at $N_e$ = 128: 3.2113, −0.0119 vs `112` (on the 4σ line; clause 3 met); iter − step = +0.0116 (clause 2 silent, pointing against)
+
+- **`193-eqb-step-ne128-screen`** (ADR-069; 13:31 Nov 23 – 07:24, 17.87 h, 15.68 k tok/s = 0.948× `112`, 6.26 GiB, `n_thermal` 0 of 190): **3.2113, −0.0119 vs `112`, −0.0116 vs `192`**; +0.0064 vs L1 (`112` was +0.0183). The lead over both is a steady 0.012 from step 700.
+- **H26 at $N_e$ = 128 (ADR-069 §6), one seed:** clause 3 **met**; clause 2 **silent, pointing against** (+0.0116 = 3.9σ against 0.0334); clause 1 waits on `probe_routing`. Same pattern as $N_e$ = 8 at twice the size.
+- **The 4σ line:** $\Delta$(`193` − `112`) = −0.01191 against 4σ = 0.0119 (4.02σ with the unrounded σ 0.00296, 3.97σ with 0.0030). Recorded as *on the line*. The `small` pair ADR-069 §6 / ADR-031 would give an arm past it (two seeds ≈ 45 h each, vs `138`/`142`) is **the user's call; nothing queued**. ADR-064 waits on H26 at `small`.
+- **Routing (logged iteration 1):** per-step EQB narrows it to 39.7 effective experts of 128 with 59 unused there (`112`: 127.7, `192`: 127.8): a strong depth partition. The probe will give the per-iteration table.
+- **Solver:** `eqb_err` median 1.0 %, above 1 % in 1218 of 1907 steps (max 1.9 % after step 500).
+- **Chain:** `203-l5-balfix-screen` started 07:24 (48.8 k tok/s, ETA ≈ 13:12), then queue 21's routing probes, then `queue_screen_22` (`194`–`196`).
+
 ### 2026-11-23 (13:39) — `192` EQB per iteration at $N_e$ = 128: 3.2229, −0.0003 vs `112` (matches); H26 at 128 silent until `193` and the probe
 
 - **`192-eqb-iter-ne128-screen`** (ADR-069; 19:45 Nov 22 – 13:31, 17.77 h, 15.75 k tok/s = 0.953× `112`, 6.26 GiB, `n_thermal` 0 of 190): **3.2229, −0.0003 vs `112` (0.1σ)**. Behind by 0.05 at step 100, level from step 1000.
