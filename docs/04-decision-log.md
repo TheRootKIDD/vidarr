@@ -1895,7 +1895,7 @@ Cost units from `docs/06 §4`: one `screen` run ≈ 8 h (1 B tokens, 1 seed); on
     - (b) read the first-sentence clause on the covered splits, whose seed spread is small, and keep the full splits as reported;
     - (c) add a seed term to every floor, estimated from the `132`/`133` spread (one pair, so itself noisy; it would put the rest-of-lead floor near 0.04);
     - (d) (b) plus (c) for the rest-of-lead split.
-- **I43** *(2026-11-18, found while building ADR-069; **answered 2026-11-18 by ADR-074**: a control run `203` decides whether it matters; the default stays as built until then)* **The aux-loss-free bias controller of the shared middle router sees only one iteration's load: iteration 1's, because activation checkpointing replays the iterations in reverse and the last replay sets `last_route`** (the first text below said iteration $r$; corrected the same day).
+- **I43** *(2026-11-18, found while building ADR-069; **answered 2026-11-18 by ADR-074**: a control run `203` decides whether it matters; the default stays as built until then; **closed 2026-11-24: `203` = 3.3315, −0.0013 vs `110` (0.4σ), immaterial by ADR-074 §3, the default stays `last_call`**)* **The aux-loss-free bias controller of the shared middle router sees only one iteration's load: iteration 1's, because activation checkpointing replays the iterations in reverse and the last replay sets `last_route`** (the first text below said iteration $r$; corrected the same day).
   - **What the code does:** the trainer collects `m.last_route.load` from every MoE after each micro-step (`scripts/train/train.py`, the load controller). The middle block's single `MoE` is called once per iteration per segment, and `last_route` keeps only the last call. So the middle router's biases are moved by the load of iteration $r$ of the last segment, not by its load over all iterations.
   - **Not ADR-004's intent:** `01 §4.4` says to balance in space and time, and per-iteration histograms are a stated diagnostic.
   - **Evidence it mattered little:** every recurrent run ends with healthy routing over all iterations (e.g. `110`: 7.99 of 8 effective experts; `112`, `138`, `142`: none dead). The auxiliary loss, summed over every call, carries the balancing of the other iterations.
@@ -2792,6 +2792,16 @@ and an ADR first, L6c likewise; the `small` programme (L0, L1, L2, L3, L5, L5d a
 the ladder's own next step and needs no new code. The choice between "more `screen` variants" and
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
+
+### 2026-11-24 (13:40) — `203` L5-balfix: 3.3315, −0.0013 vs `110` (0.4σ) → **I43 closed as immaterial**; routing probes: **H26 clause 1 met at both $N_e$**, per-step EQB is a depth partition in every iteration; `queue_screen_21` done, `queue_screen_22` running `194`
+- **`203-l5-balfix-screen`** (ADR-074; `router.bias_load: all_calls`) ended 13:05, exit 0: **3.3315**, −0.0013 vs `110` (0.4σ), ahead at every eval by a shrinking margin. 49.4 k tok/s, 5.69 h, 3.86 GiB, `n_thermal` 0 of 190. By ADR-074 §3, inside 4σ: **I43 closes as immaterial and the default stays `last_call`**; no comparison needs a new baseline.
+- **Routing probes** (`probe_routing` on GPU, 13:05–13:06; `routing.json` in `190`–`193` and `203`):
+  - **H26 clause 1 met:** per-iteration EQB holds every iteration at 0.9998–0.9999 of $\ln 8$ (`190`) and 0.9997–0.9998 of $\ln 128$ (`192`).
+  - **Per-step EQB partitions by depth in every iteration** (confirms the reading from one logged iteration): `193` uses 40–74 effective experts of 128 per iteration with 26–62 unused, pool flat at 127.9, 14 experts live at all eight depths and 50 at four or fewer, cross-iteration correlation −0.14 (`112` 0.34, `192` 0.79). `191`: 5.3–7.5 of 8 per iteration, correlation −0.14.
+  - **I43 seen in `110`:** iteration 1 is its flattest (0.9996) and later ones drift to 0.954 (one expert at 27 % in iteration 8); `203` holds all eight at ≥ 0.993.
+  - The correlation here is recomputed from `routing.json` (mean Pearson over the 28 iteration pairs); it gives `110` 0.71 where earlier entries quote 0.75.
+- **H26 at `screen`, one seed, all clauses read:** clause 1 supported, clause 2 silent and pointing against (+0.0065 at $N_e$ 8, +0.0116 at 128, against 0.0334), clause 3 supported (−0.0042, −0.0119). The L5-ne128 EQB-step `small` pair (`193` on the 4σ line) is still the user's call; ADR-064 waits on it.
+- **Chain:** `queue_screen_21` logged QUEUE DONE 13:06; `queue_screen_22` merged `embla` (no-op, `7e50b5c`), passed ruff + pytest 13:10 and started `194-l5g-fsss-screen` (31.7 k tok/s at step 100, ETA ≈ 22:00), then `195`, `196`.
 
 ### 2026-11-24 (07:40) — `193` EQB per step at $N_e$ = 128: 3.2113, −0.0119 vs `112` (on the 4σ line; clause 3 met); iter − step = +0.0116 (clause 2 silent, pointing against)
 
