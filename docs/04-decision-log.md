@@ -2793,6 +2793,12 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-11-24 (22:40) — `194` L5g `[F,S,S,S] × 2`: 3.3475, +0.0032 vs `162` (1.1σ, inside $T$) → H21's loss clause met at `screen`; `195` running
+- **`194-l5g-fsss-screen`** (ADR-070, on L5d, $K_{sel}$ = 128) ended 22:07, exit 0: **3.3475**, **+0.0032 vs `162`** (1.1σ; $T$ = 0.0334), a steady +0.003 from step 500. 31.4 k tok/s (0.926× `162`: the reference masks and does not skip), 8.95 h, 3.94 GiB, `n_thermal` 0 of 190.
+- **H21:** loss clause met with a tenfold margin; one seed inside 4σ is silent as a verdict (ADR-066 §1), leaning supports. Global keys read are 0.3125× of L5d's at position 2048 (3.2× fewer, not ≈ 4×, because $K_{sel}$ is a twelfth of $|\mathcal{G}|$ at 2 k) and 0.37× averaged over a 2 k window, by arithmetic.
+- **What follows:** `194` lands within $T$, ADR-070 §5's condition for a `small` pair by its own ADR. The user's call; nothing queued.
+- **Chain:** `195-l5g-fsssllll-screen` started 22:07 (34.0 k tok/s, ETA ≈ 06:20 on Nov 25), then `196`, then the $K_{sel}$ sweep, copy probe and per-position eval for all three.
+
 ### 2026-11-24 (13:40) — `203` L5-balfix: 3.3315, −0.0013 vs `110` (0.4σ) → **I43 closed as immaterial**; routing probes: **H26 clause 1 met at both $N_e$**, per-step EQB is a depth partition in every iteration; `queue_screen_21` done, `queue_screen_22` running `194`
 - **`203-l5-balfix-screen`** (ADR-074; `router.bias_load: all_calls`) ended 13:05, exit 0: **3.3315**, −0.0013 vs `110` (0.4σ), ahead at every eval by a shrinking margin. 49.4 k tok/s, 5.69 h, 3.86 GiB, `n_thermal` 0 of 190. By ADR-074 §3, inside 4σ: **I43 closes as immaterial and the default stays `last_call`**; no comparison needs a new baseline.
 - **Routing probes** (`probe_routing` on GPU, 13:05–13:06; `routing.json` in `190`–`193` and `203`):
