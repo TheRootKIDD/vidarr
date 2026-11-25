@@ -1684,20 +1684,8 @@ Consequences: one run ≈ 6 h. Code on `embla` (`31e0981`; test: the forward's c
 - **Consequences.** `03 §2`'s L8 row gains the probe; I44 closes when `054` is written up. ≈ 40 min of idle-rig time after the chain.
 - **Bears on:** H17 (no verdict change), I44, ADR-057, ADR-060, ADR-075.
 
-## Proposed / pending
-- **ADR-028** — Unit model revisions from the author's hardware document (`docs/07 §4`): (a) two compute classes per chip — an FF core with a large array ($s_{min,ff}$ = 256–1024) and attention cores with small arrays ($s_{min,attn}$ ≈ 64), hence $\phi_{ff}$, $\phi_{attn}$ as separate scenario inputs; (b) the tile floor is a *row* floor, $N$ = $M$ × (LHS bw / RHS bw) rows per weight tile, with each token contributing 1 + $m$ rows under $m$-token speculation — the scheduler's queues count rows; (c) the reduce leg of the local fabric carries ≥ 16-bit partial sums: `02 §2` traffic becomes $b d\, b_{act} + b d\, b_{sum}$, $b_{sum}$ ≥ 2; (d) full pipelining inside the unit doubles tokens in flight and per-token latency — the Little's-law budget $Z$ of `02 §5.5` carries the factor; (e) router-based unit fabrics are ≤ 50 % link-efficient (avg. 2 hops), torus collectives 100 %: `02 §1`'s "switch" option is not equivalent to a torus; (f) the asymmetric 4×4×4 torus all-gather costs ≈ 3X/(8B) vs ≈ X/(2B) on a flat ring (our derivation from the author's algorithm) — the number S1/S3 must reproduce; (g) the failure domain is the 4-chip ring board, and a failed rail port is bypassed through torus neighbours at ¼ load (`02 §11`); (h) the replica-rounding utilisation floor $\ell / \lceil \ell \rceil$ reported beside the Little's-law model in S4. Also fills `note64.yaml` with the sourced ratios of `docs/07 §6`; absolute $\phi$, $\beta_C$, $\lambda_C$, $\nu_C$ stay placeholders (I4). Bears on H1, H5, H8, H9, H10, H11, H16; changes `02 §1, §2, §5, §11`.
-- **ADR-024** — Parallel prefill mode for long prompts (the author's "less effective mode"): (a) all segments at once with local attention only, global cache filled afterwards from context-poor final vectors; (b) pipelined segments, segment $k+1$ at iteration $j$ attending globally to segment $k$'s iteration-$j$ caches (transient per-iteration global cache during prefill, in-flight depth up to $r$ segments). Both are inference-time modes of a sequentially trained model; E-Q12 evaluates both against sequential prefill on continuation loss and TTFT (S5). If both degrade, a mixed-mode training variant becomes a later ladder step.
-- **ADR-062** *(proposed 2026-11-18, Embla 1 follow-ups `03 §2.1`; the handoff's "ADR-026")* — **Global cache source: bridged from iteration $j_b$.** If H20 holds at `small`, $\mathcal{G}$ is built from $c^{(j_b)}$ through separate bridge projections, with default $j_b = r/2$. That supersedes "final vector" as ADR-021's default while keeping one entry per token. Results decide (L5h, S5). Touches ADR-021, ADR-024 (option b with $j_b$ is the bridged prefill mode), `01 §4.3`, `02 §6`.
-- **ADR-063** *(proposed 2026-11-18; the handoff's "ADR-027")* — **Positional encoding: RoPE in the local range only, NoPE on $\mathcal{G}$**, if H22 holds (L5d-nope). *Changed at merge:* the handoff also had this ADR "make ADR-008's two-branch combination the default". NoPE does not need two branches; only L9-relu2's ReLU² normaliser does. So that consequence moves to L9-relu2, which needs ADR-008 amended for its variant before it runs. ADR-008 (one softmax, accepted 2026-10-29) is unaffected by this ADR. Touches `01 §4.3`, `§6`.
-- **ADR-064** *(proposed 2026-11-18; the handoff's "ADR-028")* — **Router balancing: EQB per step replaces ADR-004's bias update** if H26 holds (E-router-EQB at $N_e$ = 8 and 128); EQB per iteration is recorded as rejected, with its per-iteration histogram evidence. Touches ADR-004, `01 §4.4`.
-- **ADR-065** *(proposed 2026-11-18; the handoff's "ADR-029", **restated at merge**)* — **Knowledge-memory baseline.** The handoff's rule, that L8 (product-key memory) must beat L8e (engram) at matched parameters to stay in the design, has no L8 arm left: ADR-057 closed it at `screen`, and H17's live arm is L8b-pv (retrieval from a frozen table, with no learned memory parameters to match). Restated as two tests:
-  - L8e against L5 on held-out loss and wiki-lead, by ADR-013's bands, with the table's parameters reported but not matched.
-  - L8e + L8b-pv against L8b-pv. If the engram adds nothing beside retrieval, it stays a P16 placement measurement, not a P17 mechanism.
-
-  The parameter-matched engram-vs-product-key question is recorded as unscheduled. Touches ADR-009, ADR-057, `01 §4.6`.
-
 ### ADR-077 — L5h at `small`: a two-seed $j_b$ = 1 pair decides H20's loss clause, against a new L5d-segmean `small` pair that later L5d-family pairs share
-2026-11-25 · proposed (drafted on the user's "draft the ADRs for the open small pairs")
+2026-11-25 · accepted (the user's decision: "Go with your recommendations and queue them"; drafted on "draft the ADRs for the open small pairs")
 
 Context: `184`–`187` (ADR-067). L5h at $j_b$ = 1 gives 3.3293 at `screen`, −0.0150 vs `162` (5.0σ) and −0.0154 vs the untied control `187`; $j_b$ = 2 is the same (−0.0151) and $j_b$ = 4 is smaller (−0.0088). H20's loss clause is supported at one `screen` seed. ADR-067 §5 names the smallest $j_b$ within $T$ as the candidate for a `small` pair by its own ADR, and ADR-062 (bridged $\mathcal{G}$ as the default) waits on H20 at `small`.
 - **The comparator problem.** The existing L5d `small` pair `134`/`135` (3.0896) was trained before ADR-038, with the router's auxiliary loss summed over segments (I33: 4× at 2 k). Every Embla arm runs with `segment_aux: mean`. At `screen` the difference was −0.0034 (`162` − `111`, 1.1σ). That is negligible for the old verdicts but it is the size of the effects ADR-078 has to read, and it is unmeasured at `small`.
@@ -1723,18 +1711,18 @@ Not chosen, and why:
 Consequences: `03 §1`'s `small` list gains L5d-segmean and L5h. Bears on H20, I33, ADR-062, ADR-067; next free ladder id becomes 209.
 
 ### ADR-078 — L5g at `small`: a two-seed `[F,S,S,S] × 2` pair decides H21's loss clause against the L5d-segmean pair
-2026-11-25 · proposed (drafted on the user's "draft the ADRs for the open small pairs"; `196` and the queue's $K_{sel}$ sweep were still running when this was drafted)
+2026-11-25 · accepted (the user's decision: "Go with your recommendations and queue them"; drafted on "draft the ADRs for the open small pairs"; `196` and the queue's $K_{sel}$ sweep were still running when this was drafted)
 
 Context: `194` (ADR-070). `[F,S,S,S] × 2` with $K_{sel}$ = 128 gives 3.3475 at `screen`, +0.0032 vs `162` (1.1σ) against $T$ = 0.0334, a steady +0.003 from step 500. `195` (`[F,S,S,S,L,L,L,L]`) is +0.0103. ADR-070 §5: a `small` pair by its own ADR if `194` lands within $T$. It did. The reads are 0.31× of L5d's at position 2048 by arithmetic; the reference implementation masks and saves nothing.
 Decision:
 1. **The arm:** `209-l5g-fsss-small-s0`, `210-l5g-fsss-small-s1`. `194`'s config unchanged, 2.5 B tokens, seeds 0 / 1.
-2. **Comparator:** the L5d-segmean pair `205`/`206` of ADR-077 §1. This ADR depends on that pair: the effect to be read is of I33's size, so `134`/`135` will not do. If ADR-077 is not accepted, `205`/`206` run under this ADR.
+2. **Comparator:** the L5d-segmean pair `205`/`206` of ADR-077 §1. This ADR depends on that pair: the effect to be read is of I33's size, so `134`/`135` will not do. ADR-077 was accepted with it.
 3. **Reading**, on pair means, σ = 0.0030:
    - **H21's loss clause** ($T$ = 1 % $L_{ref}$(`small`) = 0.0300): *supported* if $\Delta \le T - 2σ$ = 0.0241; *weakened* if $\Delta > T + 2σ$ = 0.0359; silent between.
    - **Reported beside it:** whether the `screen` cost (+0.003) grows with tokens; the eval-time $K_{sel}$ sweep {64, 128, 256} on both seeds; `eval_context` by bucket; the copy probe.
    - **Reads clause:** ADR-070 §2's arithmetic (3.2× fewer at 2 k, towards 4× with context). A measured saving needs an implementation that skips, which is not in this ADR.
 4. **What follows.** Supported: the schedule becomes an input to S6 (`sim/`'s attention counters already take it), and whether it enters the ladder default is a further ADR. `195`/`196`'s schedules get no `small` pair from this ADR.
-5. **Queue.** Appended to `queue_small_13.sh` after `208` (or first, with `205`/`206`, if ADR-077 is declined).
+5. **Queue.** Appended to `queue_small_13.sh` after `208`.
 6. **Cost.** ≈ 2 × 22.4 h (`194`'s 8.95 h × 2.5) ≈ 45 h; plus ≈ 41 h for the comparator if it is not already run.
 
 Not chosen: waiting for `196` and the sweep before drafting. They can change which schedule is most interesting, not whether `194` met ADR-070's condition; if the sweep shows $K_{sel}$ = 64 is free at eval time, that is reported and the trained value stays 128, the screened config.
@@ -1742,7 +1730,7 @@ Not chosen: waiting for `196` and the sweep before drafting. They can change whi
 Consequences: `03 §1`'s `small` list gains L5g. Bears on H21, ADR-070, S6; next free ladder id becomes 211.
 
 ### ADR-079 — EQB per step at `small`, $N_e$ = 128: a two-seed pair reads H26's third clause against the L5-ne128 pair; ADR-064 waits on it
-2026-11-25 · proposed (drafted on the user's "draft the ADRs for the open small pairs")
+2026-11-25 · accepted (the user's decision: "Go with your recommendations and queue them"; drafted on "draft the ADRs for the open small pairs")
 
 Context: `190`–`193`, `203` and the routing probes (ADR-069, ADR-074).
 - At $N_e$ = 128, per-step EQB gives 3.2113 at `screen`: **−0.01191 vs `112`**, which is on the 4σ line (4.02σ with the unrounded σ 0.00296; 3.97σ with 0.0030). ADR-069 §6 gives an arm past the line a `small` pair by ADR-031; on the line, it is a decision. This ADR makes it one.
@@ -1774,23 +1762,45 @@ Not chosen:
 Consequences: `03 §1`'s `small` list gains L5-ne128-eqb-step. Bears on H26, H6 (no verdict), ADR-004, ADR-064, ADR-069; next free ladder id becomes 213.
 
 ### ADR-080 — L9-relu2 at `small`: the pair ADR-068 §4's letter allows, drafted with a recommendation against running it
-2026-11-25 · proposed, **not recommended** (drafted on the user's "draft the ADRs for the open small pairs")
+2026-11-25 · **declined** (the user's decision: "Go with your recommendations and queue them", the recommendation being not to run it; H23 is closed by ADR-081)
 
 Context: `188`/`189` (ADR-068). L9-relu2 gives 3.3870 at `screen`: +0.0150 vs its two-branch softmax control `188` (5.0σ, inside $T$ = 0.0334), so ADR-068 §4's condition for a `small` pair is met by the letter. But:
 - H23's defining clause failed: 53.7 % exact zeros against 90 %, no head above 80 %.
 - The two-branch form the arm needs is itself +0.0277 worse than one softmax (`188` vs `162`, 9.2σ), so the arm starts +0.0427 behind L5d.
 - It trains at 0.67× the control's throughput.
 
-Decision (if accepted):
-1. **Runs:** `213`/`214` L9-relu2 and `215`/`216` L9-2b (its control has no `small` pair), `189`'s and `188`'s configs at 2.5 B tokens, seeds 0 / 1.
+Decision (as drafted; not taken, no ids assigned):
+1. **Runs:** an L9-relu2 pair and an L9-2b pair (its control has no `small` pair), `189`'s and `188`'s configs at 2.5 B tokens, seeds 0 / 1.
 2. **Reading**, on pair means: loss clause $\Delta$(relu2 − 2b) against $T$ = 0.0300 (*supported* ≤ 0.0241, *weakened* > 0.0359); sparsity clause ≥ 90 % zeros (`probe_relu2` on both seeds); cap clause $K$ = 128 ≤ 1 %. H23 is *supported* only if all three hold.
 3. **Cost.** ≈ 2 × 31.0 h + 2 × 20.7 h ≈ 103 h ≈ 4.3 days.
 
-**Recommendation: do not accept.** More tokens can move the loss clause; nothing suggests they move the zero fraction from 54 % to 90 % with no sparsity pressure, and that clause is what H23 claims. The alternative is a short closing ADR on the precedent of ADR-044/046/048: H23 closes at `screen` as *not supported* (sparsity clause not met; loss clause silent; cap clause met), ADR-008's one softmax stands, and a ReLU² arm with a learned threshold or a sparsity term is recorded as a different feature needing its own ADR. I will draft that on the user's word.
+**Recommendation: do not accept.** More tokens can move the loss clause; nothing suggests they move the zero fraction from 54 % to 90 % with no sparsity pressure, and that clause is what H23 claims. The alternative is a short closing ADR on the precedent of ADR-044/046/048: H23 closes at `screen` as *not supported* (sparsity clause not met; loss clause silent; cap clause met), ADR-008's one softmax stands, and a ReLU² arm with a learned threshold or a sparsity term is recorded as a different feature needing its own ADR. That is ADR-081.
 
 Consequences if accepted: `03 §1`'s `small` list gains L9-relu2 and L9-2b. Bears on H23, H15b, ADR-008, ADR-068.
 
-**Programme if ADR-077–079 are accepted** (in queue order): `205`/`206` (41 h), `207`/`208` (42 h), `209`/`210` (45 h), `211`/`212` (89 h): ≈ 217 h ≈ 9.1 days after `queue_screen_26`. The ladder ids above are provisional until acceptance; the next free id stays 205 until then. H22's next step (second seed of `204`, an 8 k NoPE arm, or dropping it) is not a `small` pair and is not drafted here.
+### ADR-081 — H23 closes at `screen` as not supported; no L9-relu2 `small` pair; ADR-008's one softmax stands
+2026-11-25 · accepted (the user's decision: "Go with your recommendations and queue them"; ADR-080's recommendation)
+Context: `188`/`189` (ADR-068). L9-relu2 reaches 53.7 % exact zeros against H23's 90 % (no head above 80 %), costs +0.0150 against its two-branch control (5.0σ, inside $T$: silent), and caps cheaply ($K$ = 128: +0.0008). The two-branch form is +0.0277 worse than one softmax (9.2σ). ADR-068 §4's letter allowed a `small` pair; ADR-080 drafted it (≈ 103 h) and recommended against. Precedents for closing at `screen` by ADR on the user's decision: ADR-044 (H13), ADR-046 (H7), ADR-048 (H4).
+Decision:
+1. **H23 is recorded as *not supported at `screen`*, one seed:** sparsity clause not met, loss clause silent, cap clause met at 2 k. It is quoted with all three.
+2. **No `small` pair** for L9-relu2 or L9-2b, and the 8 k cap clause is dropped with them.
+3. **ADR-008 stands:** one softmax over [$\mathcal{G}$ | local]. The two-branch amendment of ADR-068 applied to `188`/`189` only and lapses.
+4. **Not closed:** a ReLU² arm with a learned threshold or a sparsity term is a different feature (ADR-068 §2 excluded both) and needs its own ADR. L9 proper (the `01 §6.2` indexer) is unaffected; `189`'s cap result (128 keys carry the global branch) is recorded as evidence for a hard top-$K$ read, for that arm only.
+5. `model/`'s `global_combine: two_branch` and `global_scoring: relu2` knobs stay, default off.
+
+Consequences: `03`'s H23 and L9-relu2 rows take the verdict; no GPU time. Bears on H23, H15b, ADR-008, ADR-068, ADR-080.
+
+## Proposed / pending
+- **ADR-028** — Unit model revisions from the author's hardware document (`docs/07 §4`): (a) two compute classes per chip — an FF core with a large array ($s_{min,ff}$ = 256–1024) and attention cores with small arrays ($s_{min,attn}$ ≈ 64), hence $\phi_{ff}$, $\phi_{attn}$ as separate scenario inputs; (b) the tile floor is a *row* floor, $N$ = $M$ × (LHS bw / RHS bw) rows per weight tile, with each token contributing 1 + $m$ rows under $m$-token speculation — the scheduler's queues count rows; (c) the reduce leg of the local fabric carries ≥ 16-bit partial sums: `02 §2` traffic becomes $b d\, b_{act} + b d\, b_{sum}$, $b_{sum}$ ≥ 2; (d) full pipelining inside the unit doubles tokens in flight and per-token latency — the Little's-law budget $Z$ of `02 §5.5` carries the factor; (e) router-based unit fabrics are ≤ 50 % link-efficient (avg. 2 hops), torus collectives 100 %: `02 §1`'s "switch" option is not equivalent to a torus; (f) the asymmetric 4×4×4 torus all-gather costs ≈ 3X/(8B) vs ≈ X/(2B) on a flat ring (our derivation from the author's algorithm) — the number S1/S3 must reproduce; (g) the failure domain is the 4-chip ring board, and a failed rail port is bypassed through torus neighbours at ¼ load (`02 §11`); (h) the replica-rounding utilisation floor $\ell / \lceil \ell \rceil$ reported beside the Little's-law model in S4. Also fills `note64.yaml` with the sourced ratios of `docs/07 §6`; absolute $\phi$, $\beta_C$, $\lambda_C$, $\nu_C$ stay placeholders (I4). Bears on H1, H5, H8, H9, H10, H11, H16; changes `02 §1, §2, §5, §11`.
+- **ADR-024** — Parallel prefill mode for long prompts (the author's "less effective mode"): (a) all segments at once with local attention only, global cache filled afterwards from context-poor final vectors; (b) pipelined segments, segment $k+1$ at iteration $j$ attending globally to segment $k$'s iteration-$j$ caches (transient per-iteration global cache during prefill, in-flight depth up to $r$ segments). Both are inference-time modes of a sequentially trained model; E-Q12 evaluates both against sequential prefill on continuation loss and TTFT (S5). If both degrade, a mixed-mode training variant becomes a later ladder step.
+- **ADR-062** *(proposed 2026-11-18, Embla 1 follow-ups `03 §2.1`; the handoff's "ADR-026")* — **Global cache source: bridged from iteration $j_b$.** If H20 holds at `small`, $\mathcal{G}$ is built from $c^{(j_b)}$ through separate bridge projections, with default $j_b = r/2$. That supersedes "final vector" as ADR-021's default while keeping one entry per token. Results decide (L5h, S5). Touches ADR-021, ADR-024 (option b with $j_b$ is the bridged prefill mode), `01 §4.3`, `02 §6`.
+- **ADR-063** *(proposed 2026-11-18; the handoff's "ADR-027")* — **Positional encoding: RoPE in the local range only, NoPE on $\mathcal{G}$**, if H22 holds (L5d-nope). *Changed at merge:* the handoff also had this ADR "make ADR-008's two-branch combination the default". NoPE does not need two branches; only L9-relu2's ReLU² normaliser does. So that consequence moves to L9-relu2, which needs ADR-008 amended for its variant before it runs. ADR-008 (one softmax, accepted 2026-10-29) is unaffected by this ADR. Touches `01 §4.3`, `§6`.
+- **ADR-064** *(proposed 2026-11-18; the handoff's "ADR-028")* — **Router balancing: EQB per step replaces ADR-004's bias update** if H26 holds (E-router-EQB at $N_e$ = 8 and 128); EQB per iteration is recorded as rejected, with its per-iteration histogram evidence. Touches ADR-004, `01 §4.4`.
+- **ADR-065** *(proposed 2026-11-18; the handoff's "ADR-029", **restated at merge**)* — **Knowledge-memory baseline.** The handoff's rule, that L8 (product-key memory) must beat L8e (engram) at matched parameters to stay in the design, has no L8 arm left: ADR-057 closed it at `screen`, and H17's live arm is L8b-pv (retrieval from a frozen table, with no learned memory parameters to match). Restated as two tests:
+  - L8e against L5 on held-out loss and wiki-lead, by ADR-013's bands, with the table's parameters reported but not matched.
+  - L8e + L8b-pv against L8b-pv. If the engram adds nothing beside retrieval, it stays a P16 placement measurement, not a P17 mechanism.
+
+  The parameter-matched engram-vs-product-key question is recorded as unscheduled. Touches ADR-009, ADR-057, `01 §4.6`.
 
 ## Open questions
 
@@ -2888,6 +2898,13 @@ and an ADR first, L6c likewise; the `small` programme (L0, L1, L2, L3, L5, L5d a
 the ladder's own next step and needs no new code. The choice between "more `screen` variants" and
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
+
+### 2026-11-25 (08:19) — ADR-077/078/079 accepted and queued as `queue_small_13`; ADR-080 declined; ADR-081 closes H23 at `screen`
+- The user: "Go with your recommendations and queue them".
+- **Accepted:** ADR-077 (L5d-segmean comparator pair `205`/`206`, L5h $j_b$ = 1 pair `207`/`208`, H20), ADR-078 (L5g `[F,S,S,S] × 2` pair `209`/`210`, H21), ADR-079 (EQB-per-step $N_e$ = 128 pair `211`/`212`, H26 clause 3). Moved to §Accepted. Next free ladder id 213.
+- **Declined:** ADR-080 (L9-relu2 pair). **ADR-081 accepted:** H23 not supported at `screen`, no `small` pair, ADR-008 stands.
+- **Queued:** `/mnt/nvme/queue_small_13.sh`, armed behind `queue_screen_26` (log `/mnt/nvme/queue_small_13.log`, probes in `/mnt/nvme/post_queue_small13/`). No merge; gate ruff + pytest; `205`–`210`, then copy / context / $K_{sel}$ probes, then `211`/`212` and their routing probes. ≈ 217 h ≈ 9.1 days from about Fri 27 Nov morning, so the end is about Sun 6 Dec.
+- Still open with the user: H22's next step.
 
 ### 2026-11-25 (08:06) — ADR-077–080 drafted (proposed): the four open `small` pairs
 - On the user's "draft the ADRs for the open small pairs". All four are in §Proposed / pending; nothing is queued and no id is taken until acceptance.
