@@ -1,0 +1,12 @@
+# Rig 052 (ADR-071 §4): sizing of L8e (host-resident engram table) against L5 before run 197. Bears on H24 (no verdict: a gate).
+# Two 6-step DDP smokes (3.2e6 tokens each), 4 x RTX 3060, micro-batch 4, seed 0, started by
+# /mnt/nvme/queue_screen_23.sh on 2026-11-25 15:58-16:03, code at the queue's gate commit d5ac422.
+# Gate in the queue: L8e's median step_s (steps 2-6) <= 1.25 x L5's, and peak <= 10 GiB per GPU.
+commands:
+  - python -m scripts.train.train --rung L5 --id 052-l8e-sizing/L5 --tokens 3.2e6 --micro-batch 4 --seed 0 --eval-every 1000
+  - python -m scripts.train.train --rung L8e --id 052-l8e-sizing/L8e --tokens 3.2e6 --micro-batch 4 --seed 0 --eval-every 1000
+arms:
+  L5: {}
+  L8e: {memory.engram.enabled: true, memory.engram.rows: 2097152, memory.engram.ngrams: [2, 3], memory.engram.placement: host}
+outputs: each arm's directory holds config.yaml, log.jsonl, summary.json and the trainer's results.md
+log: /mnt/nvme/queue_screen_23.log (lines "rig 052: ..." and "ABORT: L8e over ADR-071 §4's gate")

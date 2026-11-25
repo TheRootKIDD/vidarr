@@ -2035,6 +2035,15 @@ Cost units from `docs/06 §4`: one `screen` run ≈ 8 h (1 B tokens, 1 seed); on
     - (c) a second `medium` seed (≈ 5 d), which cannot move the rest-of-lead clause (−0.004 against 0.012).
   - **Recommendation:** (a) now, with (b) as the candidate if H17 is reopened. (c) costs the most and cannot change the verdict.
 
+- **I45** *(2026-11-25, rig `052`; **open, the user's call**)* **L8e's host-resident table fails ADR-071 §4's step-time gate: 1.60× L5's step against 1.25×.** L5 10.87 s, L8e 17.42 s per step (medians of steps 2–6); peak 4.62 GiB (passes). Of the 6.55 s, the one-process lazy sparse Adam takes 4.05 s and the scatter 0.92 s; ≈ 547 k rows (26 % of the table) are touched per step. `queue_screen_23` aborted as written; `197-l8e-screen` has not run. H24 is untouched (silent).
+  - **Options (each by ADR; ADR-071 §4: "not switched silently"):**
+    - (a) run `197` host-placed as built and waive the gate for this run: 9.2 h in place of 5.8 h. H24 is a loss claim at matched tokens and FLOPs, so the overhead costs wall-clock and is reported, and the table tested is the 2²¹ × $d$ one H24 names;
+    - (b) the fallback on record: a GPU-placed table of 2¹⁸ rows (≈ 3.2 GB of states per GPU). No host overhead, but 8× fewer rows: more collisions and a different test of H24; code change and a new rig;
+    - (c) make the host update cheaper (parallel updater, or Adam on the GPU for the touched rows), then rig `052` again; code change, same hypothesis;
+    - (d) drop L8e; H24 closes untested, and ADR-065's baseline rule loses its first arm.
+  - **Recommendation:** (a). The gate guarded against a run too slow to be worth its place; at `screen` the price is 3.5 h once, and it tests H24 as specified. If `197` then beats `110` by > 4σ and a `small` pair follows, do (c) before the pair. Where `197` goes (before or after `queue_small_13`) is part of the same call.
+  - **State of the chain:** `queue_screen_24` was released by hand at 16:43 (an annotated `QUEUE DONE` line in `queue_screen_23.log`; it does not depend on `197`), so `198`, the QAT runs, rig `054` and `queue_small_13` proceed. `197`'s wiki-lead evals and compare did not run.
+
 
 ## Session log
 
@@ -2915,6 +2924,13 @@ and an ADR first, L6c likewise; the `small` programme (L0, L1, L2, L3, L5, L5d a
 the ladder's own next step and needs no new code. The choice between "more `screen` variants" and
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
+
+### 2026-11-25 (16:50) — rig `052` failed ADR-071 §4's gate (L8e 1.60× L5's step); `queue_screen_23` aborted before `197`; I45 opened; `queue_screen_24` released
+- **`queue_screen_23`** merged (no-op), gated 15:58 on `d5ac422` (ruff + unit tests pass) and ran rig **`052-l8e-sizing`**: L5 10.87 s/step, **L8e 17.42 s/step (1.603×; gate 1.25×)**, L8e peak 4.62 GiB (gate 10 GiB: passed). At 16:03 it logged `ABORT: L8e over ADR-071 §4's gate` and exited, as written. **`197-l8e-screen` did not run.** Nothing crashed; no thermal or memory issue.
+- **Diagnosis:** the overhead is the table's optimiser on the host: 4.05 s for the lazy sparse Adam (one CPU process, ≈ 547 k rows of 768 per step), 0.92 s scatter, 1.58 s gathers and the rest. Gather time and peak host RAM have no logger (ADR-071 §4 asked for them; recorded as not measured).
+- **I45 opened** with four options (waive the gate for `197` / GPU table of 2¹⁸ rows / faster host update / drop) and a recommendation for the first. It needs an ADR; nothing is relaunched.
+- **Chain:** every later queue waits for its predecessor's `QUEUE DONE` line, so the abort left the rig idle from 16:04. `queue_screen_24` (`198` L5f, ADR-072) does not depend on `197`, needs no code change and no ADR, and the standing instruction is to keep the experiments running; at 16:43 the loop appended a NOTE line and a `QUEUE DONE` line to `queue_screen_23.log` to release it. The ABORT line stays above them. `198` then `199`–`202`, rig `054`, `queue_small_13` proceed.
+- **H24:** silent (no run).
 
 ### 2026-11-25 (16:00) — `196` L5g `[F,S×7]` done: 3.3531, +0.0088 vs `162`; `queue_screen_22` done with its probes; H21 unchanged
 - **`196-l5g-fs7-screen`** (ADR-070) ended 15:20, exit 0: **3.3531**, +0.0088 vs `162` (3.0σ, inside 4σ and inside $T$ = 0.0334), +0.0056 vs `194` (1.9σ), −0.0015 vs `195` (0.5σ). Reads 0.20× of L5d's at position 2048 (0.26× window mean). 31.5 k tok/s (0.929× `162`), 8.92 h, 3.91 GiB, `n_thermal` 0 of 190.
