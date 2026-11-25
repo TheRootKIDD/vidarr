@@ -2925,6 +2925,14 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-11-25 (23:50) — `198` L5f done: 3.3148, −0.0180 vs `110` (6.0σ, beats L5), 14 % of the L5–L1 gap → H25 silent at `screen`; `queue_screen_24` done, `queue_screen_25` running `199`
+- **`198-l5f-screen`** (ADR-072, on L5) ended 23:14, exit 0: **3.3148**, **−0.0180 vs `110`** (6.0σ), +0.1100 vs `106`: it closes 14.1 % of the 0.1280 gap, against H25's 25 % (−0.0320). 43.5 k tok/s (0.895× `110`), 6.46 h, 5.66 GiB (+1.80), `n_thermal` 0 of 190.
+- **H25:** by ADR-072 §4, beats L5 but short of 25 % → **silent at `screen`**, one seed. It starts 0.35 behind at step 100, crosses `110` at step ≈ 1000 and the lead is still growing at the end.
+- **What follows:** ADR-072 §4 gives an arm beating L5 by > 4σ a `small` pair (ADR-031). As for the other Embla arms it needs its own ADR: the user's call, nothing queued (≈ 16.2 h per seed at this rate; comparator the L5 pair `132`/`133`).
+- **`probe_mix`** (256 windows): each iteration reads mostly the update just before it (0.83 falling to 0.55 with depth), 0.13–0.17 from the one before, 6–17 % from the block's input; the final blocks' mix is near flat (0.08–0.21 over the input and all eight updates).
+- **`queue_screen_24`** logged QUEUE DONE 23:14. **`queue_screen_25`** (ADR-073, H3) merged (no-op), gated 23:18 on `d4d0dfd`, ran the post-training quant probes on `100` and `110` (23:18–23:31; `probe_quant.json`, written up with `199`–`202`) and started `199-l0-qat-late-screen` at 23:31 (71.9 k tok/s, ETA ≈ 03:25).
+- **Open with the user:** I45 (`197` L8e) and now the L5f `small` pair.
+
 ### 2026-11-25 (16:50) — rig `052` failed ADR-071 §4's gate (L8e 1.60× L5's step); `queue_screen_23` aborted before `197`; I45 opened; `queue_screen_24` released
 - **`queue_screen_23`** merged (no-op), gated 15:58 on `d5ac422` (ruff + unit tests pass) and ran rig **`052-l8e-sizing`**: L5 10.87 s/step, **L8e 17.42 s/step (1.603×; gate 1.25×)**, L8e peak 4.62 GiB (gate 10 GiB: passed). At 16:03 it logged `ABORT: L8e over ADR-071 §4's gate` and exited, as written. **`197-l8e-screen` did not run.** Nothing crashed; no thermal or memory issue.
 - **Diagnosis:** the overhead is the table's optimiser on the host: 4.05 s for the lazy sparse Adam (one CPU process, ≈ 547 k rows of 768 per step), 0.92 s scatter, 1.58 s gathers and the rest. Gather time and peak host RAM have no logger (ADR-071 §4 asked for them; recorded as not measured).
