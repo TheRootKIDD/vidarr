@@ -1790,11 +1790,28 @@ Decision:
 
 Consequences: `03`'s H23 and L9-relu2 rows take the verdict; no GPU time. Bears on H23, H15b, ADR-008, ADR-068, ADR-080.
 
+### ADR-082 — H22 closes at `screen` as weakened; ADR-063 (NoPE on $\mathcal{G}$ as the default) is withdrawn; an 8 k-trained NoPE arm is recorded as unscheduled
+2026-11-25 · accepted (the user's decision: "Agreed, write the closing ADR and push it", on the recommendation to drop)
+Context: `204`, `183` and rig `050` (ADR-066).
+- **First clause** ("within noise of RoPE on both ranges"): `204` (RoPE local, NoPE on $\mathcal{G}$) = 3.3595, +0.0152 vs `162` (5.1σ): *weakened* at `screen` by ADR-066 §7. +0.0140 of the cost is already present at positions 0–512, where there is no global range, so it is a whole-model cost. `183` (no RoPE on either range) is +0.1448, the reference point.
+- **Second clause** (ANN recall@$K$ higher over NoPE keys, > 2 SE at both lengths): +0.072 at 2 k (58 SE), +0.002 at 8 k (0.6 SE): not met as written.
+- The `local` path runs at 0.84× of L5d's throughput in the reference implementation. No arm passes the copy probe.
+- The options were a second `screen` seed of `204` (≈ 10 h), an 8 k-trained NoPE arm, or dropping. Precedents for closing at `screen` by ADR on the user's decision: ADR-044, ADR-046, ADR-048, ADR-081.
+
+Decision:
+1. **H22 is recorded as *weakened at `screen`*, one seed:** first clause weakened; second clause met at the trained length only. It is quoted with both.
+2. **No second seed and no `small` pair** for L5d-nope. A 5σ cost at one seed is not a result a second `screen` seed is likely to reverse, and `screen` stays provisional either way.
+3. **ADR-063 is withdrawn.** The ladder keeps `rope_scope: all` (RoPE on both ranges). L5h, L5g and the `small` pairs of ADR-077/078 are built on it and are unaffected.
+4. **Recorded as unscheduled, not closed: an 8 k-trained NoPE arm.** Rig `050`'s 8 k end used models trained at 2 k, which fail beyond their training context whatever the positional encoding (`docs/04 §Session log` 2026-10-10), so NoPE's length-extrapolation case was not fairly tested. If ADR-077 supports H20 and its 8 k runs are drafted, a NoPE arm against the same 8 k comparator may be added by that ADR. Until then nothing is owed.
+5. The `rope_scope: local` and `none` knobs stay in `model/`, default `all`.
+
+Consequences: `03`'s H22 and L5d-nope rows take the verdict; ADR-063 leaves §Proposed; no GPU time. Bears on H22, Q9, ADR-063, ADR-066.
+
 ## Proposed / pending
 - **ADR-028** — Unit model revisions from the author's hardware document (`docs/07 §4`): (a) two compute classes per chip — an FF core with a large array ($s_{min,ff}$ = 256–1024) and attention cores with small arrays ($s_{min,attn}$ ≈ 64), hence $\phi_{ff}$, $\phi_{attn}$ as separate scenario inputs; (b) the tile floor is a *row* floor, $N$ = $M$ × (LHS bw / RHS bw) rows per weight tile, with each token contributing 1 + $m$ rows under $m$-token speculation — the scheduler's queues count rows; (c) the reduce leg of the local fabric carries ≥ 16-bit partial sums: `02 §2` traffic becomes $b d\, b_{act} + b d\, b_{sum}$, $b_{sum}$ ≥ 2; (d) full pipelining inside the unit doubles tokens in flight and per-token latency — the Little's-law budget $Z$ of `02 §5.5` carries the factor; (e) router-based unit fabrics are ≤ 50 % link-efficient (avg. 2 hops), torus collectives 100 %: `02 §1`'s "switch" option is not equivalent to a torus; (f) the asymmetric 4×4×4 torus all-gather costs ≈ 3X/(8B) vs ≈ X/(2B) on a flat ring (our derivation from the author's algorithm) — the number S1/S3 must reproduce; (g) the failure domain is the 4-chip ring board, and a failed rail port is bypassed through torus neighbours at ¼ load (`02 §11`); (h) the replica-rounding utilisation floor $\ell / \lceil \ell \rceil$ reported beside the Little's-law model in S4. Also fills `note64.yaml` with the sourced ratios of `docs/07 §6`; absolute $\phi$, $\beta_C$, $\lambda_C$, $\nu_C$ stay placeholders (I4). Bears on H1, H5, H8, H9, H10, H11, H16; changes `02 §1, §2, §5, §11`.
 - **ADR-024** — Parallel prefill mode for long prompts (the author's "less effective mode"): (a) all segments at once with local attention only, global cache filled afterwards from context-poor final vectors; (b) pipelined segments, segment $k+1$ at iteration $j$ attending globally to segment $k$'s iteration-$j$ caches (transient per-iteration global cache during prefill, in-flight depth up to $r$ segments). Both are inference-time modes of a sequentially trained model; E-Q12 evaluates both against sequential prefill on continuation loss and TTFT (S5). If both degrade, a mixed-mode training variant becomes a later ladder step.
 - **ADR-062** *(proposed 2026-11-18, Embla 1 follow-ups `03 §2.1`; the handoff's "ADR-026")* — **Global cache source: bridged from iteration $j_b$.** If H20 holds at `small`, $\mathcal{G}$ is built from $c^{(j_b)}$ through separate bridge projections, with default $j_b = r/2$. That supersedes "final vector" as ADR-021's default while keeping one entry per token. Results decide (L5h, S5). Touches ADR-021, ADR-024 (option b with $j_b$ is the bridged prefill mode), `01 §4.3`, `02 §6`.
-- **ADR-063** *(proposed 2026-11-18; the handoff's "ADR-027")* — **Positional encoding: RoPE in the local range only, NoPE on $\mathcal{G}$**, if H22 holds (L5d-nope). *Changed at merge:* the handoff also had this ADR "make ADR-008's two-branch combination the default". NoPE does not need two branches; only L9-relu2's ReLU² normaliser does. So that consequence moves to L9-relu2, which needs ADR-008 amended for its variant before it runs. ADR-008 (one softmax, accepted 2026-10-29) is unaffected by this ADR. Touches `01 §4.3`, `§6`.
+- ~~**ADR-063**~~ *(proposed 2026-11-18; **withdrawn 2026-11-25 by ADR-082**: H22 weakened at `screen`)* — **Positional encoding: RoPE in the local range only, NoPE on $\mathcal{G}$**, if H22 holds (L5d-nope). *Changed at merge:* the handoff also had this ADR "make ADR-008's two-branch combination the default". NoPE does not need two branches; only L9-relu2's ReLU² normaliser does. So that consequence moves to L9-relu2, which needs ADR-008 amended for its variant before it runs. ADR-008 (one softmax, accepted 2026-10-29) is unaffected by this ADR. Touches `01 §4.3`, `§6`.
 - **ADR-064** *(proposed 2026-11-18; the handoff's "ADR-028")* — **Router balancing: EQB per step replaces ADR-004's bias update** if H26 holds (E-router-EQB at $N_e$ = 8 and 128); EQB per iteration is recorded as rejected, with its per-iteration histogram evidence. Touches ADR-004, `01 §4.4`.
 - **ADR-065** *(proposed 2026-11-18; the handoff's "ADR-029", **restated at merge**)* — **Knowledge-memory baseline.** The handoff's rule, that L8 (product-key memory) must beat L8e (engram) at matched parameters to stay in the design, has no L8 arm left: ADR-057 closed it at `screen`, and H17's live arm is L8b-pv (retrieval from a frozen table, with no learned memory parameters to match). Restated as two tests:
   - L8e against L5 on held-out loss and wiki-lead, by ADR-013's bands, with the table's parameters reported but not matched.
@@ -2898,6 +2915,12 @@ and an ADR first, L6c likewise; the `small` programme (L0, L1, L2, L3, L5, L5d a
 the ladder's own next step and needs no new code. The choice between "more `screen` variants" and
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
+
+### 2026-11-25 (08:38) — ADR-082 accepted: H22 closes at `screen` as weakened; ADR-063 withdrawn
+- The user asked for a recommendation on H22; it was to drop, and the user agreed ("Agreed, write the closing ADR and push it").
+- **ADR-082:** H22 *weakened at `screen`* (`204` +0.0152 vs `162`, 5.1σ, with +0.0140 at positions 0–512; recall gain at 2 k only). No second seed, no `small` pair. ADR-063 withdrawn; the ladder keeps RoPE on both ranges.
+- **Left unscheduled, not closed:** an 8 k-trained NoPE arm, to be considered with H20's 8 k runs if ADR-077 supports H20.
+- No decision is open with the user now. `196` is running; `queue_small_13` is armed behind `queue_screen_26`.
 
 ### 2026-11-25 (08:19) — ADR-077/078/079 accepted and queued as `queue_small_13`; ADR-080 declined; ADR-081 closes H23 at `screen`
 - The user: "Go with your recommendations and queue them".
