@@ -1696,6 +1696,102 @@ Consequences: one run ≈ 6 h. Code on `embla` (`31e0981`; test: the forward's c
 
   The parameter-matched engram-vs-product-key question is recorded as unscheduled. Touches ADR-009, ADR-057, `01 §4.6`.
 
+### ADR-077 — L5h at `small`: a two-seed $j_b$ = 1 pair decides H20's loss clause, against a new L5d-segmean `small` pair that later L5d-family pairs share
+2026-11-25 · proposed (drafted on the user's "draft the ADRs for the open small pairs")
+
+Context: `184`–`187` (ADR-067). L5h at $j_b$ = 1 gives 3.3293 at `screen`, −0.0150 vs `162` (5.0σ) and −0.0154 vs the untied control `187`; $j_b$ = 2 is the same (−0.0151) and $j_b$ = 4 is smaller (−0.0088). H20's loss clause is supported at one `screen` seed. ADR-067 §5 names the smallest $j_b$ within $T$ as the candidate for a `small` pair by its own ADR, and ADR-062 (bridged $\mathcal{G}$ as the default) waits on H20 at `small`.
+- **The comparator problem.** The existing L5d `small` pair `134`/`135` (3.0896) was trained before ADR-038, with the router's auxiliary loss summed over segments (I33: 4× at 2 k). Every Embla arm runs with `segment_aux: mean`. At `screen` the difference was −0.0034 (`162` − `111`, 1.1σ). That is negligible for the old verdicts but it is the size of the effects ADR-078 has to read, and it is unmeasured at `small`.
+
+Decision:
+1. **A new comparator pair:** `205-l5d-segmean-small-s0`, `206-l5d-segmean-small-s1`. `162`'s config at 2.5 B tokens, micro-batch 4, seeds 0 / 1. It is the comparator for this ADR and for ADR-078, and for any later L5d-family `small` pair. $\Delta$(this pair − `134`/`135`) is reported as I33's size at `small`; the old pair's verdicts are not rewritten.
+2. **The arm:** `207-l5h-jb1-small-s0`, `208-l5h-jb1-small-s1`. `184`'s config unchanged ($j_b$ = 1, bridge projections, `rope_scope: all`), 2.5 B tokens, seeds 0 / 1. `184` is the finished `screen` of this config.
+3. **Reading**, on pair means, σ = 0.0030 (twelve `small` pairs), $L_{ref}$(`small`) = 2.9958:
+   - **H20's loss clause** ($T$ = 2 % $L_{ref}$ = 0.0599 on $\Delta$ = L5h pair − L5d-segmean pair): *supported* if $\Delta \le T - 2σ$ = 0.0540; *weakened* if $\Delta > T + 2σ$ = 0.0658; silent between.
+   - **Improvement** (what `screen` showed): $\Delta < -4σ$ = −0.0119 is recorded as "beats L5d at two seeds". $-4σ \le \Delta < 0$ is recorded as "no worse", and the `screen` gain as a 1 B-token effect if it has shrunk (as L5's tie with dense did).
+   - **Prefill clause:** ADR-067 §3's arithmetic, 0.34× at 2 k. Not measured; TTFT is S5's.
+   - **Evals** per ADR-066 §2 on all four runs (`eval_context` by position bucket, copy probe).
+4. **What follows.**
+   - Supported: ADR-062 is put to the user with $j_b$ = 1 as measured (its text says $r/2$; the `screen` sweep found 1 and 2 equal and 4 worse). H20's 8 k end (trained-8 k runs, ≈ 24 h each, ADR-037's shape) needs a further ADR.
+   - Weakened or silent: L5h closes at `small`; ADR-062 is withdrawn or left proposed by the user's decision.
+5. **Queue.** `queue_small_13.sh` behind `queue_screen_26`: gate (ruff + pytest), `205`, `206`, `207`, `208`, then the evals on GPU. No code change; no CPU probes beside the runs.
+6. **Cost.** Comparator ≈ 2 × 20.7 h (`134`: 20.76 h); arm ≈ 2 × 20.9 h (`184`'s 8.34 h × 2.5). ≈ 83 h ≈ 3.5 days. Each run is under one node-day. Checkpoints ≈ 0.9 GB each; 3.2 TB free.
+
+Not chosen, and why:
+- **Reusing `134`/`135`:** saves 41 h. It leaves a known code difference inside every L5d-family comparison at `small`, of a size that cannot be bounded without running this pair. Acceptable for L5h alone (its `screen` effect is 4× I33's); not for ADR-078.
+- **$j_b$ = 2 or the untied control at `small`:** the `screen` sweep already attributes the gain; the control would cost another 42 h to re-measure a null.
+
+Consequences: `03 §1`'s `small` list gains L5d-segmean and L5h. Bears on H20, I33, ADR-062, ADR-067; next free ladder id becomes 209.
+
+### ADR-078 — L5g at `small`: a two-seed `[F,S,S,S] × 2` pair decides H21's loss clause against the L5d-segmean pair
+2026-11-25 · proposed (drafted on the user's "draft the ADRs for the open small pairs"; `196` and the queue's $K_{sel}$ sweep were still running when this was drafted)
+
+Context: `194` (ADR-070). `[F,S,S,S] × 2` with $K_{sel}$ = 128 gives 3.3475 at `screen`, +0.0032 vs `162` (1.1σ) against $T$ = 0.0334, a steady +0.003 from step 500. `195` (`[F,S,S,S,L,L,L,L]`) is +0.0103. ADR-070 §5: a `small` pair by its own ADR if `194` lands within $T$. It did. The reads are 0.31× of L5d's at position 2048 by arithmetic; the reference implementation masks and saves nothing.
+Decision:
+1. **The arm:** `209-l5g-fsss-small-s0`, `210-l5g-fsss-small-s1`. `194`'s config unchanged, 2.5 B tokens, seeds 0 / 1.
+2. **Comparator:** the L5d-segmean pair `205`/`206` of ADR-077 §1. This ADR depends on that pair: the effect to be read is of I33's size, so `134`/`135` will not do. If ADR-077 is not accepted, `205`/`206` run under this ADR.
+3. **Reading**, on pair means, σ = 0.0030:
+   - **H21's loss clause** ($T$ = 1 % $L_{ref}$(`small`) = 0.0300): *supported* if $\Delta \le T - 2σ$ = 0.0241; *weakened* if $\Delta > T + 2σ$ = 0.0359; silent between.
+   - **Reported beside it:** whether the `screen` cost (+0.003) grows with tokens; the eval-time $K_{sel}$ sweep {64, 128, 256} on both seeds; `eval_context` by bucket; the copy probe.
+   - **Reads clause:** ADR-070 §2's arithmetic (3.2× fewer at 2 k, towards 4× with context). A measured saving needs an implementation that skips, which is not in this ADR.
+4. **What follows.** Supported: the schedule becomes an input to S6 (`sim/`'s attention counters already take it), and whether it enters the ladder default is a further ADR. `195`/`196`'s schedules get no `small` pair from this ADR.
+5. **Queue.** Appended to `queue_small_13.sh` after `208` (or first, with `205`/`206`, if ADR-077 is declined).
+6. **Cost.** ≈ 2 × 22.4 h (`194`'s 8.95 h × 2.5) ≈ 45 h; plus ≈ 41 h for the comparator if it is not already run.
+
+Not chosen: waiting for `196` and the sweep before drafting. They can change which schedule is most interesting, not whether `194` met ADR-070's condition; if the sweep shows $K_{sel}$ = 64 is free at eval time, that is reported and the trained value stays 128, the screened config.
+
+Consequences: `03 §1`'s `small` list gains L5g. Bears on H21, ADR-070, S6; next free ladder id becomes 211.
+
+### ADR-079 — EQB per step at `small`, $N_e$ = 128: a two-seed pair reads H26's third clause against the L5-ne128 pair; ADR-064 waits on it
+2026-11-25 · proposed (drafted on the user's "draft the ADRs for the open small pairs")
+
+Context: `190`–`193`, `203` and the routing probes (ADR-069, ADR-074).
+- At $N_e$ = 128, per-step EQB gives 3.2113 at `screen`: **−0.01191 vs `112`**, which is on the 4σ line (4.02σ with the unrounded σ 0.00296; 3.97σ with 0.0030). ADR-069 §6 gives an arm past the line a `small` pair by ADR-031; on the line, it is a decision. This ADR makes it one.
+- The gain is steady at 0.012 from step 700. Per-step EQB turns the pool into depth specialists (40–74 effective experts of 128 per iteration, pool flat, cross-iteration correlation −0.14 against `112`'s 0.34).
+- At $N_e$ = 8 the per-step arm matched (`191`, −0.0042): no pair there.
+- Clause 2 (per-iteration balance costs ≥ 1 %) pointed against at both pool sizes (+0.0065, +0.0116).
+- The solver's share error is around its 1 % test at $N_e$ = 128 (median 1.0 %): an as-built limit.
+
+Decision:
+1. **The arm:** `211-eqb-step-ne128-small-s0`, `212-eqb-step-ne128-small-s1`. `193`'s config unchanged (`router.balance: eqb_step`, no auxiliary loss), 2.5 B tokens, seeds 0 / 1.
+2. **Comparator:** the L5-ne128 `small` pair `138`/`142` (2.9587). Its code path (ADR-004's controller with the auxiliary loss, `bias_load: last_call`) is today's default, and I43 closed as immaterial, so no new comparator is needed.
+3. **Reading**, on pair means, σ = 0.0030:
+   - **H26 clause 3:** $\Delta$ = EQB-step pair − 2.9587. *Supported* if $\Delta \le 2σ$ = 0.0059; *weakened* if $\Delta > 4σ$ = 0.0119; silent between.
+   - **Improvement:** $\Delta < -4σ$ is recorded as "beats ADR-004's balancer at two seeds".
+   - **Clause 2 is not re-tested at `small`** (no per-iteration pair: ≈ 89 h more for a clause that pointed against twice). H26 is then quoted as: clause 1 supported at `screen`; clause 2 silent, pointing against, at `screen`; clause 3 as read here.
+   - **H6, reported without a verdict:** the pair against the L1 pair (2.8839) and the L5-pm pair (2.9321). H6's *weakened* stands whatever this gives; the `screen` gain would close about a sixth of L5-ne128's 0.075 gap to L1.
+   - **Routing probe** on both checkpoints: per-iteration histograms, experts live per depth, cross-iteration correlation; `eqb_err` over training.
+4. **What follows.**
+   - Clause 3 supported: ADR-064 is put to the user, with the caveats that it rests on $N_e$ = 128 at `small` and $N_e$ = 8 at `screen`, that the solver misses its own 1 % test, and that a default change needs new baselines wherever old and new are mixed.
+   - Beats by > 4σ: additionally, the depth partition becomes a finding for the placement controller (experts that work at few depths), recorded for `02`.
+   - Weakened: ADR-064 is withdrawn.
+5. **Queue.** Last in `queue_small_13.sh` (the longest runs).
+6. **Cost.** ≈ 2 × 44.7 h (`193`'s 17.87 h × 2.5) ≈ 3.7 days. Each run exceeds one node-day; `193` is the finished `screen` of the config, as `CLAUDE.md` requires. 6.26 GiB per GPU.
+
+Not chosen:
+- **A second `screen` seed of `193` and `112`** (≈ 35 h): it would move the result off the 4σ line one way or the other, at the budget the ladder treats as provisional, and ADR-064 would still wait on `small`.
+- **Fixing the solver first:** a code change with its own ADR; it would change the arm that was screened.
+
+Consequences: `03 §1`'s `small` list gains L5-ne128-eqb-step. Bears on H26, H6 (no verdict), ADR-004, ADR-064, ADR-069; next free ladder id becomes 213.
+
+### ADR-080 — L9-relu2 at `small`: the pair ADR-068 §4's letter allows, drafted with a recommendation against running it
+2026-11-25 · proposed, **not recommended** (drafted on the user's "draft the ADRs for the open small pairs")
+
+Context: `188`/`189` (ADR-068). L9-relu2 gives 3.3870 at `screen`: +0.0150 vs its two-branch softmax control `188` (5.0σ, inside $T$ = 0.0334), so ADR-068 §4's condition for a `small` pair is met by the letter. But:
+- H23's defining clause failed: 53.7 % exact zeros against 90 %, no head above 80 %.
+- The two-branch form the arm needs is itself +0.0277 worse than one softmax (`188` vs `162`, 9.2σ), so the arm starts +0.0427 behind L5d.
+- It trains at 0.67× the control's throughput.
+
+Decision (if accepted):
+1. **Runs:** `213`/`214` L9-relu2 and `215`/`216` L9-2b (its control has no `small` pair), `189`'s and `188`'s configs at 2.5 B tokens, seeds 0 / 1.
+2. **Reading**, on pair means: loss clause $\Delta$(relu2 − 2b) against $T$ = 0.0300 (*supported* ≤ 0.0241, *weakened* > 0.0359); sparsity clause ≥ 90 % zeros (`probe_relu2` on both seeds); cap clause $K$ = 128 ≤ 1 %. H23 is *supported* only if all three hold.
+3. **Cost.** ≈ 2 × 31.0 h + 2 × 20.7 h ≈ 103 h ≈ 4.3 days.
+
+**Recommendation: do not accept.** More tokens can move the loss clause; nothing suggests they move the zero fraction from 54 % to 90 % with no sparsity pressure, and that clause is what H23 claims. The alternative is a short closing ADR on the precedent of ADR-044/046/048: H23 closes at `screen` as *not supported* (sparsity clause not met; loss clause silent; cap clause met), ADR-008's one softmax stands, and a ReLU² arm with a learned threshold or a sparsity term is recorded as a different feature needing its own ADR. I will draft that on the user's word.
+
+Consequences if accepted: `03 §1`'s `small` list gains L9-relu2 and L9-2b. Bears on H23, H15b, ADR-008, ADR-068.
+
+**Programme if ADR-077–079 are accepted** (in queue order): `205`/`206` (41 h), `207`/`208` (42 h), `209`/`210` (45 h), `211`/`212` (89 h): ≈ 217 h ≈ 9.1 days after `queue_screen_26`. The ladder ids above are provisional until acceptance; the next free id stays 205 until then. H22's next step (second seed of `204`, an 8 k NoPE arm, or dropping it) is not a `small` pair and is not drafted here.
+
 ## Open questions
 
 ### For the note's author
@@ -2792,6 +2888,14 @@ and an ADR first, L6c likewise; the `small` programme (L0, L1, L2, L3, L5, L5d a
 the ladder's own next step and needs no new code. The choice between "more `screen` variants" and
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
+
+### 2026-11-25 (08:06) — ADR-077–080 drafted (proposed): the four open `small` pairs
+- On the user's "draft the ADRs for the open small pairs". All four are in §Proposed / pending; nothing is queued and no id is taken until acceptance.
+- **ADR-077** L5h $j_b$ = 1 pair (H20), with a new L5d-segmean `small` comparator pair, because `134`/`135` predate ADR-038 (I33). ≈ 83 h.
+- **ADR-078** L5g `[F,S,S,S] × 2` pair (H21) against the same comparator. ≈ 45 h.
+- **ADR-079** EQB-per-step pair at $N_e$ = 128 (H26 clause 3; ADR-064 waits on it) against `138`/`142`. ≈ 89 h.
+- **ADR-080** L9-relu2 pair with its control pair (≈ 103 h), drafted with a recommendation against; the alternative is a closing ADR for H23.
+- ADR-077–079 together ≈ 9.1 days after `queue_screen_26`.
 
 ### 2026-11-25 (06:39) — `195` L5g `[F,S,S,S,L,L,L,L]`: 3.3546, +0.0103 vs `162` (3.4σ), +0.0071 vs `194`; a curve point, H21 unchanged; `196` running
 - **`195-l5g-fsssllll-screen`** (ADR-070) ended 06:25, exit 0: **3.3546**, +0.0103 vs `162` (3.4σ, inside 4σ and inside $T$ = 0.0334), +0.0071 vs `194` (2.4σ). It falls 0.03–0.04 behind at steps 300–500 and recovers most of it. 33.9 k tok/s (1.00× `162`), 8.30 h, 3.91 GiB, `n_thermal` 0 of 190.
