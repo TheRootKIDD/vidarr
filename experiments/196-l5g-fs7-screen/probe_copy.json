@@ -1,0 +1,20 @@
+{
+  "id": "196-l5g-fs7-screen",
+  "step": 1907,
+  "context": 2048,
+  "windows": 512,
+  "src": [
+    256,
+    320
+  ],
+  "dst": [
+    1792,
+    1856
+  ],
+  "scored_tokens": 32256,
+  "copy_loss": 3.9300460683739558,
+  "control_loss": 3.271234877995097,
+  "gap": -0.6588111903788585,
+  "wall_s": 120.6,
+  "device": "cuda"
+}

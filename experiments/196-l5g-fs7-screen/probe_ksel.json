@@ -1,0 +1,21 @@
+{
+  "id": "196-l5g-fs7-screen",
+  "step": 1907,
+  "trained_k_sel": 128,
+  "windows": 512,
+  "k_sel": {
+    "64": {
+      "loss": 3.336460196152948,
+      "global_keys_per_token_at_last_position": 1984
+    },
+    "128": {
+      "loss": 3.334517903730815,
+      "global_keys_per_token_at_last_position": 2432
+    },
+    "256": {
+      "loss": 3.3339110888064383,
+      "global_keys_per_token_at_last_position": 3328
+    }
+  },
+  "wall_s": 198.4
+}

@@ -2916,6 +2916,16 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-11-25 (16:00) — `196` L5g `[F,S×7]` done: 3.3531, +0.0088 vs `162`; `queue_screen_22` done with its probes; H21 unchanged
+- **`196-l5g-fs7-screen`** (ADR-070) ended 15:20, exit 0: **3.3531**, +0.0088 vs `162` (3.0σ, inside 4σ and inside $T$ = 0.0334), +0.0056 vs `194` (1.9σ), −0.0015 vs `195` (0.5σ). Reads 0.20× of L5d's at position 2048 (0.26× window mean). 31.5 k tok/s (0.929× `162`), 8.92 h, 3.91 GiB, `n_thermal` 0 of 190.
+- **The curve** (`162` / `194` / `196` / `195`): 3.3443 / 3.3475 / 3.3531 / 3.3546 at 1.00× / 0.31× / 0.20× / 0.16× reads. Dropping the second full iteration costs ≈ 0.006; making iterations 5–8 local-only on top of that costs 0.0015 (nothing at one seed). `195` dominates `196`; `194` is the arm that matches L5d.
+- **Probes** (`/mnt/nvme/post_queue22/`, GPU, 15:20–15:54; JSONs in each run's directory):
+  - **Eval-time $K_{sel}$ sweep** (512 windows): 64 costs +0.0008 / +0.0012 / +0.0019 for `194` / `195` / `196`; 256 buys ≤ 0.0006. The trained 128 is not a cliff; ADR-078 keeps it.
+  - **Per-position eval:** `194` +0.0011 / +0.0035 / +0.0041 vs `162` over 0–512 / 512–1 k / 1–2 k; `195` +0.0029 / +0.0117 / +0.0133; `196` +0.0060 / +0.0083 / +0.0104. The costs of `194` and `195` sit beyond 512, where $\mathcal{G}$ acts; two thirds of `196`'s is already at 0–512, where its schedule equals L5d's (unexplained at one seed, not chased).
+  - **Copy probe:** control − copy = −0.66 in all three arms, as `162`: none copies.
+- **H21:** unchanged. `195`/`196` are curve points by ADR-070 §5; the loss clause is met at `screen` by `194`, and the `small` pair `209`/`210` (ADR-078) decides.
+- **Next:** `queue_screen_22` logged QUEUE DONE 15:54; `queue_screen_23` gates and runs rig `052-l8e-sizing`, then `197-l8e-screen` (ADR-071, H24).
+
 ### 2026-11-25 (08:38) — ADR-082 accepted: H22 closes at `screen` as weakened; ADR-063 withdrawn
 - The user asked for a recommendation on H22; it was to drop, and the user agreed ("Agreed, write the closing ADR and push it").
 - **ADR-082:** H22 *weakened at `screen`* (`204` +0.0152 vs `162`, 5.1σ, with +0.0140 at positions 0–512; recall gain at 2 k only). No second seed, no `small` pair. ADR-063 withdrawn; the ladder keeps RoPE on both ranges.

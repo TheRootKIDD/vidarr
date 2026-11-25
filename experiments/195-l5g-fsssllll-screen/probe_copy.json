@@ -1,0 +1,20 @@
+{
+  "id": "195-l5g-fsssllll-screen",
+  "step": 1907,
+  "context": 2048,
+  "windows": 512,
+  "src": [
+    256,
+    320
+  ],
+  "dst": [
+    1792,
+    1856
+  ],
+  "scored_tokens": 32256,
+  "copy_loss": 3.922063173311529,
+  "control_loss": 3.2638875599125767,
+  "gap": -0.6581756133989525,
+  "wall_s": 106.5,
+  "device": "cuda"
+}

@@ -1,0 +1,21 @@
+{
+  "id": "194-l5g-fsss-screen",
+  "step": 1907,
+  "trained_k_sel": 128,
+  "windows": 512,
+  "k_sel": {
+    "64": {
+      "loss": 3.3301642843250483,
+      "global_keys_per_token_at_last_position": 3456
+    },
+    "128": {
+      "loss": 3.3293930670762237,
+      "global_keys_per_token_at_last_position": 3840
+    },
+    "256": {
+      "loss": 3.329404240137603,
+      "global_keys_per_token_at_last_position": 4608
+    }
+  },
+  "wall_s": 200.2
+}
