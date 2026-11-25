@@ -2793,6 +2793,12 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-11-25 (06:39) — `195` L5g `[F,S,S,S,L,L,L,L]`: 3.3546, +0.0103 vs `162` (3.4σ), +0.0071 vs `194`; a curve point, H21 unchanged; `196` running
+- **`195-l5g-fsssllll-screen`** (ADR-070) ended 06:25, exit 0: **3.3546**, +0.0103 vs `162` (3.4σ, inside 4σ and inside $T$ = 0.0334), +0.0071 vs `194` (2.4σ). It falls 0.03–0.04 behind at steps 300–500 and recovers most of it. 33.9 k tok/s (1.00× `162`), 8.30 h, 3.91 GiB, `n_thermal` 0 of 190.
+- **Reads** (arithmetic): 0.16× of L5d's global keys at position 2048 (`194` 0.31×), 0.18× over a 2 k window.
+- **H21:** by ADR-070 §5 this arm is a point on the loss-vs-reads curve, not a verdict; `194`'s reading stands (loss clause met at `screen`).
+- **Chain:** `196-l5g-fs7-screen` started 06:25 (31.4 k tok/s, ETA ≈ 15:25), then the $K_{sel}$ sweep, copy probe and per-position eval for `194`–`196`, then `queue_screen_23` (rig `052`, `197` L8e).
+
 ### 2026-11-24 (22:40) — `194` L5g `[F,S,S,S] × 2`: 3.3475, +0.0032 vs `162` (1.1σ, inside $T$) → H21's loss clause met at `screen`; `195` running
 - **`194-l5g-fsss-screen`** (ADR-070, on L5d, $K_{sel}$ = 128) ended 22:07, exit 0: **3.3475**, **+0.0032 vs `162`** (1.1σ; $T$ = 0.0334), a steady +0.003 from step 500. 31.4 k tok/s (0.926× `162`: the reference masks and does not skip), 8.95 h, 3.94 GiB, `n_thermal` 0 of 190.
 - **H21:** loss clause met with a tenfold margin; one seed inside 4σ is silent as a verdict (ADR-066 §1), leaning supports. Global keys read are 0.3125× of L5d's at position 2048 (3.2× fewer, not ≈ 4×, because $K_{sel}$ is a twelfth of $|\mathcal{G}|$ at 2 k) and 0.37× averaged over a 2 k window, by arithmetic.
