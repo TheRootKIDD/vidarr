@@ -1,0 +1,15 @@
+# Rig 053 (ADR-073 §2, post-training arm): round-to-nearest 4-bit weight quantisation of the finished
+# bf16 checkpoints 100-l0-screen and 110-l5-screen, eval only, no training. Bears on H3 (FP4 clause).
+# Run by /mnt/nvme/queue_screen_25.sh on 2026-11-25 23:18-23:31, one card each (GPU 0 and 1, the
+# others idle), code at the queue's gate commit d4d0dfd. Full held-out set (5606 windows of 2048).
+commands:
+  - CUDA_VISIBLE_DEVICES=0 python -m scripts.analysis.probe_quant --id 100-l0-screen
+  - CUDA_VISIBLE_DEVICES=1 python -m scripts.analysis.probe_quant --id 110-l5-screen
+quantised: weights of every linear in attention, experts and skeleton FFNs (ADR-073 §1); embeddings, LM head, norms, router stay bf16
+formats:
+  fp4_e2m1: one bf16 absmax scale per 64 consecutive weights along the input dimension, round-to-nearest
+  int4: eval-only side reading (the handoff's format)
+outputs:
+  - experiments/100-l0-screen/probe_quant.json
+  - experiments/110-l5-screen/probe_quant.json
+log: /mnt/nvme/queue_screen_25.log (lanes quant_100, quant_110), /mnt/nvme/post_queue25/quant_*.log

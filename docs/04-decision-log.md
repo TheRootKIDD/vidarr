@@ -2925,6 +2925,13 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-11-26 (03:55) — `199` L0 late QAT done: 3.3501, +0.0142 vs `100` (4.8σ) → H3's FP4 clause weakened at `screen` for this arm; rig `053` (post-training FP4) written up; `200` running
+- **Rig `053-quant-post-training`** (ADR-073 §2, eval only, 2026-11-25 23:18–23:31): round-to-nearest FP4 of the finished checkpoints costs **+0.0343 on `100`** (11.6σ) and **+0.0403 on `110`** (13.6σ); INT4 +0.0208 / +0.0262. Post-training FP4 weakens the clause on both bases; the weight-tied recurrence costs 0.0060 more than the stack.
+- **`199-l0-qat-late-screen`** (ADR-073; FP4 fake-quant from step 1869 of 1907) ended 03:27, exit 0: **3.3501** scored quantised, **+0.0142 vs `100`** (4.8σ; 4σ = 0.0119). Control: −0.0004 vs `100` at step 1800. 39 steps of QAT recover 59 % of the post-training cost; the step-matched train-loss gap falls from +0.029 to +0.015 and had not flattened. 71.9 k tok/s before the switch, 67.0 k after; 3.94 h, 6.25 GiB, `n_thermal` 0 of 190.
+- **H3, FP4 clause:** by ADR-073 §3 this arm *weakens* at `screen` (one seed, 0.0023 over the 4σ line). The comparison late / post-training / from step 0 waits on `200`; the L5 arms are `201`/`202`.
+- **Running:** `200-l0-qat0-screen` since 03:27 (67.0 k tok/s, ETA ≈ 07:40), then `201`, `202` (≈ 6.5 h each), then `queue_screen_26`.
+- **Open with the user:** I45 (`197` L8e) and the L5f `small` pair.
+
 ### 2026-11-25 (23:50) — `198` L5f done: 3.3148, −0.0180 vs `110` (6.0σ, beats L5), 14 % of the L5–L1 gap → H25 silent at `screen`; `queue_screen_24` done, `queue_screen_25` running `199`
 - **`198-l5f-screen`** (ADR-072, on L5) ended 23:14, exit 0: **3.3148**, **−0.0180 vs `110`** (6.0σ), +0.1100 vs `106`: it closes 14.1 % of the 0.1280 gap, against H25's 25 % (−0.0320). 43.5 k tok/s (0.895× `110`), 6.46 h, 5.66 GiB (+1.80), `n_thermal` 0 of 190.
 - **H25:** by ADR-072 §4, beats L5 but short of 25 % → **silent at `screen`**, one seed. It starts 0.35 behind at step 100, crosses `110` at step ≈ 1000 and the lead is still growing at the end.
