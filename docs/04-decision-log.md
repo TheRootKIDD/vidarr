@@ -2962,6 +2962,13 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-11-26 (13:55) — `201` L5 late QAT done: 3.3493, +0.0165 vs `110` (5.6σ) → H3's FP4 clause weakened at `screen` for this arm; `202` running
+- **`201-l5-qat-late-screen`** (ADR-073; FP4 fake-quant from step 1869 of 1907) ended 13:25, exit 0: **3.3493** scored quantised, **+0.0165 vs `110`** (5.6σ; 4σ = 0.0119). Control: +0.0011 vs `110` at step 1800. Recovers 59 % of post-training rounding's +0.0403, the same share as on L0. 49.3 k tok/s before the switch, 39.9 k after (fake-quant is 19 % of L5's step, 7 % of L0's); 5.73 h, 3.86 GiB, `n_thermal` 0 of 190.
+- **L5 against L0:** late QAT costs L5 0.0023 more than L0 (0.8σ); round-to-nearest cost it 0.0060 more. The recurrence is not visibly worse under QAT.
+- **Train-loss gap** after the switch: +0.033 → +0.018, still falling at the end; on L0 that fall stopped at `200`'s level, so `202` decides whether anything is left.
+- **H3, FP4 clause:** weakened at `screen` by all three trained arms so far (4.8σ, 5.0σ, 5.6σ; one seed each).
+- **Running:** `202-l5-qat0-screen` since 13:25 (39.5 k tok/s, ETA ≈ 20:25), then `queue_screen_26` (rig `054`), `queue_screen_27` (`197`), `queue_small_13`, `queue_small_14`.
+
 ### 2026-11-26 (13:20) — ADR-083 (I45: `197` L8e runs with the gate waived) and ADR-084 (L5f `small` pair `213`/`214`) accepted and queued; `queue_small_13` re-pointed behind `queue_screen_27`
 - **The user:** "Go with your recommendations and queue them" (I45's option (a) and the L5f pair).
 - **ADR-083:** `197-l8e-screen` as ADR-071 built it, step-time gate waived for this run only (≈ 9.2 h); the gate stays for any later L8e run. **I45 closed.** Queued as `/mnt/nvme/queue_screen_27.sh` behind `queue_screen_26`: gate, `197`, wiki-lead (covered) of `110` and `197`, the compare; host RAM sampled once a minute into `post_queue27/host_ram.log`.
