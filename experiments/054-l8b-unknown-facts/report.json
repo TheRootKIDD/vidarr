@@ -1,0 +1,128 @@
+{
+ "split": "in_first_cov",
+ "sizes": {
+  "small": {
+   "S_real": {
+    "value": 0.010777855881356047,
+    "bootstrap_se": 0.0002918340135550731,
+    "floor": 0.012
+   },
+   "arm_hold_minus_base_real": {
+    "value": -0.048239363996368745,
+    "bootstrap_se": 0.0028021302491977812,
+    "floor": 0.012
+   },
+   "arm_t0_minus_base_real": {
+    "value": -0.0374615081150127,
+    "bootstrap_se": 0.0028333067859796,
+    "floor": 0.012
+   },
+   "base_loss_real": 3.019767905896971,
+   "tokens_real": 51424.0,
+   "own_retrieved_share_real": 0.980417703795893,
+   "S_renamed": {
+    "value": 0.02148813521087689,
+    "bootstrap_se": 0.00044487032148786187,
+    "floor": 0.012
+   },
+   "arm_hold_minus_base_renamed": {
+    "value": -0.034816941592015205,
+    "bootstrap_se": 0.002660838891595545,
+    "floor": 0.012
+   },
+   "arm_t0_minus_base_renamed": {
+    "value": -0.013328806381138314,
+    "bootstrap_se": 0.0026947960288182366,
+    "floor": 0.012
+   },
+   "base_loss_renamed": 3.0861229839149593,
+   "tokens_renamed": 60149.0,
+   "own_retrieved_share_renamed": 0.9587856822224808,
+   "base_renamed_minus_real": {
+    "value": 0.06635507801798823,
+    "bootstrap_se": 0.00915886845746798,
+    "floor": 0.03663547382987192
+   },
+   "S_renamed_minus_S_real": {
+    "value": 0.010710279329520844,
+    "bootstrap_se": 0.0004341660220691621,
+    "floor": 0.012
+   }
+  },
+  "medium": {
+   "S_real": {
+    "value": 0.008124918649674129,
+    "bootstrap_se": 0.0002993422281291409,
+    "floor": 0.012
+   },
+   "arm_hold_minus_base_real": {
+    "value": -0.0177250650036771,
+    "bootstrap_se": 0.003677809044325503,
+    "floor": 0.014711236177302012
+   },
+   "arm_t0_minus_base_real": {
+    "value": -0.00960014635400297,
+    "bootstrap_se": 0.0036832642515286554,
+    "floor": 0.014733057006114622
+   },
+   "base_loss_real": 2.547046372514246,
+   "tokens_real": 51424.0,
+   "own_retrieved_share_real": 0.980417703795893,
+   "S_renamed": {
+    "value": 0.017698812992900326,
+    "bootstrap_se": 0.0004272350490622424,
+    "floor": 0.012
+   },
+   "arm_hold_minus_base_renamed": {
+    "value": -0.006176583132610158,
+    "bootstrap_se": 0.00362732342607464,
+    "floor": 0.01450929370429856
+   },
+   "arm_t0_minus_base_renamed": {
+    "value": 0.011522229860290167,
+    "bootstrap_se": 0.0036289891935259136,
+    "floor": 0.014515956774103654
+   },
+   "base_loss_renamed": 2.7136120919002122,
+   "tokens_renamed": 60149.0,
+   "own_retrieved_share_renamed": 0.9587856822224808,
+   "base_renamed_minus_real": {
+    "value": 0.1665657193859662,
+    "bootstrap_se": 0.008742887798374585,
+    "floor": 0.03497155119349834
+   },
+   "S_renamed_minus_S_real": {
+    "value": 0.009573894343226197,
+    "bootstrap_se": 0.00044933687101396993,
+    "floor": 0.012
+   }
+  }
+ },
+ "premise_medium_minus_small": {
+  "value": 0.10021064136797797,
+  "bootstrap_se": 0.0038655492475378915,
+  "floor": 0.015462196990151566
+ },
+ "S_renamed_small_minus_medium": {
+  "value": 0.003789322217976565,
+  "bootstrap_se": 0.00034815069140027035,
+  "floor": 0.012
+ },
+ "reading": "mixed",
+ "runs": {
+  "small": [
+   "178",
+   "179"
+  ],
+  "small_base": [
+   "132",
+   "133"
+  ],
+  "medium": [
+   "181"
+  ],
+  "medium_base": [
+   "180"
+  ]
+ }
+}

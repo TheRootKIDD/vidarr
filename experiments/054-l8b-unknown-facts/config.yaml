@@ -1,0 +1,34 @@
+# Rig 054 (ADR-076, I44 option (b)): eval-time swap of L8b-pv's retrieval table for one that also
+# holds 2,000 first sentences the model was not trained beside — once as in the dump (real), once
+# with the article's title replaced by a generated pseudo-name (renamed: a fact no base can know).
+# No training. Bears on H17 without changing its verdict (ADR-075).
+# Run by /mnt/nvme/queue_screen_26.sh on 2026-11-26 20:34-20:40, GPUs idle, code at the queue's gate
+# commit 0f1e85a (merge of branch i44b).
+commands:
+  - python -m scripts.data.build_unknown_facts --id 054-l8b-unknown-facts          # 296 s, all GPUs for the encoder
+  - CUDA_VISIBLE_DEVICES=0 python -m scripts.analysis.eval_unknown_facts --id 178-l8b-pv-small-s0 --out experiments/054-l8b-unknown-facts/uf_178.json
+  - CUDA_VISIBLE_DEVICES=1 python -m scripts.analysis.eval_unknown_facts --id 179-l8b-pv-small-s1 --out experiments/054-l8b-unknown-facts/uf_179.json
+  - CUDA_VISIBLE_DEVICES=2 python -m scripts.analysis.eval_unknown_facts --id 181-l8b-pv-medium --out experiments/054-l8b-unknown-facts/uf_181.json
+  - CUDA_VISIBLE_DEVICES=3 python -m scripts.analysis.eval_unknown_facts --id 180-l5-medium --out experiments/054-l8b-unknown-facts/uf_180.json
+  - CUDA_VISIBLE_DEVICES=0 python -m scripts.analysis.eval_unknown_facts --id 132-l5-small-s0 --out experiments/054-l8b-unknown-facts/uf_132.json
+  - CUDA_VISIBLE_DEVICES=1 python -m scripts.analysis.eval_unknown_facts --id 133-l5-small-s1 --out experiments/054-l8b-unknown-facts/uf_133.json
+  - python -m scripts.analysis.eval_unknown_facts --report experiments/054-l8b-unknown-facts
+pool:
+  articles: 2000
+  seed: 2                    # pool and names
+  source: English Wikipedia 20231101.en, outside the 2^20 table and outside 040's eval pools; first sentence begins with the title
+  out: /mnt/nvme/memory/unknown-facts-054     # pool.jsonl, extra_real.npy, extra_renamed.npy (hashes in build.json)
+tables:
+  t0: /mnt/nvme/memory/wiki-20231101-lead     # 040's table, 2^20 rows, unchanged
+  hold_real: t0 + the 2,000 real first sentences
+  hold_renamed: t0 + the 2,000 renamed first sentences
+encoder: BAAI/bge-base-en-v1.5 (revision in build.json), as 040
+checkpoints:
+  small: [178-l8b-pv-small-s0, 179-l8b-pv-small-s1]
+  small_base: [132-l5-small-s0, 133-l5-small-s1]
+  medium: [181-l8b-pv-medium]
+  medium_base: [180-l5-medium]
+split: in_first_cov          # covered first-sentence tokens, ADR-059's mask rule
+floor: 4 x max(0.0030, article-bootstrap SE)   # ADR-055 §6
+outputs: [build.json, uf_132.json, uf_133.json, uf_178.json, uf_179.json, uf_180.json, uf_181.json, report.json]
+log: /mnt/nvme/queue_screen_26.log, /mnt/nvme/post_queue26/

@@ -1,0 +1,56 @@
+{
+  "build": "build_unknown_facts",
+  "adr": "ADR-076",
+  "id": "054-l8b-unknown-facts",
+  "attribution": "text from English Wikipedia (CC BY-SA 3.0 / GFDL); derived data, not redistributed",
+  "base": {
+    "dir": "/mnt/nvme/memory/wiki-20231101-lead",
+    "table_sha256": "08dec4b1bfa3260b9b5ea0cf638cd4cb4810217769c793ce68f78b98194eb832"
+  },
+  "encoder": {
+    "repo": "BAAI/bge-base-en-v1.5",
+    "revision": "a5beb1e3e68b9ab74eb54cfd186867f64f240e1a",
+    "pooling": "cls",
+    "normalise": "l2",
+    "autocast": "fp16",
+    "fp16_vs_fp32_min_cos": 0.9999994039535522,
+    "fp16_vs_fp32_mean_cos": 0.9999998807907104
+  },
+  "seeds": {
+    "pool": 2,
+    "names": 2
+  },
+  "counts": {
+    "articles": 6407814,
+    "dropped_title": 168896,
+    "dropped_refer": 257401,
+    "dropped_length": 335025,
+    "eligible": 5646492,
+    "candidates": 2254680,
+    "skipped_leak": 344,
+    "walked": 2344,
+    "pool": 2000,
+    "excluded_ids": 1050576,
+    "banned_words": 1600616
+  },
+  "chars": {
+    "real": 113.217,
+    "renamed": 115.4355
+  },
+  "files": {
+    "pool.jsonl": {
+      "bytes": 694208,
+      "sha256": "1254edbf917b5a91fe417a9a3059f5f74dcc159646c2cd1a52185addda95e3af"
+    },
+    "extra_real.npy": {
+      "bytes": 3072128,
+      "sha256": "9d9309efee95285b4a5f7acaf30c5185caf50101fdb90c2175fa5bf33f9bf87f"
+    },
+    "extra_renamed.npy": {
+      "bytes": 3072128,
+      "sha256": "e9cd08bcd3b6f4f39cb4113cbb124823d9eaefa75142728d263fe45560579a7a"
+    }
+  },
+  "wall_s": 295.67170786857605,
+  "out": "/mnt/nvme/memory/unknown-facts-054"
+}
