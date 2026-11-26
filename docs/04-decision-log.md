@@ -1807,6 +1807,43 @@ Decision:
 
 Consequences: `03`'s H22 and L5d-nope rows take the verdict; ADR-063 leaves §Proposed; no GPU time. Bears on H22, Q9, ADR-063, ADR-066.
 
+### ADR-083 — I45: `197-l8e-screen` runs host-placed as built, with ADR-071 §4's step-time gate waived for this one run; it goes before the `small` pairs
+2026-11-26 · accepted (the user's decision: "Go with your recommendations and queue them", on I45's recommendation (a))
+Context: rig `052` (ADR-071 §4). L8e's step is 17.42 s against L5's 10.87 s, 1.60× where the gate allows 1.25×; peak 4.62 GiB passes. The one-process lazy sparse Adam on the host is 4.05 s of the 6.55 s, the scatter 0.92 s. `queue_screen_23` aborted and `197` did not run; H24 is silent. ADR-071 §4: above the gate "a follow-up ADR decides … not switched silently". I45 listed four options.
+
+Decision:
+1. **`197-l8e-screen` runs as ADR-071 built it**: the 2²¹ × $d$ table in host RAM, L5 base, `screen`, seed 0, comparator `110`, wiki-lead with covered splits and the compare. ADR-071 §5 and §6 are unchanged and are the reading.
+2. **The step-time gate is waived for this run only.** The gate guarded against a run too slow to be worth its place. H24 is a loss claim at matched tokens and active FLOPs, so the host overhead costs wall-clock (≈ 9.2 h against 5.8 h), is reported, and does not enter the verdict. The 10 GB memory gate is not waived (4.62 GiB measured).
+3. **The gate stays in force for anything after `197`.** If `197` beats `110` by > 4σ, the `small` pair ADR-071 §6 calls for is not queued until the host update is made cheaper and rig `052` is repeated (I45's option (c)), by its own ADR.
+4. **The GPU-placed 2¹⁸-row fallback is not used.** It has 8× fewer rows and would be a different test of H24.
+5. **Systems numbers.** Rig `052`'s update and scatter times stand as P16's placement data. `197` adds the per-step shares over a full run, and peak host RAM, which `052` did not record, is sampled once a minute beside the run (`post_queue27/host_ram.log`). Gather time is not logged by the code as built and stays unmeasured.
+6. **Queue.** `/mnt/nvme/queue_screen_27.sh` behind `queue_screen_26`: gate (ruff + pytest, no merge), `197`, the two wiki-lead evals, the compare. `queue_small_13` is re-pointed to wait on `queue_screen_27` in place of `queue_screen_26` (its waiter was stopped and re-armed on 2026-11-26 before anything had started; ADR-077 to 079 are otherwise unchanged). A 9 h `screen` run goes ahead of 9 days of pairs so that the Embla `screen` chain is complete and whatever `197` triggers can be drafted while the pairs run.
+
+Not chosen: (b) and (d) as above and in I45; (c) first, which is a code change and a second rig for a run that may show nothing.
+
+Consequences: ≈ 9.2 h plus ≈ 20 min of evals; the `small` pairs start ≈ 10 h later; I45 closes. Bears on H24, H17, P16; touches ADR-071, ADR-065, ADR-077.
+
+### ADR-084 — L5f at `small`: a two-seed pair reads H25 against the L5 pair `132`/`133`
+2026-11-26 · accepted (the user's decision: "Go with your recommendations and queue them")
+Context: `198` (ADR-072). L5f = 3.3148 at `screen`, −0.0180 vs `110` (6.0σ): it beats L5 and closes 14.1 % of the 0.1280 L5–L1 gap, short of H25's 25 %, so H25 is silent at `screen`. It starts behind, crosses `110` at step ≈ 1000, and the lead was still growing at 1 B tokens. ADR-072 §4 and ADR-031 give an arm that beats L5 by > 4σ a `small` pair. 0.895× `110`'s throughput, 5.66 GiB.
+
+Decision:
+1. **The arm:** `213-l5f-small-s0`, `214-l5f-small-s1`. `198`'s config unchanged, 2.5 B tokens, seeds 0 / 1.
+2. **Comparator:** the L5 pair `132`/`133` = 3.0748. L5f is built on L5, not L5d, so the L5d-segmean pair of ADR-077 is not involved. The gap H25 names is the L5 pair minus the L1 pair (`130`/`119` = 2.8839): **0.1909**; 25 % of it is **0.0477**.
+3. **Reading**, on pair means, σ = 0.0030, $\Delta$ = L5f pair − L5 pair:
+   - **H25 supported** if $\Delta \le -0.0477 - 2σ$ = **−0.0536**;
+   - **H25 weakened** if $\Delta > -0.0477 + 2σ$ = **−0.0418** (two seeds do not close a quarter of the gap);
+   - silent between.
+   - **Beside the verdict:** $\Delta < -4σ$ = −0.0119 is *beats L5 at `small`*, reported whatever H25's verdict; the share of the gap closed; whether the lead grows with tokens (`screen` 14.1 % at 1 B); `probe_mix` on both seeds.
+   - The first seed alone is per-seed and provisional.
+4. **What follows.** Beats L5 without meeting H25: L5f is a candidate component for a combined arm (with L5c or L5e, which also beat L5 at `small`), by its own ADR. Supported: the same, and H6's gap is re-read with it. Neither changes the ladder default without an ADR.
+5. **Queue.** `/mnt/nvme/queue_small_14.sh` behind `queue_small_13`: gate (no merge), `213`, `214`, `probe_mix` on both.
+6. **Cost.** ≈ 2 × 16.2 h (`198`'s 6.46 h × 2.5) ≈ 32 h.
+
+Not chosen: running the pair ahead of ADR-077 to 079's pairs. They were accepted first and one of them (ADR-079) holds up ADR-064.
+
+Consequences: `03`'s H25 and L5f rows take the pair. Bears on H25, H6, ADR-072, ADR-031; next free ladder id becomes 215.
+
 ## Proposed / pending
 - **ADR-028** — Unit model revisions from the author's hardware document (`docs/07 §4`): (a) two compute classes per chip — an FF core with a large array ($s_{min,ff}$ = 256–1024) and attention cores with small arrays ($s_{min,attn}$ ≈ 64), hence $\phi_{ff}$, $\phi_{attn}$ as separate scenario inputs; (b) the tile floor is a *row* floor, $N$ = $M$ × (LHS bw / RHS bw) rows per weight tile, with each token contributing 1 + $m$ rows under $m$-token speculation — the scheduler's queues count rows; (c) the reduce leg of the local fabric carries ≥ 16-bit partial sums: `02 §2` traffic becomes $b d\, b_{act} + b d\, b_{sum}$, $b_{sum}$ ≥ 2; (d) full pipelining inside the unit doubles tokens in flight and per-token latency — the Little's-law budget $Z$ of `02 §5.5` carries the factor; (e) router-based unit fabrics are ≤ 50 % link-efficient (avg. 2 hops), torus collectives 100 %: `02 §1`'s "switch" option is not equivalent to a torus; (f) the asymmetric 4×4×4 torus all-gather costs ≈ 3X/(8B) vs ≈ X/(2B) on a flat ring (our derivation from the author's algorithm) — the number S1/S3 must reproduce; (g) the failure domain is the 4-chip ring board, and a failed rail port is bypassed through torus neighbours at ¼ load (`02 §11`); (h) the replica-rounding utilisation floor $\ell / \lceil \ell \rceil$ reported beside the Little's-law model in S4. Also fills `note64.yaml` with the sourced ratios of `docs/07 §6`; absolute $\phi$, $\beta_C$, $\lambda_C$, $\nu_C$ stay placeholders (I4). Bears on H1, H5, H8, H9, H10, H11, H16; changes `02 §1, §2, §5, §11`.
 - **ADR-024** — Parallel prefill mode for long prompts (the author's "less effective mode"): (a) all segments at once with local attention only, global cache filled afterwards from context-poor final vectors; (b) pipelined segments, segment $k+1$ at iteration $j$ attending globally to segment $k$'s iteration-$j$ caches (transient per-iteration global cache during prefill, in-flight depth up to $r$ segments). Both are inference-time modes of a sequentially trained model; E-Q12 evaluates both against sequential prefill on continuation loss and TTFT (S5). If both degrade, a mixed-mode training variant becomes a later ladder step.
@@ -2035,7 +2072,7 @@ Cost units from `docs/06 §4`: one `screen` run ≈ 8 h (1 B tokens, 1 seed); on
     - (c) a second `medium` seed (≈ 5 d), which cannot move the rest-of-lead clause (−0.004 against 0.012).
   - **Recommendation:** (a) now, with (b) as the candidate if H17 is reopened. (c) costs the most and cannot change the verdict.
 
-- **I45** *(2026-11-25, rig `052`; **open, the user's call**)* **L8e's host-resident table fails ADR-071 §4's step-time gate: 1.60× L5's step against 1.25×.** L5 10.87 s, L8e 17.42 s per step (medians of steps 2–6); peak 4.62 GiB (passes). Of the 6.55 s, the one-process lazy sparse Adam takes 4.05 s and the scatter 0.92 s; ≈ 547 k rows (26 % of the table) are touched per step. `queue_screen_23` aborted as written; `197-l8e-screen` has not run. H24 is untouched (silent).
+- **I45** *(2026-11-25, rig `052`; **closed 2026-11-26 by ADR-083: option (a), `197` runs as built with the gate waived for that run, via `queue_screen_27`**)* **L8e's host-resident table fails ADR-071 §4's step-time gate: 1.60× L5's step against 1.25×.** L5 10.87 s, L8e 17.42 s per step (medians of steps 2–6); peak 4.62 GiB (passes). Of the 6.55 s, the one-process lazy sparse Adam takes 4.05 s and the scatter 0.92 s; ≈ 547 k rows (26 % of the table) are touched per step. `queue_screen_23` aborted as written; `197-l8e-screen` has not run. H24 is untouched (silent).
   - **Options (each by ADR; ADR-071 §4: "not switched silently"):**
     - (a) run `197` host-placed as built and waive the gate for this run: 9.2 h in place of 5.8 h. H24 is a loss claim at matched tokens and FLOPs, so the overhead costs wall-clock and is reported, and the table tested is the 2²¹ × $d$ one H24 names;
     - (b) the fallback on record: a GPU-placed table of 2¹⁸ rows (≈ 3.2 GB of states per GPU). No host overhead, but 8× fewer rows: more collisions and a different test of H24; code change and a new rig;
@@ -2924,6 +2961,14 @@ and an ADR first, L6c likewise; the `small` programme (L0, L1, L2, L3, L5, L5d a
 the ladder's own next step and needs no new code. The choice between "more `screen` variants" and
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
+
+### 2026-11-26 (13:20) — ADR-083 (I45: `197` L8e runs with the gate waived) and ADR-084 (L5f `small` pair `213`/`214`) accepted and queued; `queue_small_13` re-pointed behind `queue_screen_27`
+- **The user:** "Go with your recommendations and queue them" (I45's option (a) and the L5f pair).
+- **ADR-083:** `197-l8e-screen` as ADR-071 built it, step-time gate waived for this run only (≈ 9.2 h); the gate stays for any later L8e run. **I45 closed.** Queued as `/mnt/nvme/queue_screen_27.sh` behind `queue_screen_26`: gate, `197`, wiki-lead (covered) of `110` and `197`, the compare; host RAM sampled once a minute into `post_queue27/host_ram.log`.
+- **ADR-084:** L5f pair `213`/`214` against `132`/`133`; H25 supported at Δ ≤ −0.0536, weakened at Δ > −0.0418 (25 % of the 0.1909 pair gap = 0.0477, ± 2σ); beats L5 below −0.0119. Queued as `/mnt/nvme/queue_small_14.sh` behind `queue_small_13` (gate, the pair, `probe_mix`; ≈ 32 h).
+- **`queue_small_13` re-pointed:** its waiter (armed 2026-11-25, nothing started) was stopped, the script's wait target changed from `queue_screen_26.log` to `queue_screen_27.log` (old copy `queue_small_13.sh.bak-20261126`), and re-armed 13:12 with a NOTE line in its log. Nothing else in it changed.
+- **Order now:** `201` (running, ends ≈ 13:25) → `202` (≈ 19:45) → `queue_screen_26` rig `054` (≈ 20:30) → `queue_screen_27` `197` (≈ 06:30 Nov 27) → `queue_small_13` `205`–`212` (≈ Dec 6) → `queue_small_14` `213`/`214` (≈ Dec 7–8). Next free ladder id 215, rig id 055.
+- **Nothing open with the user.**
 
 ### 2026-11-26 (07:55) — `200` L0 QAT from step 0 done: 3.3507, +0.0149 vs `100` (5.0σ) → H3's FP4 clause weakened at `screen` for this arm; same loss as late QAT `199`; `201` running
 - **`200-l0-qat0-screen`** (ADR-073; FP4 fake-quant at every step) ended 07:41, exit 0: **3.3507** scored quantised, **+0.0149 vs `100`** (5.0σ; 4σ = 0.0119), **+0.0007 vs `199`** (0.2σ). 66.9 k tok/s (0.931× bf16), 4.22 h, 6.25 GiB, `n_thermal` 0 of 190.
