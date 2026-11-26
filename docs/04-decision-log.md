@@ -2925,6 +2925,13 @@ the ladder's own next step and needs no new code. The choice between "more `scre
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
 
+### 2026-11-26 (07:55) — `200` L0 QAT from step 0 done: 3.3507, +0.0149 vs `100` (5.0σ) → H3's FP4 clause weakened at `screen` for this arm; same loss as late QAT `199`; `201` running
+- **`200-l0-qat0-screen`** (ADR-073; FP4 fake-quant at every step) ended 07:41, exit 0: **3.3507** scored quantised, **+0.0149 vs `100`** (5.0σ; 4σ = 0.0119), **+0.0007 vs `199`** (0.2σ). 66.9 k tok/s (0.931× bf16), 4.22 h, 6.25 GiB, `n_thermal` 0 of 190.
+- **Late vs post-training vs from 0 on L0:** +0.0142 / +0.0343 / +0.0149. The step-matched train-loss gap to `100` is flat at +0.015 from step 500 on, and `199`'s last ten steps match `200`'s to 0.0001: the "still closing" gap in `199` was falling onto this level. FP4 E2M1 at group 64 costs L0 ≈ 0.015 nats at 1 B tokens however it is trained; late QAT gets all of the recovery.
+- **H3, FP4 clause:** weakened at `screen` on L0 by both trained arms (one seed each, 0.002–0.003 over the 4σ line). L5 arms `201`/`202` to come.
+- **Running:** `201-l5-qat-late-screen` since 07:41 (ETA ≈ 13:40), then `202`, then `queue_screen_26`.
+- **Open with the user:** I45 (`197` L8e) and the L5f `small` pair.
+
 ### 2026-11-26 (03:55) — `199` L0 late QAT done: 3.3501, +0.0142 vs `100` (4.8σ) → H3's FP4 clause weakened at `screen` for this arm; rig `053` (post-training FP4) written up; `200` running
 - **Rig `053-quant-post-training`** (ADR-073 §2, eval only, 2026-11-25 23:18–23:31): round-to-nearest FP4 of the finished checkpoints costs **+0.0343 on `100`** (11.6σ) and **+0.0403 on `110`** (13.6σ); INT4 +0.0208 / +0.0262. Post-training FP4 weakens the clause on both bases; the weight-tied recurrence costs 0.0060 more than the stack.
 - **`199-l0-qat-late-screen`** (ADR-073; FP4 fake-quant from step 1869 of 1907) ended 03:27, exit 0: **3.3501** scored quantised, **+0.0142 vs `100`** (4.8σ; 4σ = 0.0119). Control: −0.0004 vs `100` at step 1800. 39 steps of QAT recover 59 % of the post-training cost; the step-matched train-loss gap falls from +0.029 to +0.015 and had not flattened. 71.9 k tok/s before the switch, 67.0 k after; 3.94 h, 6.25 GiB, `n_thermal` 0 of 190.
