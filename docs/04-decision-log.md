@@ -2081,6 +2081,13 @@ Cost units from `docs/06 §4`: one `screen` run ≈ 8 h (1 B tokens, 1 seed); on
   - **Recommendation:** (a). The gate guarded against a run too slow to be worth its place; at `screen` the price is 3.5 h once, and it tests H24 as specified. If `197` then beats `110` by > 4σ and a `small` pair follows, do (c) before the pair. Where `197` goes (before or after `queue_small_13`) is part of the same call.
   - **State of the chain:** `queue_screen_24` was released by hand at 16:43 (an annotated `QUEUE DONE` line in `queue_screen_23.log`; it does not depend on `197`), so `198`, the QAT runs, rig `054` and `queue_small_13` proceed. `197`'s wiki-lead evals and compare did not run.
 
+- **I46** *(2026-11-27, `197`)* **L8e beat `110` by 26σ at `screen`; its `small` pair is held by ADR-083 §3.** ADR-071 §6 and ADR-031 call for a `small` pair (H24's first clause) and, by its own ADR, ADR-065's second test (L8e + L8b-pv against `178`/`179`). ADR-083 §3 forbids queueing the pair until the host update is made cheaper and rig `052` is repeated.
+  - **Options (each by ADR):**
+    - (a) make the host update cheaper (parallel updater, or Adam on the GPU for the touched rows: I45's option (c)), repeat rig `052`, then the pair `vs` `132`/`133`. Code change on a branch, merged by a queue after `queue_small_14`;
+    - (b) run the pair as built with the gate waived again: ≈ 23 h per seed in place of ≈ 14.5 h, no code change; needs an ADR that supersedes ADR-083 §3;
+    - (c) stop at `screen`: H24's first clause stays supported at one seed, with the shrinking lead recorded.
+  - **Recommendation:** (a). The `screen` lead halved over 1 B tokens, so `small` is where H24 is decided, and the updater is 24 % of the step. ADR-065's second test only after the pair.
+  - **State:** nothing queued; `queue_small_13` and `queue_small_14` run until ≈ Dec 7–8 and no code may land on main before then.
 
 ## Session log
 
@@ -2961,6 +2968,14 @@ and an ADR first, L6c likewise; the `small` programme (L0, L1, L2, L3, L5, L5d a
 the ladder's own next step and needs no new code. The choice between "more `screen` variants" and
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
+
+### 2026-11-27 (07:00) — `197` L8e done: 3.2556, −0.0772 vs `110` (26σ) → H24's first clause supported at `screen`; `queue_screen_27` done, `queue_small_13` running `205`; I46 opened
+- **`197-l8e-screen`** (ADR-071, under ADR-083's waiver) ended 05:56, exit 0: **3.2556**, **−0.0772 vs `110`** (26.1σ; 4σ = 0.0119) → **H24's first clause supported at `screen`**, one seed. 60 % of the L5–L1 gap (0.1280). Table 1.61 B parameters, not matched.
+- **Lead shrinks with tokens:** −0.171 at step 100, −0.087 at 1000, −0.077 at the end; train-loss gap still closing by ≈ 0.002 per 400 steps.
+- **Wiki-lead vs `110`:** in-table first sentence −0.098 (covered −0.108), rest −0.088, out-of-table control −0.090, all past their floors. The gain is general, not article knowledge. The compare tool's `verdict_h17: supports` is H17's rule applied mechanically; no H17 verdict is taken from `197`.
+- **Host table** (P16 data): step 17.15 s, 1.59× `110`'s 10.80 s; sparse Adam 4.08 s (23.8 % of the step), scatter 0.92 s (5.4 %), ≈ 1.35 s not separately logged (gather unmeasured); 548 k rows (26 %) touched per step. Peak host RAM 59,943 MiB used, shared 23,647 MiB. 30.6 k tok/s (0.630×), 4.62 GiB, 9.18 h, `n_thermal` 0 of 190.
+- **Consequence:** ADR-071 §6 / ADR-031 call for a `small` pair; ADR-083 §3 holds it until the host update is cheaper and rig `052` is repeated, by its own ADR. Opened as **I46**; nothing queued.
+- **`queue_screen_27`** logged QUEUE DONE 05:57. **`queue_small_13`** gated 06:01 on `d277bdc` and started **`205-l5d-segmean-small-s0`** (33.6 k tok/s, 3.89 GiB; ETA ≈ 02:40 Nov 28).
 
 ### 2026-11-26 (21:00) — `202` L5 QAT from step 0 done: 3.3590, +0.0262 vs `110` (8.9σ), worse than late QAT → ADR-073 complete, H3's FP4 clause weakened at `screen` on every arm; rig `054` done: reading *mixed*, I44 closed; `197` L8e running
 - **`202-l5-qat0-screen`** (ADR-073) ended 20:30, exit 0: **3.3590** scored quantised, **+0.0262 vs `110`** (8.9σ), **+0.0097 vs `201`** (3.3σ). Train-loss gap flat at +0.026 from step 1000. 39.7 k tok/s, 7.08 h, 3.86 GiB, `n_thermal` 0 of 190.
