@@ -2083,7 +2083,7 @@ Cost units from `docs/06 §4`: one `screen` run ≈ 8 h (1 B tokens, 1 seed); on
 
 - **I46** *(2026-11-27, `197`)* **L8e beat `110` by 26σ at `screen`; its `small` pair is held by ADR-083 §3.** ADR-071 §6 and ADR-031 call for a `small` pair (H24's first clause) and, by its own ADR, ADR-065's second test (L8e + L8b-pv against `178`/`179`). ADR-083 §3 forbids queueing the pair until the host update is made cheaper and rig `052` is repeated.
   - **Options (each by ADR):**
-    - (a) make the host update cheaper (parallel updater, or Adam on the GPU for the touched rows: I45's option (c)), repeat rig `052`, then the pair `vs` `132`/`133`. Code change on a branch, merged by a queue after `queue_small_14`;
+    - (a) make the host update cheaper (parallel updater, or Adam on the GPU for the touched rows: I45's option (c)), repeat rig `052`, then the pair against `132`/`133`. Code change on a branch, merged by a queue after `queue_small_14`;
     - (b) run the pair as built with the gate waived again: ≈ 23 h per seed in place of ≈ 14.5 h, no code change; needs an ADR that supersedes ADR-083 §3;
     - (c) stop at `screen`: H24's first clause stays supported at one seed, with the shrinking lead recorded.
   - **Recommendation:** (a). The `screen` lead halved over 1 B tokens, so `small` is where H24 is decided, and the updater is 24 % of the step. ADR-065's second test only after the pair.
@@ -2968,6 +2968,12 @@ and an ADR first, L6c likewise; the `small` programme (L0, L1, L2, L3, L5, L5d a
 the ladder's own next step and needs no new code. The choice between "more `screen` variants" and
 "start `small`" is the user's; the case for `small` first is that every verdict so far is silent for
 want of σ, and the L0 pair at `small` is what supplies it.
+
+### 2026-11-28 (04:00) — `205` L5d-segmean `small` seed 0 done: 3.0906, +0.0011 vs `134` (0.4σ; per-seed, provisional); `206` running
+- **`205-l5d-segmean-small-s0`** (ADR-077 §1, comparator) ended 02:51, exit 0: **3.0906**, **+0.0011 vs `134`** (same seed, summed aux; 0.4σ) → I33's confound not measurable at `small` on this seed (`screen`: −0.0034). +0.0129 vs `132`. 33.6 k tok/s, 20.83 h, 3.89 GiB, `n_thermal` 0 of 476.
+- **No verdict:** the run is a comparator; ADR-077 §3 / ADR-078 §3 read pair means after `206`.
+- **Pause requested and cancelled** (the user, 2026-11-27 16:54–17:02): the queue script was SIGSTOPped with a watcher armed, then resumed; the trainer never stopped, nothing was skipped (NOTE lines in `queue_small_13.log`; `/mnt/nvme/pause_after_205.sh` is inert).
+- **Running:** `206-l5d-segmean-small-s1` since 02:51 (33.8 k tok/s; ETA ≈ 23:40 Nov 28), then `207`–`212`, then `queue_small_14`.
 
 ### 2026-11-27 (07:00) — `197` L8e done: 3.2556, −0.0772 vs `110` (26σ) → H24's first clause supported at `screen`; `queue_screen_27` done, `queue_small_13` running `205`; I46 opened
 - **`197-l8e-screen`** (ADR-071, under ADR-083's waiver) ended 05:56, exit 0: **3.2556**, **−0.0772 vs `110`** (26.1σ; 4σ = 0.0119) → **H24's first clause supported at `screen`**, one seed. 60 % of the L5–L1 gap (0.1280). Table 1.61 B parameters, not matched.
